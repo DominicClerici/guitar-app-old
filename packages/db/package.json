@@ -1,0 +1,48 @@
+{
+  "name": "@guitar/db",
+  "version": "1.0.0",
+  "description": "Guitar database package with Drizzle ORM",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc --build",
+    "dev": "tsc --build --watch",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint src --ext .ts,.tsx",
+    "format": "prettier --write ."
+  },
+  "dependencies": {
+    "@guitar/schemas": "workspace:*",
+    "@eslint/eslintrc": "^3.3.1",
+    "@eslint/js": "^9.35.0",
+    "@typescript-eslint/eslint-plugin": "^8.43.0",
+    "@typescript-eslint/parser": "^8.43.0",
+    "dotenv": "^16.6.1",
+    "drizzle-orm": "catalog:",
+    "eslint": "^9.35.0",
+    "eslint-plugin-drizzle": "^0.2.3",
+    "postgres": "^3.4.7"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "development": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./schema": {
+      "types": "./dist/schema/index.d.ts",
+      "development": "./src/schema/index.ts",
+      "default": "./dist/schema/index.js"
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.2",
+    "drizzle-kit": "^0.31.4",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.2"
+  }
+}

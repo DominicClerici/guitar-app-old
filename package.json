@@ -4,17 +4,21 @@
     "packageManager": "pnpm@10.11.0",
     "scripts": {
       "dev": "concurrently --kill-others --names \"frontend\" \"pnpm --filter=frontend run dev\"",
+      "build": "pnpm run build:packages && pnpm --filter=frontend run build",
+      "build:packages": "pnpm --filter=@guitar/db run build && pnpm --filter=@guitar/schemas run build",
       "format": "prettier --write .",
       "format:check": "prettier --check .",
       "format-staged": "git diff --cached --name-only --diff-filter=ACMR | xargs prettier --write --ignore-unknown && git diff --cached --name-only --diff-filter=ACMR | xargs git add",
-      "type-check": "pnpm --filter=frontend run type-check"
+      "type-check": "pnpm recursive run type-check",
+      "lint": "pnpm recursive run lint"
     },
     "engines": {
       "node": ">=20.0.0",
       "pnpm": ">=10.11.0"
     },
     "workspaces": [
-      "frontend"
+      "frontend",
+      "packages/*"
     ],
     "dependencies": {
       "dotenv": "^16.5.0"
