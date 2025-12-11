@@ -1,6 +1,11 @@
+import { config } from "dotenv"
 import { drizzle } from "drizzle-orm/postgres-js"
+import { resolve } from "path"
 import postgres from "postgres"
 import * as schema from "./schema"
+
+// Load environment variables from root .env file (won't override existing env vars)
+config({ path: resolve(__dirname, "../../../.env") })
 
 // Create the connection
 const connectionString = process.env.DATABASE_URL
