@@ -1,26 +1,13 @@
-import { useMemo } from "react"
+import { Card } from "@/components/ui/card"
 import { detect } from "@tonaljs/chord-detect"
+import { useMemo } from "react"
 import useFretboardContext from "./fretboard-context"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
 // Standard tuning MIDI notes: String 0 is high E (E4), String 5 is low E (E2)
 const STANDARD_TUNING_MIDI = [64, 59, 55, 50, 45, 40] // E4, B3, G3, D3, A2, E2
 
 // Note names in chromatic order
-const NOTE_NAMES = [
-  "C",
-  "C#",
-  "D",
-  "D#",
-  "E",
-  "F",
-  "F#",
-  "G",
-  "G#",
-  "A",
-  "A#",
-  "B",
-]
+const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
 // Convert MIDI note number to note name (e.g., 64 -> "E")
 // Uses floor to handle half-step tunings: -0.5 goes down, +0.5 stays same
@@ -88,37 +75,29 @@ export default function FretboardChords() {
 
   return (
     <Card>
-      <h3 className="font-semibold text-xl">Chords</h3>
+      <h3 className="text-xl font-semibold">Chords</h3>
       <div>
         {activeNotes.length === 0 ? (
           <p className="text-muted-foreground">No notes selected</p>
         ) : (
           <>
             <div className="mb-1">
-              <span className="text-sm font-medium text-muted-foreground">
-                Notes:{" "}
-              </span>
-              <span className="text-sm font-mono">{noteNamesDisplay}</span>
+              <span className="text-muted-foreground text-sm font-medium">Notes: </span>
+              <span className="font-mono text-sm">{noteNamesDisplay}</span>
             </div>
 
             {activeNotes.length < 2 ? (
-              <p className="text-muted-foreground text-sm">
-                Select at least 2 notes
-              </p>
+              <p className="text-muted-foreground text-sm">Select at least 2 notes</p>
             ) : detectedChords.length === 0 ? (
-              <p className="text-muted-foreground text-sm">
-                No matching chords found
-              </p>
+              <p className="text-muted-foreground text-sm">No matching chords found</p>
             ) : (
               <div>
-                <span className="text-sm font-medium text-muted-foreground">
-                  Possible chords:
-                </span>
+                <span className="text-muted-foreground text-sm font-medium">Possible chords:</span>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {detectedChords.map((chord, index) => (
                     <span
                       key={index}
-                      className={`px-3 py-1 rounded-full text-sm font-medium ${
+                      className={`rounded-full px-3 py-1 text-sm font-medium ${
                         index === 0
                           ? "bg-primary text-primary-foreground"
                           : "bg-muted text-muted-foreground"

@@ -1,13 +1,9 @@
 import { Button } from "@/components/ui/button"
-import { useState, useRef, useEffect, useCallback } from "react"
-import * as Tone from "tone"
-import { PlayIcon, SquareIcon } from "lucide-react"
-import {
-  StrumNote,
-  StrumDirection,
-  PreviewControls,
-} from "./strum-pattern-dialog"
 import { cn } from "@/lib/utils"
+import { PlayIcon, SquareIcon } from "lucide-react"
+import { useCallback, useEffect, useRef, useState } from "react"
+import * as Tone from "tone"
+import { PreviewControls, StrumDirection, StrumNote } from "./strum-pattern-dialog"
 
 type RecordingState = "idle" | "countdown" | "recording" | "complete"
 type SnapInterval = "4n" | "8n" | "16n" | "32n" | "64n" | null
@@ -23,9 +19,7 @@ interface StrumPatternDetectorProps {
   activeSnapInterval: SnapInterval | null
   setOriginalClicks: React.Dispatch<React.SetStateAction<StrumNote[]>>
   setSnappedClicks: React.Dispatch<React.SetStateAction<StrumNote[] | null>>
-  setActiveSnapInterval: React.Dispatch<
-    React.SetStateAction<SnapInterval | null>
-  >
+  setActiveSnapInterval: React.Dispatch<React.SetStateAction<SnapInterval | null>>
   previewControls: PreviewControls
 }
 
@@ -43,8 +37,7 @@ export default function StrumPatternDetector({
   setActiveSnapInterval,
   previewControls,
 }: StrumPatternDetectorProps) {
-  const { isPreviewingPattern, previewProgress, startPreview, stopPreview } =
-    previewControls
+  const { isPreviewingPattern, previewProgress, startPreview, stopPreview } = previewControls
 
   const [countdownValue, setCountdownValue] = useState(4)
   const [recordingProgress, setRecordingProgress] = useState(0)
@@ -147,7 +140,7 @@ export default function StrumPatternDetector({
         }
       },
       [0, 1, 2, 3],
-      "4n"
+      "4n",
     )
 
     sequenceRef.current.loop = false
@@ -252,10 +245,7 @@ export default function StrumPatternDetector({
 
       // Snap to the START of the interval by flooring to the nearest interval boundary
       const slotIndex = Math.floor(note.position / intervalSize)
-      const normalizedQuantized = Math.max(
-        0,
-        Math.min(1 - intervalSize, slotIndex * intervalSize)
-      )
+      const normalizedQuantized = Math.max(0, Math.min(1 - intervalSize, slotIndex * intervalSize))
 
       return {
         position: normalizedQuantized,
@@ -264,10 +254,7 @@ export default function StrumPatternDetector({
     })
 
     // Group by position and resolve direction conflicts
-    const positionMap = new Map<
-      number,
-      { upCount: number; downCount: number }
-    >()
+    const positionMap = new Map<number, { upCount: number; downCount: number }>()
 
     for (const note of snappedWithDirections) {
       const key = note.position
@@ -283,8 +270,7 @@ export default function StrumPatternDetector({
     // Create unique snapped notes with majority direction (prefer down on tie)
     const uniqueSnapped: StrumNote[] = []
     for (const [position, counts] of positionMap.entries()) {
-      const direction: StrumDirection =
-        counts.upCount > counts.downCount ? "up" : "down"
+      const direction: StrumDirection = counts.upCount > counts.downCount ? "up" : "down"
       uniqueSnapped.push({ position, direction })
     }
 
@@ -302,7 +288,7 @@ export default function StrumPatternDetector({
   return (
     <div className="flex flex-col gap-4">
       {/* BPM display */}
-      <div className="text-sm text-muted-foreground text-center">
+      <div className="text-muted-foreground text-center text-sm">
         Recording at {bpm} BPM (1 bar = {(barDurationMs / 1000).toFixed(1)}
         s)
       </div>
@@ -310,11 +296,11 @@ export default function StrumPatternDetector({
       {/* Legend */}
       <div className="flex items-center justify-center gap-4 text-sm">
         <div className="flex items-center gap-1.5">
-          <div className="w-3 h-3 rounded-full bg-blue-500" />
+          <div className="h-3 w-3 rounded-full bg-blue-500" />
           <span className="text-muted-foreground">Down strum</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="w-3 h-3 rounded-full bg-orange-500" />
+          <div className="h-3 w-3 rounded-full bg-orange-500" />
           <span className="text-muted-foreground">Up strum</span>
         </div>
       </div>
@@ -322,18 +308,18 @@ export default function StrumPatternDetector({
       {/* Recording card */}
       <div
         onClick={handleCardClick}
-        className={`relative h-32 rounded-lg border-2 transition-all cursor-pointer overflow-hidden ${
+        className={`relative h-32 cursor-pointer overflow-hidden rounded-lg border-2 transition-all ${
           recordingState === "recording"
             ? "border-primary bg-primary/5"
             : recordingState === "countdown"
-            ? "border-yellow-500 bg-yellow-500/5"
-            : "border-border bg-muted/50 hover:border-muted-foreground/50"
+              ? "border-yellow-500 bg-yellow-500/5"
+              : "border-border bg-muted/50 hover:border-muted-foreground/50"
         }`}
       >
         {/* Progress bar during recording */}
         {recordingState === "recording" && (
           <div
-            className="absolute top-0 left-0 h-full bg-primary/20 transition-none"
+            className="bg-primary/20 absolute top-0 left-0 h-full transition-none"
             style={{ width: `${recordingProgress * 100}%` }}
           />
         )}
@@ -347,15 +333,13 @@ export default function StrumPatternDetector({
         )}
 
         {/* Beat markers */}
-        <div className="absolute top-0 left-0 right-0 h-full flex">
+        <div className="absolute top-0 right-0 left-0 flex h-full">
           {[0, 1, 2, 3].map((beat) => (
             <div
               key={beat}
-              className="flex-1 border-r border-dashed border-muted-foreground/30 last:border-r-0"
+              className="border-muted-foreground/30 flex-1 border-r border-dashed last:border-r-0"
             >
-              <span className="text-xs text-muted-foreground/50 ml-1">
-                {beat + 1}
-              </span>
+              <span className="text-muted-foreground/50 ml-1 text-xs">{beat + 1}</span>
             </div>
           ))}
         </div>
@@ -365,10 +349,8 @@ export default function StrumPatternDetector({
           originalClicks.map((note, index) => (
             <div
               key={`original-${index}`}
-              className={`absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full border-2 border-muted-foreground/20 ${
-                note.direction === "down"
-                  ? "bg-blue-500/30"
-                  : "bg-orange-500/30"
+              className={`border-muted-foreground/20 absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-full border-2 ${
+                note.direction === "down" ? "bg-blue-500/30" : "bg-orange-500/30"
               }`}
               style={{ left: `calc(${note.position * 100}% - 6px)` }}
             />
@@ -378,15 +360,11 @@ export default function StrumPatternDetector({
         {displayClicks.map((note, index) => (
           <div
             key={index}
-            className={`absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full border-2 shadow-md transition-transform duration-150 ${
+            className={`absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-full border-2 shadow-md transition-transform duration-150 ${
               note.direction === "down"
-                ? "bg-blue-500 border-blue-300"
-                : "bg-orange-500 border-orange-300"
-            } ${
-              recordingState === "complete"
-                ? "cursor-pointer hover:scale-150"
-                : ""
-            }`}
+                ? "border-blue-300 bg-blue-500"
+                : "border-orange-300 bg-orange-500"
+            } ${recordingState === "complete" ? "cursor-pointer hover:scale-150" : ""}`}
             style={{
               left: `calc(${note.position * 100}% - 6px)`,
             }}
@@ -403,36 +381,30 @@ export default function StrumPatternDetector({
         <div
           className={cn(
             "absolute inset-0 flex items-center justify-center",
-            recordingState !== "idle" && "pointer-events-none"
+            recordingState !== "idle" && "pointer-events-none",
           )}
           onClick={() => recordingState === "idle" && startRecording()}
         >
           {recordingState === "idle" && (
-            <span className="text-muted-foreground">
-              Click to begin recording
-            </span>
+            <span className="text-muted-foreground">Click to begin recording</span>
           )}
           {recordingState === "countdown" && (
-            <span className="text-4xl font-bold text-yellow-500 animate-pulse">
+            <span className="animate-pulse text-4xl font-bold text-yellow-500">
               {countdownValue}
             </span>
           )}
           {recordingState === "recording" && originalClicks.length === 0 && (
-            <span className="text-muted-foreground animate-pulse">
-              Click here to mark strums!
-            </span>
+            <span className="text-muted-foreground animate-pulse">Click here to mark strums!</span>
           )}
           {recordingState === "complete" && originalClicks.length === 0 && (
-            <span className="text-muted-foreground">
-              No clicks recorded. Try again!
-            </span>
+            <span className="text-muted-foreground">No clicks recorded. Try again!</span>
           )}
         </div>
       </div>
 
       {/* Click count */}
       {originalClicks.length > 0 && (
-        <div className="text-sm text-center text-muted-foreground">
+        <div className="text-muted-foreground text-center text-sm">
           {originalClicks.length} strum
           {originalClicks.length !== 1 ? "s" : ""} recorded
           {snappedClicks && ` (${snappedClicks.length} snapped)`}
@@ -441,13 +413,13 @@ export default function StrumPatternDetector({
 
       {/* Snap to interval controls - only show when recording is complete and there are clicks */}
       {recordingState === "complete" && originalClicks.length > 0 && (
-        <div className="border rounded-lg p-3 bg-muted/30">
-          <div className="text-sm font-medium mb-2 flex items-center justify-between">
+        <div className="bg-muted/30 rounded-lg border p-3">
+          <div className="mb-2 flex items-center justify-between text-sm font-medium">
             <span>Snap to Interval</span>
             {snappedClicks && (
               <button
                 onClick={clearSnap}
-                className="text-xs text-muted-foreground hover:text-foreground underline"
+                className="text-muted-foreground hover:text-foreground text-xs underline"
               >
                 Clear
               </button>
@@ -478,34 +450,27 @@ export default function StrumPatternDetector({
       )}
 
       {/* Controls */}
-      <div className="flex gap-2 justify-center items-center">
+      <div className="flex items-center justify-center gap-2">
         {recordingState === "complete" && (
           <>
             {displayClicks.length > 0 && (
               <Button
                 variant="outline"
                 size="icon"
-                onClick={() =>
-                  isPreviewingPattern
-                    ? stopPreview()
-                    : startPreview(displayClicks)
-                }
+                onClick={() => (isPreviewingPattern ? stopPreview() : startPreview(displayClicks))}
               >
                 {isPreviewingPattern ? (
-                  <SquareIcon className="w-4 h-4" />
+                  <SquareIcon className="h-4 w-4" />
                 ) : (
-                  <PlayIcon className="w-4 h-4" />
+                  <PlayIcon className="h-4 w-4" />
                 )}
               </Button>
             )}
             <Button onClick={startRecording} variant="outline">
               Re-record
             </Button>
-            <div className="w-px h-6 bg-border" />
-            <Button
-              onClick={handleSavePattern}
-              disabled={originalClicks.length === 0}
-            >
+            <div className="bg-border h-6 w-px" />
+            <Button onClick={handleSavePattern} disabled={originalClicks.length === 0}>
               Save Pattern
             </Button>
           </>

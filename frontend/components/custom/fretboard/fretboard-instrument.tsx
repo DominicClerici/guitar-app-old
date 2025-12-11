@@ -13,7 +13,7 @@ export default function FretboardInstrument() {
   const { instrument, changeInstrument } = useFretboardContext()
   return (
     <Card>
-      <h3 className="font-semibold text-xl mb-2">Instrument</h3>
+      <h3 className="mb-2 text-xl font-semibold">Instrument</h3>
       <Select
         onValueChange={(value) => changeInstrument(value as InstrumentName)}
         value={instrument}

@@ -23,5 +23,5 @@ const client = postgres(connectionString, {
 
 // Create the drizzle database instance
 export const db = drizzle({ client, schema })
-export * from "./schema"
 export * from "drizzle-orm"
+export * from "./schema"

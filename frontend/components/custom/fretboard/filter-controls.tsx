@@ -1,7 +1,6 @@
-import React from "react"
-import useFretboardContext from "./fretboard-context"
-import { Switch } from "@/components/ui/switch"
 import { Slider } from "@/components/ui/slider"
+import { Switch } from "@/components/ui/switch"
+import useFretboardContext from "./fretboard-context"
 
 export default function FilterControls() {
   const { effects, setEffects } = useFretboardContext()

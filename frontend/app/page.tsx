@@ -1,4 +1,3 @@
-"use client"
 import { FretboardContextProvider } from "@/components/custom/fretboard/fretboard-context"
 import FretboardMain from "@/components/custom/fretboard/fretboard-main"
 

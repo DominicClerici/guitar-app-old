@@ -1,7 +1,7 @@
 "use client"
+import { applyTuningToNoteCharacter, getNoteFromFret } from "@/lib/midi-utils"
 import React, { useCallback, useEffect, useRef, useState } from "react"
 import useFretboardContext, { FretPositions } from "./fretboard-context"
-import { applyTuningToNoteCharacter, getNoteFromFret } from "@/lib/midi-utils"
 
 export const NUM_STRINGS = 6
 export const NUM_FRETS = 18 // 0 (open) through 17
@@ -51,7 +51,7 @@ export default function FretboardCanvas() {
         LEFT_PADDING,
         TOP_PADDING - 10,
         NUT_WIDTH,
-        (NUM_STRINGS - 1) * STRING_SPACING + 20
+        (NUM_STRINGS - 1) * STRING_SPACING + 20,
       )
       ctx.strokeStyle = "#333"
       ctx.lineWidth = 2
@@ -59,15 +59,14 @@ export default function FretboardCanvas() {
         LEFT_PADDING,
         TOP_PADDING - 10,
         NUT_WIDTH,
-        (NUM_STRINGS - 1) * STRING_SPACING + 20
+        (NUM_STRINGS - 1) * STRING_SPACING + 20,
       )
 
       // Draw frets (vertical lines)
       ctx.strokeStyle = "#888"
       ctx.lineWidth = 3
       for (let fret = 1; fret < NUM_FRETS; fret++) {
-        const x =
-          LEFT_PADDING + NUT_WIDTH + (fret - 1) * FRET_WIDTH + FRET_WIDTH
+        const x = LEFT_PADDING + NUT_WIDTH + (fret - 1) * FRET_WIDTH + FRET_WIDTH
         ctx.beginPath()
         ctx.moveTo(x, TOP_PADDING - 5)
         ctx.lineTo(x, TOP_PADDING + (NUM_STRINGS - 1) * STRING_SPACING + 5)
@@ -121,7 +120,7 @@ export default function FretboardCanvas() {
       // Draw string labels based on tuning
       const stringBaseNotes = ["E", "B", "G", "D", "A", "E"] // High to
       const tunedBaseNotes = stringBaseNotes.map((note, index) =>
-        applyTuningToNoteCharacter(note, tuning[index])
+        applyTuningToNoteCharacter(note, tuning[index]),
       )
       ctx.fillStyle = "#333"
       ctx.font = "14px Arial"
@@ -129,10 +128,7 @@ export default function FretboardCanvas() {
       ctx.textBaseline = "alphabetic"
       for (let string = 0; string < NUM_STRINGS; string++) {
         const y = getStringY(string)
-        let tunedNote = applyTuningToNoteCharacter(
-          tunedBaseNotes[string],
-          tuning[string]
-        )
+        let tunedNote = applyTuningToNoteCharacter(tunedBaseNotes[string], tuning[string])
         if (string === 0 && tunedNote == "E") {
           tunedNote = "e"
         }
@@ -165,7 +161,7 @@ export default function FretboardCanvas() {
         }
       }
     },
-    [canvasDimensions.width, canvasDimensions.height, fretPositions, tuning]
+    [canvasDimensions.width, canvasDimensions.height, fretPositions, tuning],
   )
 
   // for resize, update dimensions and redraw the fretboard
@@ -177,7 +173,7 @@ export default function FretboardCanvas() {
         console.error(
           `Canvas or container not found: ${!!canvas && "canvas not found"} ${
             !!container && "container not found"
-          }`
+          }`,
         )
         return
       }
@@ -261,20 +257,20 @@ export default function FretboardCanvas() {
         return newPositions
       })
     },
-    [getStringY]
+    [getStringY],
   )
 
   return (
     <div
       ref={canvasContainerRef}
-      className="4xl:max-w-7xl 3xl:max-w-6xl 2xl:max-w-5xl xl:max-w-4xl lg:max-w-3xl md:max-w-2xl max-w-xl w-full mx-auto relative"
+      className="4xl:max-w-7xl 3xl:max-w-6xl relative mx-auto w-full max-w-xl md:max-w-2xl lg:max-w-3xl xl:max-w-4xl 2xl:max-w-5xl"
     >
       <canvas
         ref={canvasRef}
         width={canvasDimensions.width}
         height={canvasDimensions.height}
         onClick={handleCanvasClick}
-        className="cursor-pointer border border-gray-300 rounded-lg shadow-md"
+        className="cursor-pointer rounded-lg border border-gray-300 shadow-md"
       />
     </div>
   )

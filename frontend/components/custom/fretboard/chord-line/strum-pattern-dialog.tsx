@@ -7,11 +7,11 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { useState, useRef, useCallback, useEffect } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import * as Tone from "tone"
-import StrumPatternDetector from "./strum-pattern-detector"
-import ManualPatternCreator from "./manual-pattern-creator"
 import useFretboardContext from "../fretboard-context"
+import ManualPatternCreator from "./manual-pattern-creator"
+import StrumPatternDetector from "./strum-pattern-detector"
 
 export type StrumDirection = "up" | "down"
 
@@ -49,8 +49,7 @@ export default function StrumPatternDialog({
   const [originalClicks, setOriginalClicks] = useState<StrumNote[]>([])
   const [snappedClicks, setSnappedClicks] = useState<StrumNote[] | null>(null)
   const [manualClicks, setManualClicks] = useState<StrumNote[]>([])
-  const [activeSnapInterval, setActiveSnapInterval] =
-    useState<SnapInterval>(null)
+  const [activeSnapInterval, setActiveSnapInterval] = useState<SnapInterval>(null)
 
   // Shared preview state
   const [isPreviewingPattern, setIsPreviewingPattern] = useState(false)
@@ -124,16 +123,14 @@ export default function StrumPatternDialog({
         const elapsed = performance.now() - previewStartTimeRef.current
         const progress = (elapsed % barDurationMs) / barDurationMs
         setPreviewProgress(progress)
-        previewAnimationRef.current = requestAnimationFrame(
-          updatePreviewProgress
-        )
+        previewAnimationRef.current = requestAnimationFrame(updatePreviewProgress)
       }
       previewAnimationRef.current = requestAnimationFrame(updatePreviewProgress)
 
       Tone.getTransport().start()
       setIsPreviewingPattern(true)
     },
-    [bpm, barDurationMs, cleanupPreview, strumNotes]
+    [bpm, barDurationMs, cleanupPreview, strumNotes],
   )
 
   const stopPreview = useCallback(() => {
@@ -163,8 +160,7 @@ export default function StrumPatternDialog({
       <DialogContent className="sm:max-w-2xl">
         <DialogTitle>Strum Pattern</DialogTitle>
         <DialogDescription>
-          Create a strum pattern by detecting your clicks or manually placing
-          strums.
+          Create a strum pattern by detecting your clicks or manually placing strums.
         </DialogDescription>
 
         <Tabs
@@ -174,17 +170,13 @@ export default function StrumPatternDialog({
         >
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger
-              disabled={
-                recordingState === "countdown" || recordingState === "recording"
-              }
+              disabled={recordingState === "countdown" || recordingState === "recording"}
               value="detect"
             >
               Detect
             </TabsTrigger>
             <TabsTrigger
-              disabled={
-                recordingState === "countdown" || recordingState === "recording"
-              }
+              disabled={recordingState === "countdown" || recordingState === "recording"}
               value="manual"
             >
               Manual
@@ -222,10 +214,7 @@ export default function StrumPatternDialog({
 
         {/* Current saved pattern - shared between both tabs */}
         {strumPattern.length > 0 && (
-          <CurrentPatternDisplay
-            strumPattern={strumPattern}
-            previewControls={previewControls}
-          />
+          <CurrentPatternDisplay strumPattern={strumPattern} previewControls={previewControls} />
         )}
       </DialogContent>
     </Dialog>
@@ -242,53 +231,50 @@ function CurrentPatternDisplay({
   strumPattern: StrumNote[]
   previewControls: PreviewControls
 }) {
-  const { isPreviewingPattern, previewProgress, startPreview, stopPreview } =
-    previewControls
+  const { isPreviewingPattern, previewProgress, startPreview, stopPreview } = previewControls
 
   return (
-    <div className="border-t pt-4 mt-4">
-      <div className="text-sm font-medium mb-2 flex items-center justify-between">
+    <div className="mt-4 border-t pt-4">
+      <div className="mb-2 flex items-center justify-between text-sm font-medium">
         <span>Current Pattern:</span>
         <Button
           variant="outline"
           size="sm"
-          onClick={() =>
-            isPreviewingPattern ? stopPreview() : startPreview(strumPattern)
-          }
-          className="h-7 px-2 gap-1"
+          onClick={() => (isPreviewingPattern ? stopPreview() : startPreview(strumPattern))}
+          className="h-7 gap-1 px-2"
         >
           {isPreviewingPattern ? (
             <>
-              <SquareIcon className="w-3 h-3" />
+              <SquareIcon className="h-3 w-3" />
               Stop
             </>
           ) : (
             <>
-              <PlayIcon className="w-3 h-3" />
+              <PlayIcon className="h-3 w-3" />
               Preview
             </>
           )}
         </Button>
       </div>
-      <div className="relative h-8 rounded border bg-muted/30 overflow-hidden">
+      <div className="bg-muted/30 relative h-8 overflow-hidden rounded border">
         {isPreviewingPattern && (
           <div
             className="absolute top-0 left-0 h-full bg-green-500/20 transition-none"
             style={{ width: `${previewProgress * 100}%` }}
           />
         )}
-        <div className="absolute top-0 left-0 right-0 h-full flex">
+        <div className="absolute top-0 right-0 left-0 flex h-full">
           {[0, 1, 2, 3].map((beat) => (
             <div
               key={beat}
-              className="flex-1 border-r border-dashed border-muted-foreground/20 last:border-r-0"
+              className="border-muted-foreground/20 flex-1 border-r border-dashed last:border-r-0"
             />
           ))}
         </div>
         {strumPattern.map((note, index) => (
           <div
             key={index}
-            className={`absolute top-1/2 -translate-y-1/2 w-2 h-2 rounded-full ${
+            className={`absolute top-1/2 h-2 w-2 -translate-y-1/2 rounded-full ${
               note.direction === "down" ? "bg-blue-500" : "bg-orange-500"
             }`}
             style={{ left: `calc(${note.position * 100}% - 4px)` }}

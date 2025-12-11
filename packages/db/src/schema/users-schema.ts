@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, pgSchema } from "drizzle-orm/pg-core"
+import { pgSchema, pgTable, text, uuid } from "drizzle-orm/pg-core"
 
 const authSchema = pgSchema("auth")
 export const users = authSchema.table("users", {

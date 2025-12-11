@@ -1,11 +1,7 @@
-import {
-  applyTuningToNoteCharacter,
-  getNoteFromFret,
-  getNoteFromMidi,
-  midiToFrequency,
-} from "@/lib/midi-utils"
+"use client"
+import { midiToFrequency } from "@/lib/midi-utils"
 import { InstrumentName, SampleLibrary } from "@/lib/SampleLibrary"
-import React, { useContext, useState, useRef, useEffect } from "react"
+import React, { useContext, useEffect, useRef, useState } from "react"
 import * as Tone from "tone"
 
 export type FretPositions = [number, number, number, number, number, number]
@@ -75,20 +71,13 @@ const FretboardContext = React.createContext<{
   setEffects: () => {},
 })
 
-export function FretboardContextProvider({
-  children,
-}: {
-  children: React.ReactNode
-}) {
-  const [fretPositions, setFretPositions] = useState<FretPositions>([
-    0, 0, 0, 0, 0, 0,
-  ])
+export function FretboardContextProvider({ children }: { children: React.ReactNode }) {
+  const [fretPositions, setFretPositions] = useState<FretPositions>([0, 0, 0, 0, 0, 0])
   const instrumentRef = useRef<Tone.Sampler | null>(null)
   const reverbRef = useRef<Tone.Freeverb | null>(null)
   const [tuning, setTuning] = useState<Tuning>(DEFAULT_TUNING)
   const [effects, setEffects] = useState<EffectsSettings>(DEFAULT_EFFECTS)
-  const [instrument, setInstrument] =
-    useState<InstrumentName>("guitar-acoustic")
+  const [instrument, setInstrument] = useState<InstrumentName>("guitar-acoustic")
   const [chordLine, setChordLine] = useState<ChordLineItem[]>([])
   const chordIdCounter = useRef(0)
   const [muteOnNewStrum, setMuteOnNewStrum] = useState(true)
@@ -97,10 +86,7 @@ export function FretboardContextProvider({
     const hasNotes = fretPositions.some((fret) => fret !== -1)
     if (hasNotes) {
       const id = `chord-${chordIdCounter.current++}`
-      setChordLine((prev) => [
-        ...prev,
-        { id, positions: [...fretPositions] as FretPositions },
-      ])
+      setChordLine((prev) => [...prev, { id, positions: [...fretPositions] as FretPositions }])
     }
   }
 
@@ -150,10 +136,7 @@ export function FretboardContextProvider({
     await Tone.start()
   }
 
-  const strumNotes = (
-    strum: "up" | "down" = "down",
-    positions: FretPositions = fretPositions
-  ) => {
+  const strumNotes = (strum: "up" | "down" = "down", positions: FretPositions = fretPositions) => {
     if (!instrumentRef.current) {
       console.error("Instrument not loaded")
       return
@@ -187,12 +170,7 @@ export function FretboardContextProvider({
 
       frequencies.forEach((freq, i) => {
         const velocity = strum === "down" ? downVelocities[i] : upVelocities[i]
-        instrument.triggerAttackRelease(
-          freq,
-          "4",
-          start + i * strumDelay,
-          velocity
-        )
+        instrument.triggerAttackRelease(freq, "4", start + i * strumDelay, velocity)
       })
     }
   }
@@ -204,9 +182,7 @@ export function FretboardContextProvider({
   // Update reverb settings when effects change
   useEffect(() => {
     if (reverbRef.current) {
-      reverbRef.current.wet.value = effects.reverb.enabled
-        ? effects.reverb.wet
-        : 0
+      reverbRef.current.wet.value = effects.reverb.enabled ? effects.reverb.wet : 0
     }
   }, [effects.reverb.enabled, effects.reverb.wet])
 
@@ -246,9 +222,7 @@ export function FretboardContextProvider({
 export default function useFretboardContext() {
   const context = useContext(FretboardContext)
   if (!context) {
-    throw new Error(
-      "useFretboardContext must be used within a FretboardContextProvider"
-    )
+    throw new Error("useFretboardContext must be used within a FretboardContextProvider")
   }
   return context
 }

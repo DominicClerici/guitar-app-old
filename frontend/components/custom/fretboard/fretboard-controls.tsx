@@ -1,19 +1,10 @@
 import { Button, buttonVariants } from "@/components/ui/button"
-import useFretboardContext, { FretPositions } from "./fretboard-context"
-import {
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  RefreshCwIcon,
-  SettingsIcon,
-} from "lucide-react"
-import { NUM_FRETS, NUM_STRINGS } from "./fretboard-canvas"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Switch } from "@/components/ui/switch"
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover"
+import { ChevronLeftIcon, ChevronRightIcon, RefreshCwIcon, SettingsIcon } from "lucide-react"
 import FilterControls from "./filter-controls"
+import { NUM_FRETS, NUM_STRINGS } from "./fretboard-canvas"
+import useFretboardContext, { FretPositions } from "./fretboard-context"
 
 export default function FretControls() {
   const {
@@ -59,7 +50,7 @@ export default function FretControls() {
   const isAllEmpty = fretPositions.every((fret) => fret === -1)
 
   return (
-    <div className="flex gap-2 items-center">
+    <div className="flex items-center gap-2">
       <Button
         variant="outline"
         onClick={handleLower}
@@ -70,40 +61,26 @@ export default function FretControls() {
       <Button
         variant="outline"
         onClick={handleHigher}
-        disabled={
-          isAllEmpty || fretPositions.some((fret) => fret >= NUM_FRETS - 1)
-        }
+        disabled={isAllEmpty || fretPositions.some((fret) => fret >= NUM_FRETS - 1)}
       >
         <ChevronRightIcon />
       </Button>
-      <div className="h-6 w-px bg-border" />
+      <div className="bg-border h-6 w-px" />
       <Button variant="outline" onClick={handleReset} disabled={isAllEmpty}>
         <RefreshCwIcon />
       </Button>
-      <div className="h-6 w-px bg-border" />
-      <Button
-        variant="outline"
-        onClick={() => strumNotes("down")}
-        disabled={isAllEmpty}
-      >
+      <div className="bg-border h-6 w-px" />
+      <Button variant="outline" onClick={() => strumNotes("down")} disabled={isAllEmpty}>
         Strum down
       </Button>
-      <Button
-        variant="outline"
-        onClick={() => strumNotes("up")}
-        disabled={isAllEmpty}
-      >
+      <Button variant="outline" onClick={() => strumNotes("up")} disabled={isAllEmpty}>
         Strum up
       </Button>
-      <div className="h-6 w-px bg-border" />
-      <Button
-        variant="outline"
-        onClick={handleAddToChordLine}
-        disabled={isAllEmpty}
-      >
+      <div className="bg-border h-6 w-px" />
+      <Button variant="outline" onClick={handleAddToChordLine} disabled={isAllEmpty}>
         Add to Chord Line
       </Button>
-      <div className="h-6 w-px bg-border" />
+      <div className="bg-border h-6 w-px" />
       <label className={buttonVariants({ variant: "outline" })}>
         Mute on strum
         <Switch onCheckedChange={setMuteOnNewStrum} checked={muteOnNewStrum} />

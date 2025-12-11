@@ -9,20 +9,7 @@ const flatToSharp: Record<string, string> = {
   Gb: "F#",
 }
 
-const chromaticScale = [
-  "A",
-  "A#",
-  "B",
-  "C",
-  "C#",
-  "D",
-  "D#",
-  "E",
-  "F",
-  "F#",
-  "G",
-  "G#",
-]
+const chromaticScale = ["A", "A#", "B", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#"]
 
 export type Note = keyof typeof flatToSharp | (typeof chromaticScale)[number]
 
@@ -30,10 +17,7 @@ export function midiToFrequency(midi: number): number {
   return 440 * Math.pow(2, (midi - 69) / 12)
 }
 
-export function applyTuningToNoteCharacter(
-  note: Note,
-  tuningOffset: number
-): Note {
+export function applyTuningToNoteCharacter(note: Note, tuningOffset: number): Note {
   //   TODO: maybe performance where we lookup in flats instead of two conditions?
   const normalizedNote = flatToSharp[note] ?? note
 
