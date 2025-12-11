@@ -23,14 +23,10 @@ exports.passwordSchema = zod_1.z
     message: "Password must contain at least one special character",
 });
 exports.signUpSchema = zod_1.z.object({
-    firstName: zod_1.z
+    fullName: zod_1.z
         .string()
-        .min(1, "First name is required")
-        .max(100, "First name must not exceed 100 characters"),
-    lastName: zod_1.z
-        .string()
-        .min(1, "Last name is required")
-        .max(100, "Last name must not exceed 100 characters"),
+        .min(1, "Full name is required")
+        .max(100, "Full name must not exceed 100 characters"),
     email: zod_1.z.email().min(1, "Email is required").max(255, "Email must not exceed 255 characters"),
     password: exports.passwordSchema,
 });

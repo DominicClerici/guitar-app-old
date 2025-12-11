@@ -40,9 +40,12 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.db = void 0;
+const dotenv_1 = require("dotenv");
 const postgres_js_1 = require("drizzle-orm/postgres-js");
+const path_1 = require("path");
 const postgres_1 = __importDefault(require("postgres"));
 const schema = __importStar(require("./schema"));
+(0, dotenv_1.config)({ path: (0, path_1.resolve)(__dirname, "../../../.env") });
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
     throw new Error("DATABASE_URL environment variable is required");
@@ -53,6 +56,6 @@ const client = (0, postgres_1.default)(connectionString, {
     connect_timeout: 10,
 });
 exports.db = (0, postgres_js_1.drizzle)({ client, schema });
-__exportStar(require("./schema"), exports);
 __exportStar(require("drizzle-orm"), exports);
+__exportStar(require("./schema"), exports);
 //# sourceMappingURL=index.js.map

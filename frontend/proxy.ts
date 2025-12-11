@@ -39,6 +39,17 @@ export async function proxy(request: NextRequest) {
 
   const user = data?.claims
 
+  if (
+    user &&
+    (request.nextUrl.pathname.startsWith("/login") ||
+      request.nextUrl.pathname.startsWith("/register") ||
+      request.nextUrl.pathname.startsWith("/forgot-password"))
+  ) {
+    const url = request.nextUrl.clone()
+    url.pathname = "/"
+    return NextResponse.redirect(url)
+  }
+
   //   if (
   //     !user &&
   //     !request.nextUrl.pathname.startsWith("/login") &&

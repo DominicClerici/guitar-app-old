@@ -1,0 +1,16 @@
+.group\/arrow:hover .arrowPath {
+  stroke-dashoffset: 0;
+  transform: translateX(0);
+  opacity: 1;
+}
+
+.arrowPath {
+  stroke-dasharray: 5;
+  stroke-dashoffset: -5;
+  transform: translateX(-2px);
+  opacity: 0;
+  transition:
+    stroke-dashoffset 0.15s ease-out,
+    transform 0.15s ease-out,
+    opacity 0.15s ease-out;
+}

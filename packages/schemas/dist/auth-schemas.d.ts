@@ -5,8 +5,7 @@ export declare const loginSchema: z.ZodObject<{
 }, z.core.$strip>;
 export declare const passwordSchema: z.ZodString;
 export declare const signUpSchema: z.ZodObject<{
-    firstName: z.ZodString;
-    lastName: z.ZodString;
+    fullName: z.ZodString;
     email: z.ZodEmail;
     password: z.ZodString;
 }, z.core.$strip>;

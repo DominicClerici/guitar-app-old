@@ -23,14 +23,10 @@ export const passwordSchema = z
   })
 
 export const signUpSchema = z.object({
-  firstName: z
+  fullName: z
     .string()
-    .min(1, "First name is required")
-    .max(100, "First name must not exceed 100 characters"),
-  lastName: z
-    .string()
-    .min(1, "Last name is required")
-    .max(100, "Last name must not exceed 100 characters"),
+    .min(1, "Full name is required")
+    .max(100, "Full name must not exceed 100 characters"),
   email: z.email().min(1, "Email is required").max(255, "Email must not exceed 255 characters"),
   password: passwordSchema,
 })
