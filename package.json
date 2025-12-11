@@ -1,0 +1,34 @@
+{
+    "name": "guitar-app",
+    "private": true,
+    "packageManager": "pnpm@10.11.0",
+    "scripts": {
+      "dev": "concurrently --kill-others --names \"frontend\" \"pnpm --filter=frontend run dev\"",
+      "format": "prettier --write .",
+      "format:check": "prettier --check .",
+      "format-staged": "git diff --cached --name-only --diff-filter=ACMR | xargs prettier --write --ignore-unknown && git diff --cached --name-only --diff-filter=ACMR | xargs git add",
+      "type-check": "pnpm --filter=frontend run type-check"
+    },
+    "engines": {
+      "node": ">=20.0.0",
+      "pnpm": ">=10.11.0"
+    },
+    "workspaces": [
+      "frontend"
+    ],
+    "dependencies": {
+      "dotenv": "^16.5.0"
+    },
+    "devDependencies": {
+      "concurrently": "^9.2.0",
+      "husky": "^9.1.7",
+      "lint-staged": "^16.2.7",
+      "prettier": "^3.6.1",
+      "prettier-plugin-organize-imports": "^4.3.0",
+      "tsx": "^4.20.3"
+    },
+    "lint-staged": {
+      "*": "prettier --write --ignore-unknown"
+    }
+  }
+  

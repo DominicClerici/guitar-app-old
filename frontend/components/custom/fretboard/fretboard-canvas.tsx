@@ -1,0 +1,281 @@
+"use client"
+import React, { useCallback, useEffect, useRef, useState } from "react"
+import useFretboardContext, { FretPositions } from "./fretboard-context"
+import { applyTuningToNoteCharacter, getNoteFromFret } from "@/lib/midi-utils"
+
+export const NUM_STRINGS = 6
+export const NUM_FRETS = 18 // 0 (open) through 17
+const FRET_WIDTH = 70
+const STRING_SPACING = 35
+const NUT_WIDTH = 35
+const TOP_PADDING = 40
+const LEFT_PADDING = 30
+
+export default function FretboardCanvas() {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const canvasContainerRef = useRef<HTMLDivElement>(null)
+  const { fretPositions, setFretPositions, tuning } = useFretboardContext()
+  const [canvasDimensions, setCanvasDimensions] = useState<{
+    width: number
+    height: number
+  }>({ width: 0, height: 0 })
+
+  const getStringY = useCallback((stringIndex: number) => {
+    // String 0 is the high E (thinnest), string 5 is the low E (thickest)
+    // Draw from top to bottom: high E at top, low E at bottom
+    return TOP_PADDING + stringIndex * STRING_SPACING
+  }, [])
+
+  const getFretX = useCallback((fret: number) => {
+    if (fret === 0) {
+      // Open string position (before the nut)
+      return LEFT_PADDING + NUT_WIDTH / 2
+    }
+    // Fret positions after the nut
+    return LEFT_PADDING + NUT_WIDTH + (fret - 1) * FRET_WIDTH + FRET_WIDTH / 2
+  }, [])
+
+  const drawFretboard = useCallback(
+    (ctx: CanvasRenderingContext2D) => {
+      if (canvasDimensions.width === 0 || canvasDimensions.height === 0) {
+        // TODO: loading ui
+        return
+      }
+      // Clear canvas
+      ctx.fillStyle = "#f5f5dc" // Fretboard wood color
+      ctx.fillRect(0, 0, canvasDimensions.width, canvasDimensions.height)
+
+      // Draw the nut (thick bar at fret 0)
+      ctx.fillStyle = "#d4c4a8"
+      ctx.fillRect(
+        LEFT_PADDING,
+        TOP_PADDING - 10,
+        NUT_WIDTH,
+        (NUM_STRINGS - 1) * STRING_SPACING + 20
+      )
+      ctx.strokeStyle = "#333"
+      ctx.lineWidth = 2
+      ctx.strokeRect(
+        LEFT_PADDING,
+        TOP_PADDING - 10,
+        NUT_WIDTH,
+        (NUM_STRINGS - 1) * STRING_SPACING + 20
+      )
+
+      // Draw frets (vertical lines)
+      ctx.strokeStyle = "#888"
+      ctx.lineWidth = 3
+      for (let fret = 1; fret < NUM_FRETS; fret++) {
+        const x =
+          LEFT_PADDING + NUT_WIDTH + (fret - 1) * FRET_WIDTH + FRET_WIDTH
+        ctx.beginPath()
+        ctx.moveTo(x, TOP_PADDING - 5)
+        ctx.lineTo(x, TOP_PADDING + (NUM_STRINGS - 1) * STRING_SPACING + 5)
+        ctx.stroke()
+      }
+      console.log(TOP_PADDING + (NUM_STRINGS - 1) * STRING_SPACING + 5)
+
+      // Draw fret numbers
+      ctx.fillStyle = "#333"
+      ctx.font = "12px Arial"
+      ctx.textAlign = "center"
+      ctx.textBaseline = "alphabetic"
+      for (let fret = 0; fret < NUM_FRETS; fret++) {
+        const x = getFretX(fret)
+        ctx.fillText(fret.toString(), x, TOP_PADDING - 20)
+      }
+
+      // Draw fret markers (dots on frets 3, 5, 7, 9, 12, 15)
+      const markerFrets = [3, 5, 7, 9, 15]
+      ctx.fillStyle = "#ddd"
+      for (const fret of markerFrets) {
+        const x = getFretX(fret)
+        const y = TOP_PADDING + ((NUM_STRINGS - 1) * STRING_SPACING) / 2
+        ctx.beginPath()
+        ctx.arc(x, y, 8, 0, Math.PI * 2)
+        ctx.fill()
+      }
+      // Double dot on 12th fret
+      const fret12X = getFretX(12)
+      const y1 = TOP_PADDING + STRING_SPACING * 1.5
+      const y2 = TOP_PADDING + STRING_SPACING * 3.5
+      ctx.beginPath()
+      ctx.arc(fret12X, y1, 8, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.beginPath()
+      ctx.arc(fret12X, y2, 8, 0, Math.PI * 2)
+      ctx.fill()
+
+      // Draw strings (horizontal lines)
+      const stringThicknesses = [0.6, 0.78, 1.02, 1.56, 2.16, 3.76] // 10-46 diameter * 60
+      for (let string = 0; string < NUM_STRINGS; string++) {
+        const y = getStringY(string)
+        ctx.strokeStyle = "#666"
+        ctx.lineWidth = stringThicknesses[string]
+        ctx.beginPath()
+        ctx.moveTo(LEFT_PADDING, y)
+        ctx.lineTo(canvasDimensions.width - 20, y)
+        ctx.stroke()
+      }
+
+      // Draw string labels based on tuning
+      const stringBaseNotes = ["E", "B", "G", "D", "A", "E"] // High to
+      const tunedBaseNotes = stringBaseNotes.map((note, index) =>
+        applyTuningToNoteCharacter(note, tuning[index])
+      )
+      ctx.fillStyle = "#333"
+      ctx.font = "14px Arial"
+      ctx.textAlign = "right"
+      ctx.textBaseline = "alphabetic"
+      for (let string = 0; string < NUM_STRINGS; string++) {
+        const y = getStringY(string)
+        let tunedNote = applyTuningToNoteCharacter(
+          tunedBaseNotes[string],
+          tuning[string]
+        )
+        if (string === 0 && tunedNote == "E") {
+          tunedNote = "e"
+        }
+        ctx.fillText(tunedNote, LEFT_PADDING - 10, y + 5)
+      }
+
+      // Draw placed notes with note in circle
+      ctx.fillStyle = "#3b82f6" // Tailwind blue-500
+      for (let string = 0; string < NUM_STRINGS; string++) {
+        const fret = fretPositions[string]
+        const note = getNoteFromFret(fret, tunedBaseNotes[string])
+        if (fret >= 0) {
+          const x = getFretX(fret)
+          const y = getStringY(string)
+          ctx.beginPath()
+          ctx.arc(x, y, 10, 0, Math.PI * 2)
+          ctx.fill()
+          // Draw white border for visibility
+          ctx.strokeStyle = "#fff"
+          ctx.lineWidth = 1
+          ctx.stroke()
+          // Draw tunedNote centered in the dot
+          ctx.fillStyle = "white"
+          ctx.font = "bold 14px Arial"
+          ctx.textAlign = "center"
+          ctx.textBaseline = "middle"
+          ctx.fillText(note, x, y)
+          // Restore fillStyle for next circle
+          ctx.fillStyle = "#3b82f6"
+        }
+      }
+    },
+    [canvasDimensions.width, canvasDimensions.height, fretPositions, tuning]
+  )
+
+  // for resize, update dimensions and redraw the fretboard
+  useEffect(() => {
+    const updateDimensions = () => {
+      const canvas = canvasRef.current
+      const container = canvasContainerRef.current
+      if (!canvas || !container) {
+        console.error(
+          `Canvas or container not found: ${!!canvas && "canvas not found"} ${
+            !!container && "container not found"
+          }`
+        )
+        return
+      }
+      setCanvasDimensions({
+        width: container.clientWidth,
+        // height: container.clientHeight,
+        // TODO: make this responsive
+        height: 240,
+      })
+      const ctx = canvas.getContext("2d")
+      if (!ctx) {
+        console.error("Context not found")
+        return
+      }
+    }
+
+    updateDimensions()
+    window.addEventListener("resize", updateDimensions)
+
+    return () => {
+      window.removeEventListener("resize", updateDimensions)
+    }
+  }, [])
+
+  useEffect(() => {
+    const ctx = canvasRef.current?.getContext("2d")
+    if (!ctx) return
+    drawFretboard(ctx)
+  }, [drawFretboard])
+
+  const handleCanvasClick = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      const canvas = canvasRef.current
+      if (!canvas) return
+
+      const rect = canvas.getBoundingClientRect()
+      const scaleX = canvas.width / rect.width
+      const scaleY = canvas.height / rect.height
+      const x = (e.clientX - rect.left) * scaleX
+      const y = (e.clientY - rect.top) * scaleY
+
+      // Determine which string was clicked
+      let clickedString = -1
+      for (let string = 0; string < NUM_STRINGS; string++) {
+        const stringY = getStringY(string)
+        if (Math.abs(y - stringY) < STRING_SPACING / 2) {
+          clickedString = string
+          break
+        }
+      }
+
+      if (clickedString === -1) return
+
+      // Determine which fret was clicked
+      let clickedFret = -1
+
+      // Check open string area (fret 0)
+      if (x >= LEFT_PADDING && x < LEFT_PADDING + NUT_WIDTH) {
+        clickedFret = 0
+      } else {
+        // Check frets 1-15
+        for (let fret = 1; fret < NUM_FRETS; fret++) {
+          const fretStartX = LEFT_PADDING + NUT_WIDTH + (fret - 1) * FRET_WIDTH
+          const fretEndX = fretStartX + FRET_WIDTH
+          if (x >= fretStartX && x < fretEndX) {
+            clickedFret = fret
+            break
+          }
+        }
+      }
+
+      if (clickedFret === -1) return
+
+      setFretPositions((prev) => {
+        const newPositions = [...prev] as FretPositions
+        if (newPositions[clickedString] === clickedFret) {
+          newPositions[clickedString] = -1
+        } else {
+          newPositions[clickedString] = clickedFret
+        }
+        return newPositions
+      })
+    },
+    [getStringY]
+  )
+
+  return (
+    <div
+      ref={canvasContainerRef}
+      className="4xl:max-w-7xl 3xl:max-w-6xl 2xl:max-w-5xl xl:max-w-4xl lg:max-w-3xl md:max-w-2xl max-w-xl w-full mx-auto relative"
+    >
+      <canvas
+        ref={canvasRef}
+        width={canvasDimensions.width}
+        height={canvasDimensions.height}
+        onClick={handleCanvasClick}
+        className="cursor-pointer border border-gray-300 rounded-lg shadow-md"
+      />
+    </div>
+  )
+}
