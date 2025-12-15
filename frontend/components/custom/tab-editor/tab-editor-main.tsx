@@ -7,6 +7,7 @@ import FretControls from "../fretboard/fretboard-controls"
 import { useTabEffectsContext } from "./context/tab-effects-context"
 import TabEditorChords from "./controls/tab-editor-chords"
 import TabEditorTuning from "./controls/tab-editor-tuning"
+import TabLineEditor from "./music-lines/tab-line-editor"
 import { useTabContext } from "./tab-context-main"
 
 export default function TabEditorMain() {
@@ -18,6 +19,7 @@ export default function TabEditorMain() {
         <TabEditorTuningControls />
       </div>
       <TabEditorFilterControls />
+      <TabLineEditor />
     </div>
   )
 }

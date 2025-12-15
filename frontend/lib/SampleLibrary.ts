@@ -1,5 +1,4 @@
 import { Sampler } from "tone"
-
 // format test
 type NoteSamples = Record<string, string>
 

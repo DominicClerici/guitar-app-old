@@ -2,6 +2,7 @@
 import { midiToFrequency } from "@/lib/midi-utils"
 import { isStereoSamplers } from "@/lib/SampleLibrary"
 import { createContext, useContext } from "react"
+import { toast } from "sonner"
 import * as Tone from "tone"
 import { useTabEffectsContext } from "./tab-effects-context"
 import { FretPositions, useTabFretContext } from "./tab-fret-context"
@@ -31,15 +32,17 @@ export function TabPlayerContextProvider({
   const { tuning } = useTabTuningContext()
   const { fretPositions } = useTabFretContext()
   const { effects } = useTabEffectsContext()
-  const { instrumentRef } = useTabInstrumentContext()
+  const { instrumentRef, isInstrumentLoaded } = useTabInstrumentContext()
 
   const strumNotes = (
     strum: "up" | "down" = "down",
     positions: FretPositions = fretPositions,
     time?: number,
   ) => {
-    if (!instrumentRef.current) {
-      console.error("Instrument not loaded")
+    if (!instrumentRef.current || !isInstrumentLoaded) {
+      toast.error(
+        `${!instrumentRef.current ? "Instrument ref null" : "Instrument ref not null, "} ${!isInstrumentLoaded ? "Instrument not loaded" : "Instrument loaded"}`,
+      )
       return
     }
 

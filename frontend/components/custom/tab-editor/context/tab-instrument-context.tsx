@@ -15,15 +15,18 @@ const TabInstrumentContext = createContext<{
   setInstrument: React.Dispatch<React.SetStateAction<InstrumentName>>
   changeInstrument: (instrument: InstrumentName) => Promise<void>
   instrumentRef: React.RefObject<InstrumentRef>
+  isInstrumentLoaded: boolean
 } | null>(null)
 
 export function TabInstrumentContextProvider({ children }: { children: React.ReactNode }) {
-  const { buildEffectsChain, resetEffects, effects } = useTabEffectsContext()
+  const { buildEffectsChain, effects } = useTabEffectsContext()
   const instrumentRef = useRef<InstrumentRef>(null)
   const mergeRef = useRef<Tone.Merge | null>(null)
   const [instrument, setInstrument] = useState<InstrumentName>("guitar-acoustic")
+  const [isInstrumentLoaded, setIsInstrumentLoaded] = useState(false)
 
   const changeInstrument = async (newInstrument: InstrumentName) => {
+    setIsInstrumentLoaded(false)
     setInstrument(newInstrument)
     const { dryGain, preDelay } = await buildEffectsChain(effects, undefined)
     const loadResult = await SampleLibrary.load({
@@ -59,7 +62,7 @@ export function TabInstrumentContextProvider({ children }: { children: React.Rea
       loadResult.connect(preDelay)
     }
 
-    await Tone.start()
+    setIsInstrumentLoaded(true)
   }
 
   useEffect(() => {
@@ -68,7 +71,7 @@ export function TabInstrumentContextProvider({ children }: { children: React.Rea
 
   return (
     <TabInstrumentContext.Provider
-      value={{ instrument, setInstrument, changeInstrument, instrumentRef }}
+      value={{ instrument, setInstrument, changeInstrument, instrumentRef, isInstrumentLoaded }}
     >
       {children}
     </TabInstrumentContext.Provider>
