@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "cd ../ && pnpm run build:packages && cd frontend && next build",
+    "build": "next build",
     "start": "next start",
     "type-check": "tsc --noEmit",
     "lint": "eslint"
