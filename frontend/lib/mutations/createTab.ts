@@ -13,7 +13,7 @@ export default async function createTab() {
       const [newDataTab] = await tx
         .insert(tabDataTable)
         .values({
-          data: { value: "" },
+          data: { value: "", effects: "" },
           settings: { value: "" },
         })
         .returning({ id: tabDataTable.id })

@@ -1,6 +1,8 @@
 "use client"
 
+import { Card } from "@/components/ui/card"
 import AssembleChordLine from "./chord-line/assemble-chord-line"
+import FilterControls from "./filter-controls"
 import FretboardCanvas from "./fretboard-canvas"
 import FretboardChords from "./fretboard-chords"
 import useFretboardContext from "./fretboard-context"
@@ -9,8 +11,15 @@ import FretboardInstrument from "./fretboard-instrument"
 import FretboardTuning from "./fretboard-tuning"
 
 export default function FretboardMain() {
-  const { fretPositions, setFretPositions, tuning, strumNotes, addChordToLine } =
-    useFretboardContext()
+  const {
+    fretPositions,
+    setFretPositions,
+    tuning,
+    strumNotes,
+    addChordToLine,
+    effects,
+    setEffects,
+  } = useFretboardContext()
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col items-center gap-4 pt-24">
       <FretboardCanvas
@@ -29,6 +38,9 @@ export default function FretboardMain() {
         <FretboardTuning />
         <FretboardInstrument />
       </div>
+      <Card className="w-full">
+        <FilterControls effects={effects} setEffects={setEffects} />
+      </Card>
       <AssembleChordLine />
     </div>
   )

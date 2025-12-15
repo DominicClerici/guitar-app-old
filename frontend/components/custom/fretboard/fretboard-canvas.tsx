@@ -1,6 +1,6 @@
 "use client"
 import { applyTuningToNoteCharacter, getNoteFromFret } from "@/lib/midi-utils"
-import React, { useCallback, useEffect, useRef, useState } from "react"
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { STANDARD_TUNING_NOTES } from "../tab-editor/context/tab-player-context"
 import { Tuning } from "../tab-editor/context/tab-tuning-context"
 import { FretPositions } from "./fretboard-context"
@@ -24,7 +24,8 @@ export default function FretboardCanvas({
   setFretPositions,
   tuning,
 }: FretboardCanvasProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const backgroundCanvasRef = useRef<HTMLCanvasElement>(null)
+  const notesCanvasRef = useRef<HTMLCanvasElement>(null)
   const canvasContainerRef = useRef<HTMLDivElement>(null)
   const [canvasDimensions, setCanvasDimensions] = useState<{
     width: number
@@ -46,12 +47,25 @@ export default function FretboardCanvas({
     return LEFT_PADDING + NUT_WIDTH + (fret - 1) * FRET_WIDTH + FRET_WIDTH / 2
   }, [])
 
-  const drawFretboard = useCallback(
+  // Memoize tuned notes to avoid recalculating on every render
+  const tunedNotes = useMemo(() => {
+    const notes = STANDARD_TUNING_NOTES.map((note, index) =>
+      applyTuningToNoteCharacter(note, tuning[index]),
+    )
+    // Use lowercase 'e' for high E string
+    if (notes[0] === "E") {
+      notes[0] = "e"
+    }
+    return notes
+  }, [tuning])
+
+  // Draw static background elements (fretboard, frets, strings, markers)
+  const drawBackground = useCallback(
     (ctx: CanvasRenderingContext2D) => {
       if (canvasDimensions.width === 0 || canvasDimensions.height === 0) {
-        // TODO: loading ui
         return
       }
+
       // Clear canvas
       ctx.fillStyle = "#f5f5dc" // Fretboard wood color
       ctx.fillRect(0, 0, canvasDimensions.width, canvasDimensions.height)
@@ -128,21 +142,28 @@ export default function FretboardCanvas({
       }
 
       // Draw string labels based on tuning
-      const tunedNotes = STANDARD_TUNING_NOTES.map((note, index) =>
-        applyTuningToNoteCharacter(note, tuning[index]),
-      )
-
       ctx.fillStyle = "#333"
       ctx.font = "14px Arial"
       ctx.textAlign = "right"
       ctx.textBaseline = "alphabetic"
       for (let string = 0; string < NUM_STRINGS; string++) {
         const y = getStringY(string)
-        if (string === 0 && tunedNotes[string] == "E") {
-          tunedNotes[string] = "e"
-        }
         ctx.fillText(tunedNotes[string], LEFT_PADDING - 10, y + 5)
       }
+    },
+    [canvasDimensions.width, canvasDimensions.height, getFretX, getStringY, tunedNotes],
+  )
+
+  // Draw dynamic elements (placed notes)
+  const drawNotes = useCallback(
+    (ctx: CanvasRenderingContext2D) => {
+      const startTime = performance.now()
+      if (canvasDimensions.width === 0 || canvasDimensions.height === 0) {
+        return
+      }
+
+      // Clear the notes canvas (transparent background)
+      ctx.clearRect(0, 0, canvasDimensions.width, canvasDimensions.height)
 
       // Draw placed notes with note in circle
       ctx.fillStyle = "#3b82f6" // Tailwind blue-500
@@ -159,7 +180,7 @@ export default function FretboardCanvas({
           ctx.strokeStyle = "#fff"
           ctx.lineWidth = 1
           ctx.stroke()
-          // Draw tunedNote centered in the dot
+          // Draw note centered in the dot
           ctx.fillStyle = "white"
           ctx.font = "bold 14px Arial"
           ctx.textAlign = "center"
@@ -169,34 +190,32 @@ export default function FretboardCanvas({
           ctx.fillStyle = "#3b82f6"
         }
       }
+      const endTime = performance.now()
+      console.log(`Fretboard canvas draw notes time: ${endTime - startTime}ms`)
     },
-    [canvasDimensions.width, canvasDimensions.height, fretPositions, tuning],
+    [
+      canvasDimensions.width,
+      canvasDimensions.height,
+      fretPositions,
+      getFretX,
+      getStringY,
+      tunedNotes,
+    ],
   )
 
-  // for resize, update dimensions and redraw the fretboard
+  // Handle resize - update dimensions
   useEffect(() => {
     const updateDimensions = () => {
-      const canvas = canvasRef.current
       const container = canvasContainerRef.current
-      if (!canvas || !container) {
-        console.error(
-          `Canvas or container not found: ${!!canvas && "canvas not found"} ${
-            !!container && "container not found"
-          }`,
-        )
+      if (!container) {
+        console.error("Container not found")
         return
       }
       setCanvasDimensions({
         width: container.clientWidth,
-        // height: container.clientHeight,
         // TODO: make this responsive
         height: 240,
       })
-      const ctx = canvas.getContext("2d")
-      if (!ctx) {
-        console.error("Context not found")
-        return
-      }
     }
 
     updateDimensions()
@@ -207,15 +226,23 @@ export default function FretboardCanvas({
     }
   }, [])
 
+  // Draw background layer (only when dimensions or tuning change)
   useEffect(() => {
-    const ctx = canvasRef.current?.getContext("2d")
+    const ctx = backgroundCanvasRef.current?.getContext("2d")
     if (!ctx) return
-    drawFretboard(ctx)
-  }, [drawFretboard])
+    drawBackground(ctx)
+  }, [drawBackground])
+
+  // Draw notes layer (when fret positions change)
+  useEffect(() => {
+    const ctx = notesCanvasRef.current?.getContext("2d")
+    if (!ctx) return
+    drawNotes(ctx)
+  }, [drawNotes])
 
   const handleCanvasClick = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
-      const canvas = canvasRef.current
+      const canvas = notesCanvasRef.current
       if (!canvas) return
 
       const rect = canvas.getBoundingClientRect()
@@ -274,12 +301,20 @@ export default function FretboardCanvas({
       ref={canvasContainerRef}
       className="4xl:max-w-7xl 3xl:max-w-6xl relative mx-auto w-full max-w-xl md:max-w-2xl lg:max-w-3xl xl:max-w-4xl 2xl:max-w-5xl"
     >
+      {/* Background layer - static fretboard elements */}
       <canvas
-        ref={canvasRef}
+        ref={backgroundCanvasRef}
+        width={canvasDimensions.width}
+        height={canvasDimensions.height}
+        className="rounded-lg border border-gray-300 shadow-md"
+      />
+      {/* Notes layer - dynamic elements, receives click events */}
+      <canvas
+        ref={notesCanvasRef}
         width={canvasDimensions.width}
         height={canvasDimensions.height}
         onClick={handleCanvasClick}
-        className="cursor-pointer rounded-lg border border-gray-300 shadow-md"
+        className="absolute top-0 left-0 cursor-pointer"
       />
     </div>
   )
