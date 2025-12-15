@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "concurrently --kill-others --names \"frontend,db,schemas,chord-detection\" \"pnpm --filter=frontend run dev\" \"pnpm --filter=@guitar/db run dev\" \"pnpm --filter=@guitar/schemas run dev\" \"pnpm --filter=@guitar/chord-detection run dev\"",
     "build": "pnpm run build:packages && pnpm --filter=frontend run build",
+    "build:vercel": "cd frontend && pnpm run build",
     "build:packages": "pnpm --filter=@guitar/db run build && pnpm --filter=@guitar/schemas run build && pnpm --filter=@guitar/chord-detection run build",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
