@@ -13,11 +13,32 @@ export type ChordLineItem = {
   positions: FretPositions
 }
 
+// Available impulse response presets
+export type ImpulseResponsePreset =
+  | "small-room"
+  | "medium-hall"
+  | "large-hall"
+  | "studio"
+  | "church"
+  | "plate"
+
+export const IR_PRESETS: { id: ImpulseResponsePreset; name: string; url: string }[] = [
+  { id: "small-room", name: "Small Room", url: "/impulses/small-room.wav" },
+  { id: "medium-hall", name: "Medium Hall", url: "/impulses/medium-hall.wav" },
+  { id: "large-hall", name: "Large Hall", url: "/impulses/large-hall.wav" },
+  { id: "studio", name: "Studio", url: "/impulses/studio.wav" },
+  { id: "church", name: "Church", url: "/impulses/church.wav" },
+  { id: "plate", name: "Plate Reverb", url: "/impulses/plate.wav" },
+]
+
 export type EffectsSettings = {
   reverb: {
     enabled: boolean
-    roomSize: number // Room size (0 to 1, where 1 is longest reverb)
+    preset: ImpulseResponsePreset // Which impulse response to use
     wet: number // Mix level (0 to 1)
+    preDelay: number // Pre-delay in seconds (0 to 0.1)
+    decay: number // Decay multiplier (0.1 to 2) - affects how the IR is scaled
+    highCut: number // High frequency cutoff for reverb (1000 to 20000 Hz)
   }
   sampler: {
     volume: number // Sampler volume in dB (-24 to 0)
@@ -61,8 +82,11 @@ const DEFAULT_TUNING: Tuning = [0, 0, 0, 0, 0, 0] // EADGBE
 const DEFAULT_EFFECTS: EffectsSettings = {
   reverb: {
     enabled: true,
-    roomSize: 0.6,
+    preset: "medium-hall",
     wet: 0.3,
+    preDelay: 0.02,
+    decay: 1.0,
+    highCut: 8000,
   },
   sampler: {
     volume: -6,
@@ -155,7 +179,11 @@ const FretboardContext = React.createContext<{
 export function FretboardContextProvider({ children }: { children: React.ReactNode }) {
   const [fretPositions, setFretPositions] = useState<FretPositions>([0, 0, 0, 0, 0, 0])
   const instrumentRef = useRef<Tone.Sampler | null>(null)
-  const reverbRef = useRef<Tone.Freeverb | null>(null)
+  const convolverRef = useRef<Tone.Convolver | null>(null)
+  const reverbGainRef = useRef<Tone.Gain | null>(null) // Wet gain for convolver
+  const dryGainRef = useRef<Tone.Gain | null>(null) // Dry signal path
+  const preDelayRef = useRef<Tone.Delay | null>(null) // Pre-delay before reverb
+  const reverbHighCutRef = useRef<Tone.Filter | null>(null) // High cut filter on reverb
   const limiterRef = useRef<Tone.Limiter | null>(null)
   const compressorRef = useRef<Tone.Compressor | null>(null)
   const masterGainRef = useRef<Tone.Gain | null>(null)
@@ -208,9 +236,25 @@ export function FretboardContextProvider({ children }: { children: React.ReactNo
       instrumentRef.current.disconnect()
       instrumentRef.current.dispose()
     }
-    if (reverbRef.current) {
-      reverbRef.current.disconnect()
-      reverbRef.current.dispose()
+    if (convolverRef.current) {
+      convolverRef.current.disconnect()
+      convolverRef.current.dispose()
+    }
+    if (reverbGainRef.current) {
+      reverbGainRef.current.disconnect()
+      reverbGainRef.current.dispose()
+    }
+    if (dryGainRef.current) {
+      dryGainRef.current.disconnect()
+      dryGainRef.current.dispose()
+    }
+    if (preDelayRef.current) {
+      preDelayRef.current.disconnect()
+      preDelayRef.current.dispose()
+    }
+    if (reverbHighCutRef.current) {
+      reverbHighCutRef.current.disconnect()
+      reverbHighCutRef.current.dispose()
     }
     if (compressorRef.current) {
       compressorRef.current.disconnect()
@@ -225,7 +269,9 @@ export function FretboardContextProvider({ children }: { children: React.ReactNo
       masterGainRef.current.dispose()
     }
 
-    // Build signal chain: Sampler -> Reverb -> Compressor -> Limiter -> Master Gain -> Destination
+    // Build signal chain:
+    // Sampler -> [Dry path] ---------> Mix point -> Compressor -> Limiter -> Master Gain -> Destination
+    //         -> [Wet path: PreDelay -> Convolver -> HighCut -> ReverbGain] -^
 
     // Create master gain (final volume control before destination)
     const masterGain = new Tone.Gain(effects.master.gain)
@@ -250,25 +296,49 @@ export function FretboardContextProvider({ children }: { children: React.ReactNo
     }
     compressorRef.current = compressor
 
-    // Create reverb effect (Freeverb is algorithmic, no async generation needed)
-    const reverb = new Tone.Freeverb({
-      roomSize: effects.reverb.roomSize,
-      wet: effects.reverb.enabled ? effects.reverb.wet : 0,
-    })
-    // Connect reverb to compressor if compressor is enabled, otherwise to limiter
-    if (effects.compressor.enabled) {
-      reverb.connect(compressor)
-    } else {
-      reverb.connect(limiter)
-    }
-    reverbRef.current = reverb
+    // The mix point is where dry and wet signals combine
+    const mixPoint = effects.compressor.enabled ? compressor : limiter
 
-    // Load instrument and connect to reverb
+    // Create dry signal path
+    const dryGain = new Tone.Gain(effects.reverb.enabled ? 1 - effects.reverb.wet : 1)
+    dryGain.connect(mixPoint)
+    dryGainRef.current = dryGain
+
+    // Create wet signal path with convolver reverb
+    // 1. Pre-delay (adds clarity by separating direct sound from reverb)
+    const preDelay = new Tone.Delay(effects.reverb.preDelay)
+    preDelayRef.current = preDelay
+
+    // 2. Convolver (impulse response reverb for realistic room sound)
+    const irPreset = IR_PRESETS.find((p) => p.id === effects.reverb.preset) || IR_PRESETS[0]
+    const convolver = new Tone.Convolver(irPreset.url)
+    convolverRef.current = convolver
+
+    // 3. High cut filter (removes harsh high frequencies from reverb tail)
+    const highCut = new Tone.Filter({
+      frequency: effects.reverb.highCut,
+      type: "lowpass",
+      rolloff: -12,
+    })
+    reverbHighCutRef.current = highCut
+
+    // 4. Reverb wet gain (controls mix level)
+    const reverbGain = new Tone.Gain(effects.reverb.enabled ? effects.reverb.wet : 0)
+    reverbGain.connect(mixPoint)
+    reverbGainRef.current = reverbGain
+
+    // Connect wet signal chain: preDelay -> convolver -> highCut -> reverbGain
+    preDelay.connect(convolver)
+    convolver.connect(highCut)
+    highCut.connect(reverbGain)
+
+    // Load instrument and connect to both dry and wet paths
     const sampler = await SampleLibrary.load({
       instruments: newInstrument,
       volume: effects.sampler.volume,
     })
-    sampler.connect(reverb)
+    sampler.connect(dryGain)
+    sampler.connect(preDelay)
     instrumentRef.current = sampler
 
     await Tone.start()
@@ -470,19 +540,35 @@ export function FretboardContextProvider({ children }: { children: React.ReactNo
     changeInstrument("guitar-acoustic")
   }, [])
 
-  // Update reverb settings when effects change
+  // Update reverb wet/dry mix when effects change
   useEffect(() => {
-    if (reverbRef.current) {
-      reverbRef.current.wet.value = effects.reverb.enabled ? effects.reverb.wet : 0
+    if (reverbGainRef.current && dryGainRef.current) {
+      reverbGainRef.current.gain.value = effects.reverb.enabled ? effects.reverb.wet : 0
+      dryGainRef.current.gain.value = effects.reverb.enabled ? 1 - effects.reverb.wet : 1
     }
   }, [effects.reverb.enabled, effects.reverb.wet])
 
-  // Update reverb room size (instant, no regeneration needed)
+  // Update reverb pre-delay
   useEffect(() => {
-    if (reverbRef.current) {
-      reverbRef.current.roomSize.value = effects.reverb.roomSize
+    if (preDelayRef.current) {
+      preDelayRef.current.delayTime.value = effects.reverb.preDelay
     }
-  }, [effects.reverb.roomSize])
+  }, [effects.reverb.preDelay])
+
+  // Update reverb high cut filter
+  useEffect(() => {
+    if (reverbHighCutRef.current) {
+      reverbHighCutRef.current.frequency.value = effects.reverb.highCut
+    }
+  }, [effects.reverb.highCut])
+
+  // Update convolver preset (requires loading new impulse response)
+  useEffect(() => {
+    if (convolverRef.current) {
+      const irPreset = IR_PRESETS.find((p) => p.id === effects.reverb.preset) || IR_PRESETS[0]
+      convolverRef.current.load(irPreset.url)
+    }
+  }, [effects.reverb.preset])
 
   // Update sampler volume
   useEffect(() => {

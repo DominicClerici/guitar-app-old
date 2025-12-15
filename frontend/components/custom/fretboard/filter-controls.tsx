@@ -1,6 +1,13 @@
 import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
-import useFretboardContext from "./fretboard-context"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import useFretboardContext, { IR_PRESETS, ImpulseResponsePreset } from "./fretboard-context"
 
 export default function FilterControls() {
   const { effects, setEffects } = useFretboardContext()
@@ -72,9 +79,9 @@ export default function FilterControls() {
         </label>
       </div>
 
-      {/* Reverb Section */}
+      {/* Reverb Section (Convolver) */}
       <div className="flex flex-col gap-2">
-        <h4 className="text-sm font-medium">Reverb</h4>
+        <h4 className="text-sm font-medium">Reverb (Convolution)</h4>
         <label className="flex items-center justify-between text-sm">
           Enable Reverb
           <Switch
@@ -89,29 +96,36 @@ export default function FilterControls() {
         </label>
         <label className="flex items-center justify-between text-sm">
           <span className="flex flex-col">
-            <span>Room Size</span>
-            <span className="text-muted-foreground text-xs">
-              {effects.reverb.roomSize.toFixed(2)}
-            </span>
+            <span>Impulse Response</span>
+            <span className="text-muted-foreground text-xs">Room type</span>
           </span>
-          <Slider
-            value={[effects.reverb.roomSize]}
-            step={0.01}
-            min={0}
-            max={0.95}
-            className="w-40"
-            onValueChange={(value) =>
+          <Select
+            value={effects.reverb.preset}
+            onValueChange={(value: ImpulseResponsePreset) =>
               setEffects({
                 ...effects,
-                reverb: { ...effects.reverb, roomSize: value[0] },
+                reverb: { ...effects.reverb, preset: value },
               })
             }
-          />
+          >
+            <SelectTrigger className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {IR_PRESETS.map((preset) => (
+                <SelectItem key={preset.id} value={preset.id}>
+                  {preset.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </label>
         <label className="flex items-center justify-between text-sm">
           <span className="flex flex-col">
-            <span>Wetness</span>
-            <span className="text-muted-foreground text-xs">{effects.reverb.wet.toFixed(2)}</span>
+            <span>Mix (Wet/Dry)</span>
+            <span className="text-muted-foreground text-xs">
+              {Math.round(effects.reverb.wet * 100)}% wet
+            </span>
           </span>
           <Slider
             value={[effects.reverb.wet]}
@@ -123,6 +137,50 @@ export default function FilterControls() {
               setEffects({
                 ...effects,
                 reverb: { ...effects.reverb, wet: value[0] },
+              })
+            }
+          />
+        </label>
+        <label className="flex items-center justify-between text-sm">
+          <span className="flex flex-col">
+            <span>Pre-Delay</span>
+            <span className="text-muted-foreground text-xs">
+              {(effects.reverb.preDelay * 1000).toFixed(0)} ms
+            </span>
+          </span>
+          <Slider
+            value={[effects.reverb.preDelay]}
+            step={0.001}
+            min={0}
+            max={0.1}
+            className="w-40"
+            onValueChange={(value) =>
+              setEffects({
+                ...effects,
+                reverb: { ...effects.reverb, preDelay: value[0] },
+              })
+            }
+          />
+        </label>
+        <label className="flex items-center justify-between text-sm">
+          <span className="flex flex-col">
+            <span>High Cut</span>
+            <span className="text-muted-foreground text-xs">
+              {effects.reverb.highCut >= 1000
+                ? `${(effects.reverb.highCut / 1000).toFixed(1)} kHz`
+                : `${effects.reverb.highCut} Hz`}
+            </span>
+          </span>
+          <Slider
+            value={[effects.reverb.highCut]}
+            step={100}
+            min={1000}
+            max={20000}
+            className="w-40"
+            onValueChange={(value) =>
+              setEffects({
+                ...effects,
+                reverb: { ...effects.reverb, highCut: value[0] },
               })
             }
           />
