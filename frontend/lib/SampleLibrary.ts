@@ -3,8 +3,11 @@ import { Sampler } from "tone"
 // format test
 type NoteSamples = Record<string, string>
 
-export type InstrumentName = "guitar-acoustic" | "guitar-electric" | "guitar-nylon"
-
+export type InstrumentName =
+  | "guitar-acoustic"
+  | "guitar-electric"
+  | "guitar-nylon"
+  | "guitar-acoustic-sf2"
 interface LoadOptions {
   instruments?: InstrumentName
   baseUrl?: string
@@ -22,12 +25,13 @@ interface SampleLibraryType {
   "guitar-acoustic": NoteSamples
   "guitar-electric": NoteSamples
   "guitar-nylon": NoteSamples
+  "guitar-acoustic-sf2": NoteSamples
 }
 
 export const SampleLibrary: SampleLibraryType = {
   minify: false,
   baseUrl: "/samples/",
-  list: ["guitar-acoustic", "guitar-electric", "guitar-nylon"],
+  list: ["guitar-acoustic", "guitar-electric", "guitar-nylon", "guitar-acoustic-sf2"],
   onload: null,
 
   async load(arg?: LoadOptions) {
@@ -103,7 +107,26 @@ export const SampleLibrary: SampleLibraryType = {
     F2: "F2.ogg",
     F3: "F3.ogg",
   },
-
+  "guitar-acoustic-sf2": {
+    E1: "E1R.wav",
+    "F#1": "Gb1R.wav",
+    "G#1": "Ab1R.wav",
+    "A#1": "Bb1R.wav",
+    C2: "C2R.wav",
+    D2: "D2R.wav",
+    E2: "E2R.wav",
+    "F#2": "Gb2R.wav",
+    "G#2": "Ab2R.wav",
+    "A#2": "Bb2R.wav",
+    C3: "C3R.wav",
+    D3: "D3R.wav",
+    E3: "E3R.wav",
+    "F#3": "Gb3R.wav",
+    "G#3": "Ab3R.wav",
+    "A#3": "Bb3R.wav",
+    C4: "C4R.wav",
+    E4: "E4R.wav",
+  },
   "guitar-electric": {
     "D#3": "Ds3.ogg",
     "D#4": "Ds4.ogg",

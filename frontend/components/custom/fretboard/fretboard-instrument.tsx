@@ -25,6 +25,7 @@ export default function FretboardInstrument() {
           <SelectItem value="guitar-acoustic">Acoustic Guitar</SelectItem>
           <SelectItem value="guitar-electric">Electric Guitar</SelectItem>
           <SelectItem value="guitar-nylon">Nylon Guitar</SelectItem>
+          <SelectItem value="guitar-acoustic-sf2">Acoustic Guitar (SF2)</SelectItem>
         </SelectContent>
       </Select>
     </Card>
