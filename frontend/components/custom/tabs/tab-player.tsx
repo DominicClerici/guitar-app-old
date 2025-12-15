@@ -7,7 +7,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { PauseIcon, PlayIcon } from "lucide-react"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import * as Tone from "tone"
 import useFretboardContext, { PlayerCallbacks } from "../fretboard/fretboard-context"
 
@@ -44,6 +44,13 @@ export type Tab = {
 
 // String labels for display (from high E to low E)
 const STRING_LABELS = ["e", "B", "G", "D", "A", "E"]
+
+// Minimum cell width in pixels (w-3 = 12px)
+const MIN_CELL_WIDTH = 12
+// String label width in pixels (w-5 = 20px)
+const STRING_LABEL_WIDTH = 20
+// Gap between bars in a row (gap-4 = 16px)
+const BAR_GAP = 16
 
 function generateBarId(): string {
   return `bar-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`
@@ -82,9 +89,61 @@ export default function TabPlayer() {
   const [interval, setInterval] = useState<NoteInterval>("32nd")
   const isPlaying = playbackState === "playing"
 
+  // Container ref for responsive sizing
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [containerWidth, setContainerWidth] = useState(0)
+
+  // Measure container width on mount and resize
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setContainerWidth(entry.contentRect.width)
+      }
+    })
+
+    resizeObserver.observe(container)
+    // Initial measurement
+    setContainerWidth(container.clientWidth)
+
+    return () => resizeObserver.disconnect()
+  }, [])
+
   // Get positions per bar based on current interval
   const positionsPerBar = INTERVAL_CONFIG[interval].positionsPerBar
   const intervalDivisor = INTERVAL_CONFIG[interval].divisor
+
+  // Calculate how many bars fit per row (1, 2, or 4 only)
+  const barsPerRow = useMemo(() => {
+    if (containerWidth === 0) return 1
+
+    // Calculate minimum width needed for one bar
+    // Each bar needs: string label width + (positionsPerBar * min cell width) + end bar line (2px)
+    const minBarWidth = STRING_LABEL_WIDTH + positionsPerBar * MIN_CELL_WIDTH + 2
+
+    // Calculate how many bars could fit with gaps
+    // Available width for N bars: containerWidth >= N * minBarWidth + (N-1) * BAR_GAP
+    const canFit = (n: number) => containerWidth >= n * minBarWidth + (n - 1) * BAR_GAP
+
+    // Check in order: 4, 2, 1 (only valid options)
+    if (canFit(4)) return 4
+    if (canFit(2)) return 2
+    return 1
+  }, [containerWidth, positionsPerBar])
+
+  // Group bars into rows
+  const barRows = useMemo(() => {
+    const rows: TabBar[][] = []
+    for (let i = 0; i < bars.length; i += barsPerRow) {
+      rows.push(bars.slice(i, i + barsPerRow))
+    }
+    return rows
+  }, [bars, barsPerRow])
+
+  // Calculate the original bar index from row and position in row
+  const getBarIndex = (rowIndex: number, posInRow: number) => rowIndex * barsPerRow + posInRow
 
   // Handle interval change - clear all notes
   const handleIntervalChange = (newInterval: NoteInterval) => {
@@ -293,7 +352,7 @@ export default function TabPlayer() {
         playbackTimeoutRef.current = null
       }, totalDuration + 500) // Add a small buffer for note release
     },
-    [bars, getIntervalDuration, playNote, positionsPerBar, cleanupTabPlayback, contextStopPlayback]
+    [bars, getIntervalDuration, playNote, positionsPerBar, cleanupTabPlayback, contextStopPlayback],
   )
 
   // Register player callbacks with the centralized playback system
@@ -428,108 +487,124 @@ export default function TabPlayer() {
         </div>
       </div>
 
-      <div className="space-y-8">
-        {bars.map((bar, barIndex) => (
-          <div key={bar.id} className="border-border bg-card rounded-lg border p-4">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-muted-foreground text-sm font-medium">Bar {barIndex + 1}</span>
-              {bars.length > 1 && (
-                <button
-                  onClick={() => removeBar(barIndex)}
-                  className="text-destructive hover:text-destructive/80 text-sm"
+      {/* Responsive container for bars */}
+      <div ref={containerRef} className="space-y-6 rounded-lg border p-4">
+        {barRows.map((row, rowIndex) => (
+          <div key={rowIndex} className="grid gap-4" style={{ gridTemplateColumns: `repeat(${barsPerRow}, 1fr)` }}>
+            {row.map((bar, posInRow) => {
+              const barIndex = getBarIndex(rowIndex, posInRow)
+              return (
+                <div
+                  key={bar.id}
+                  className="min-w-0" // Allow grid item to shrink below content size
                 >
-                  Remove
-                </button>
-              )}
-            </div>
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-muted-foreground text-sm font-medium">
+                      Bar {barIndex + 1}
+                    </span>
+                    {bars.length > 1 && (
+                      <button
+                        onClick={() => removeBar(barIndex)}
+                        className="text-destructive hover:text-destructive/80 text-sm"
+                        disabled={isPlaying}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
 
-            {/* Tab Grid */}
-            <div className="overflow-x-auto">
-              <div className="inline-block min-w-full">
-                {/* String rows */}
-                {Array.from({ length: 6 }).map((_, stringIndex) => (
-                  <div key={stringIndex} className="flex items-center">
-                    {/* String label */}
-                    <div className="text-muted-foreground w-5 shrink-0 pr-2 text-right font-mono text-sm">
-                      {STRING_LABELS[stringIndex]}
-                    </div>
+                  {/* Tab Grid */}
+                  <div className="w-full">
+                    {/* String rows */}
+                    {Array.from({ length: 6 }).map((_, stringIndex) => (
+                      <div key={stringIndex} className="flex items-center">
+                        {/* String label */}
+                        <div className="text-muted-foreground w-5 shrink-0 pr-2 text-right font-mono text-sm">
+                          {STRING_LABELS[stringIndex]}
+                        </div>
 
-                    {/* String line with cells */}
-                    <div className="relative flex">
-                      {/* Horizontal line representing the string */}
-                      <div className="bg-border absolute top-1/2 right-0 left-0 h-px" />
+                        {/* String line with cells */}
+                        <div className="relative flex flex-1">
+                          {/* Horizontal line representing the string */}
+                          <div className="bg-border absolute top-1/2 right-0 left-0 h-px" />
 
-                      {/* Position cells */}
-                      {Array.from({ length: positionsPerBar }).map((_, posIndex) => {
-                        const note = getNoteAtPosition(barIndex, stringIndex, posIndex)
-                        const isSelected =
-                          selectedCell?.barIndex === barIndex &&
-                          selectedCell?.string === stringIndex &&
-                          selectedCell?.position === posIndex
-                        // Beat markers: every 4 positions for 16th, 8 for 32nd, 16 for 64th
-                        const isBeatMarker = posIndex % intervalDivisor === 0
-                        const isPlaybackPosition =
-                          currentPosition?.bar === barIndex &&
-                          currentPosition?.position === posIndex
+                          {/* Position cells */}
+                          {Array.from({ length: positionsPerBar }).map((_, posIndex) => {
+                            const note = getNoteAtPosition(barIndex, stringIndex, posIndex)
+                            const isSelected =
+                              selectedCell?.barIndex === barIndex &&
+                              selectedCell?.string === stringIndex &&
+                              selectedCell?.position === posIndex
+                            // Beat markers: every 4 positions for 16th, 8 for 32nd, 16 for 64th
+                            const isBeatMarker = posIndex % intervalDivisor === 0
+                            const isPlaybackPosition =
+                              currentPosition?.bar === barIndex &&
+                              currentPosition?.position === posIndex
 
-                        return (
+                            return (
+                              <div
+                                key={posIndex}
+                                className={`relative flex h-4 min-w-3 flex-1 cursor-pointer items-center justify-center ${
+                                  isBeatMarker ? "border-muted-foreground/30 border-l" : ""
+                                } ${isPlaybackPosition ? "bg-green-500/20" : ""}`}
+                                onClick={() =>
+                                  !isPlaying && handleCellClick(barIndex, stringIndex, posIndex)
+                                }
+                              >
+                                {isSelected && !isPlaying ? (
+                                  <input
+                                    type="text"
+                                    value={inputValue}
+                                    onChange={handleInputChange}
+                                    onBlur={handleInputConfirm}
+                                    onKeyDown={handleKeyDown}
+                                    className="border-primary bg-background focus:ring-primary absolute top-1/2 left-1/2 z-20 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded border text-center font-mono text-xs focus:ring-1 focus:outline-none"
+                                    autoFocus
+                                    maxLength={2}
+                                  />
+                                ) : note ? (
+                                  <span
+                                    className={`absolute top-1/2 left-1/2 z-10 flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded font-mono text-xs ${
+                                      isPlaybackPosition
+                                        ? "bg-green-600 text-white"
+                                        : "bg-primary text-primary-foreground"
+                                    }`}
+                                  >
+                                    {note.fret}
+                                  </span>
+                                ) : (
+                                  <span className="text-muted-foreground/30 text-xs">-</span>
+                                )}
+                              </div>
+                            )
+                          })}
+
+                          {/* End bar line */}
+                          <div className="border-muted-foreground/50 h-4 shrink-0 border-r" />
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* Position markers (beat numbers based on interval) */}
+                    <div className="flex">
+                      <div className="w-5 shrink-0" />
+                      <div className="flex flex-1">
+                        {Array.from({ length: positionsPerBar }).map((_, posIndex) => (
                           <div
                             key={posIndex}
-                            className={`relative flex h-5 w-4.5 cursor-pointer items-center justify-center ${
-                              isBeatMarker ? "border-muted-foreground/30 border-l" : ""
-                            } ${isPlaybackPosition ? "bg-green-500/20" : ""}`}
-                            onClick={() =>
-                              !isPlaying && handleCellClick(barIndex, stringIndex, posIndex)
-                            }
+                            className="text-muted-foreground flex h-4 min-w-3 flex-1 items-center justify-center text-[10px]"
                           >
-                            {isSelected && !isPlaying ? (
-                              <input
-                                type="text"
-                                value={inputValue}
-                                onChange={handleInputChange}
-                                onBlur={handleInputConfirm}
-                                onKeyDown={handleKeyDown}
-                                className="border-primary bg-background focus:ring-primary absolute z-10 h-5 w-4.5 rounded border text-center font-mono text-xs focus:ring-1 focus:outline-none"
-                                autoFocus
-                                maxLength={2}
-                              />
-                            ) : note ? (
-                              <span
-                                className={`relative z-10 rounded px-1 font-mono text-xs ${
-                                  isPlaybackPosition
-                                    ? "bg-green-600 text-white"
-                                    : "bg-primary text-primary-foreground"
-                                }`}
-                              >
-                                {note.fret}
-                              </span>
-                            ) : (
-                              <span className="text-muted-foreground/30 text-xs">-</span>
-                            )}
+                            {posIndex % intervalDivisor === 0 ? posIndex / intervalDivisor + 1 : ""}
                           </div>
-                        )
-                      })}
-
-                      {/* End bar line */}
-                      <div className="border-muted-foreground/50 h-6 border-r" />
+                        ))}
+                        {/* Spacer to match end bar line */}
+                        <div className="w-px shrink-0" />
+                      </div>
                     </div>
                   </div>
-                ))}
-
-                {/* Position markers (beat numbers based on interval) */}
-                <div className="mt-1 flex">
-                  <div className="w-5 shrink-0" />
-                  {Array.from({ length: positionsPerBar }).map((_, posIndex) => (
-                    <div
-                      key={posIndex}
-                      className="text-muted-foreground flex h-4 w-5 items-center justify-center text-[10px]"
-                    >
-                      {posIndex % intervalDivisor === 0 ? posIndex / intervalDivisor + 1 : ""}
-                    </div>
-                  ))}
                 </div>
-              </div>
-            </div>
+              )
+            })}
           </div>
         ))}
       </div>
@@ -538,6 +613,7 @@ export default function TabPlayer() {
       <div className="text-muted-foreground mt-8 text-xs">
         <p>Current tuning offset: [{tuning.join(", ")}]</p>
         <p>Total notes in tab: {bars.reduce((sum, bar) => sum + bar.notes.length, 0)}</p>
+        <p>Bars per row: {barsPerRow}</p>
       </div>
     </div>
   )
