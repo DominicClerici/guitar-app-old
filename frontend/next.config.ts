@@ -1,10 +1,10 @@
 import { config } from "dotenv"
 import type { NextConfig } from "next"
-import { resolve } from "path"
 
 // Load environment variables from root .env file
-config({ path: resolve(__dirname, "../.env") })
-
+if (process.env.NODE_ENV !== "production") {
+  config({ path: "../.env" })
+}
 const nextConfig: NextConfig = {
   /* config options here */
 }
