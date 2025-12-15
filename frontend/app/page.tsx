@@ -2,7 +2,7 @@ import { FretboardContextProvider } from "@/components/custom/fretboard/fretboar
 import FretboardMain from "@/components/custom/fretboard/fretboard-main"
 import TabPlayer from "@/components/custom/tabs/tab-player"
 import AuthTopBar from "./AuthTopBar"
-// force
+
 export default function Home() {
   return (
     <FretboardContextProvider>
