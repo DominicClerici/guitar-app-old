@@ -7,9 +7,11 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { PauseIcon, PlayIcon } from "lucide-react"
-import { useCallback, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import * as Tone from "tone"
-import useFretboardContext from "../fretboard/fretboard-context"
+import useFretboardContext, { PlayerCallbacks } from "../fretboard/fretboard-context"
+
+const TAB_PLAYER_ID = "tab-player"
 
 // Note interval options (subdivisions per beat)
 export type NoteInterval = "16th" | "32nd" | "64th"
@@ -61,12 +63,24 @@ type CellPosition = {
 }
 
 export default function TabPlayer() {
-  const { tuning, playNote, releaseAllStrings } = useFretboardContext()
+  const {
+    tuning,
+    playNote,
+    releaseAllStrings,
+    // Centralized playback
+    playbackState,
+    bpm,
+    setBpm,
+    registerPlayer,
+    unregisterPlayer,
+    startPlayback,
+    stopPlayback: contextStopPlayback,
+  } = useFretboardContext()
 
   // Tab state
   const [bars, setBars] = useState<TabBar[]>([createEmptyBar()])
-  const [bpm, setBpm] = useState(120)
   const [interval, setInterval] = useState<NoteInterval>("32nd")
+  const isPlaying = playbackState === "playing"
 
   // Get positions per bar based on current interval
   const positionsPerBar = INTERVAL_CONFIG[interval].positionsPerBar
@@ -80,12 +94,13 @@ export default function TabPlayer() {
   }
 
   // Playback state
-  const [isPlaying, setIsPlaying] = useState(false)
   const [currentPosition, setCurrentPosition] = useState<{ bar: number; position: number } | null>(
     null,
   )
   const scheduledEventsRef = useRef<number[]>([])
   const playbackTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const animationFrameRef = useRef<number | null>(null)
+  const playbackStartTimeRef = useRef<number>(0)
 
   // Currently selected cell for editing
   const [selectedCell, setSelectedCell] = useState<CellPosition | null>(null)
@@ -182,8 +197,8 @@ export default function TabPlayer() {
     return quarterNoteDuration / intervalDivisor
   }, [bpm, intervalDivisor])
 
-  // Stop playback (defined first to avoid circular dependency)
-  const stopPlayback = useCallback(() => {
+  // Internal function to clean up tab playback
+  const cleanupTabPlayback = useCallback(() => {
     // Clear all scheduled transport events
     scheduledEventsRef.current.forEach((eventId) => {
       Tone.getTransport().clear(eventId)
@@ -196,91 +211,156 @@ export default function TabPlayer() {
       playbackTimeoutRef.current = null
     }
 
-    // Release all ringing notes
-    releaseAllStrings()
+    // Cancel animation frame
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current)
+      animationFrameRef.current = null
+    }
 
-    setIsPlaying(false)
     setCurrentPosition(null)
-  }, [releaseAllStrings])
+  }, [])
 
-  // Play the tab from the beginning
-  const playTab = useCallback(async () => {
-    // Ensure audio context is started (required by browsers)
-    await Tone.start()
+  // Internal function to set up tab playback (called when centralized playback starts)
+  const setupTabPlayback = useCallback(
+    (startTime: number) => {
+      // Clean up any existing playback
+      cleanupTabPlayback()
 
-    // Stop any existing playback
-    stopPlayback()
+      const noteDuration = getIntervalDuration()
+      playbackStartTimeRef.current = startTime
 
-    setIsPlaying(true)
-    const noteDuration = getIntervalDuration()
-    const startTime = Tone.now()
+      // Schedule all notes across all bars
+      bars.forEach((bar, barIndex) => {
+        bar.notes.forEach((note) => {
+          // Calculate the absolute time for this note
+          const positionInBar = note.position
+          const absolutePosition = barIndex * positionsPerBar + positionInBar
+          const noteTime = startTime + absolutePosition * noteDuration
 
-    // Schedule all notes across all bars
-    bars.forEach((bar, barIndex) => {
-      bar.notes.forEach((note) => {
-        // Calculate the absolute time for this note
-        const positionInBar = note.position
-        const absolutePosition = barIndex * positionsPerBar + positionInBar
-        const noteTime = startTime + absolutePosition * noteDuration
-
-        // Find the next note on the same string to calculate duration
-        // Look in current bar and subsequent bars
-        let nextNotePosition: number | null = null
-        for (let bi = barIndex; bi < bars.length; bi++) {
-          const searchBar = bars[bi]
-          for (const otherNote of searchBar.notes) {
-            if (otherNote.string === note.string) {
-              const otherAbsolutePos = bi * positionsPerBar + otherNote.position
-              if (otherAbsolutePos > absolutePosition) {
-                if (nextNotePosition === null || otherAbsolutePos < nextNotePosition) {
-                  nextNotePosition = otherAbsolutePos
+          // Find the next note on the same string to calculate duration
+          // Look in current bar and subsequent bars
+          let nextNotePosition: number | null = null
+          for (let bi = barIndex; bi < bars.length; bi++) {
+            const searchBar = bars[bi]
+            for (const otherNote of searchBar.notes) {
+              if (otherNote.string === note.string) {
+                const otherAbsolutePos = bi * positionsPerBar + otherNote.position
+                if (otherAbsolutePos > absolutePosition) {
+                  if (nextNotePosition === null || otherAbsolutePos < nextNotePosition) {
+                    nextNotePosition = otherAbsolutePos
+                  }
                 }
               }
             }
           }
-        }
 
-        // Calculate note duration - either until next note on same string or a default
-        let duration: number
-        if (nextNotePosition !== null) {
-          duration = (nextNotePosition - absolutePosition) * noteDuration
-        } else {
-          // Default duration: let it ring for 2 beats (8 64th notes)
-          duration = noteDuration * 16
-        }
+          // Calculate note duration - either until next note on same string or a default
+          let duration: number
+          if (nextNotePosition !== null) {
+            duration = (nextNotePosition - absolutePosition) * noteDuration
+          } else {
+            // Default duration: let it ring for 2 beats (8 64th notes)
+            duration = noteDuration * 16
+          }
 
-        // Schedule the note with calculated duration
-        playNote(note.string, note.fret, noteTime, duration)
+          // Schedule the note with calculated duration
+          playNote(note.string, note.fret, noteTime, duration)
+        })
       })
-    })
 
-    // Calculate total playback duration
-    const totalPositions = bars.length * positionsPerBar
-    const totalDuration = totalPositions * noteDuration * 1000 // Convert to ms
+      // Calculate total playback duration
+      const totalPositions = bars.length * positionsPerBar
+      const totalDuration = totalPositions * noteDuration * 1000 // Convert to ms
 
-    // Use requestAnimationFrame-based position tracking for smoother updates
-    const updatePosition = () => {
-      if (!playbackTimeoutRef.current) return
-      const elapsed = (Tone.now() - startTime) * 1000
-      const currentPos = Math.floor(elapsed / (noteDuration * 1000))
-      const barIndex = Math.floor(currentPos / positionsPerBar)
-      const posInBar = currentPos % positionsPerBar
+      // Use requestAnimationFrame-based position tracking for smoother updates
+      const updatePosition = () => {
+        if (!playbackTimeoutRef.current) return
+        const elapsed = (Tone.now() - startTime) * 1000
+        const currentPos = Math.floor(elapsed / (noteDuration * 1000))
+        const barIndex = Math.floor(currentPos / positionsPerBar)
+        const posInBar = currentPos % positionsPerBar
 
-      if (barIndex < bars.length) {
-        setCurrentPosition({ bar: barIndex, position: posInBar })
-        requestAnimationFrame(updatePosition)
+        if (barIndex < bars.length) {
+          setCurrentPosition({ bar: barIndex, position: posInBar })
+          animationFrameRef.current = requestAnimationFrame(updatePosition)
+        }
       }
-    }
-    requestAnimationFrame(updatePosition)
+      animationFrameRef.current = requestAnimationFrame(updatePosition)
 
-    // Schedule end of playback
-    playbackTimeoutRef.current = setTimeout(() => {
-      setIsPlaying(false)
-      setCurrentPosition(null)
-      releaseAllStrings()
-      playbackTimeoutRef.current = null
-    }, totalDuration + 500) // Add a small buffer for note release
-  }, [bars, getIntervalDuration, playNote, positionsPerBar, releaseAllStrings, stopPlayback])
+      // Schedule end of playback (stop the centralized playback)
+      playbackTimeoutRef.current = setTimeout(() => {
+        contextStopPlayback()
+        playbackTimeoutRef.current = null
+      }, totalDuration + 500) // Add a small buffer for note release
+    },
+    [bars, getIntervalDuration, playNote, positionsPerBar, cleanupTabPlayback, contextStopPlayback]
+  )
+
+  // Register player callbacks with the centralized playback system
+  useEffect(() => {
+    const callbacks: PlayerCallbacks = {
+      onPlay: (startTime) => {
+        setupTabPlayback(startTime)
+      },
+      onStop: () => {
+        cleanupTabPlayback()
+        releaseAllStrings()
+      },
+      onPause: () => {
+        // Cancel the animation frame when paused
+        if (animationFrameRef.current) {
+          cancelAnimationFrame(animationFrameRef.current)
+          animationFrameRef.current = null
+        }
+      },
+      onResume: () => {
+        // Resume position tracking
+        const noteDuration = getIntervalDuration()
+        const startTime = playbackStartTimeRef.current
+
+        const updatePosition = () => {
+          if (!playbackTimeoutRef.current) return
+          const elapsed = (Tone.now() - startTime) * 1000
+          const currentPos = Math.floor(elapsed / (noteDuration * 1000))
+          const barIndex = Math.floor(currentPos / positionsPerBar)
+          const posInBar = currentPos % positionsPerBar
+
+          if (barIndex < bars.length) {
+            setCurrentPosition({ bar: barIndex, position: posInBar })
+            animationFrameRef.current = requestAnimationFrame(updatePosition)
+          }
+        }
+        animationFrameRef.current = requestAnimationFrame(updatePosition)
+      },
+      onBpmChange: () => {
+        // BPM changes are handled by the transport automatically
+      },
+    }
+
+    registerPlayer(TAB_PLAYER_ID, callbacks)
+
+    return () => {
+      unregisterPlayer(TAB_PLAYER_ID)
+      cleanupTabPlayback()
+    }
+  }, [
+    registerPlayer,
+    unregisterPlayer,
+    setupTabPlayback,
+    cleanupTabPlayback,
+    releaseAllStrings,
+    getIntervalDuration,
+    positionsPerBar,
+    bars.length,
+  ])
+
+  const handlePlayStop = async () => {
+    if (isPlaying) {
+      contextStopPlayback()
+    } else {
+      await startPlayback()
+    }
+  }
 
   return (
     <div className="mx-auto max-w-7xl px-4 pt-24">
@@ -291,7 +371,7 @@ export default function TabPlayer() {
           <div className="flex items-center gap-2">
             {!isPlaying ? (
               <button
-                onClick={playTab}
+                onClick={handlePlayStop}
                 className="flex items-center gap-1.5 rounded bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700"
               >
                 <PlayIcon className="h-4 w-4" />
@@ -299,7 +379,7 @@ export default function TabPlayer() {
               </button>
             ) : (
               <button
-                onClick={stopPlayback}
+                onClick={handlePlayStop}
                 className="flex items-center gap-1.5 rounded bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700"
               >
                 <PauseIcon className="h-4 w-4" />

@@ -20,12 +20,13 @@ import {
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import { PauseIcon, PlayIcon, SquareIcon, Trash2Icon, XIcon } from "lucide-react"
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import * as Tone from "tone"
-import useFretboardContext, { FretPositions } from "../fretboard-context"
+import useFretboardContext, { FretPositions, PlayerCallbacks } from "../fretboard-context"
 import StrumPatternDialog, { StrumNote } from "./strum-pattern-dialog"
 
 const DEFAULT_STRUMS_PER_CHORD = 4
+const CHORD_LINE_PLAYER_ID = "chord-line-player"
 
 function MiniChordDisplay({
   positions,
@@ -126,17 +127,37 @@ function SortableMiniChord({
 }
 
 export default function AssembleChordLine() {
-  const { chordLine, removeChordFromLine, reorderChordLine, clearChordLine, strumNotes } =
-    useFretboardContext()
+  const {
+    chordLine,
+    removeChordFromLine,
+    reorderChordLine,
+    clearChordLine,
+    strumNotes,
+    // Centralized playback
+    playbackState,
+    bpm,
+    setBpm,
+    registerPlayer,
+    unregisterPlayer,
+    startPlayback,
+    stopPlayback: contextStopPlayback,
+  } = useFretboardContext()
 
-  const [bpm, setBpm] = useState(60)
-  const [isPlaying, setIsPlaying] = useState(false)
   const [currentChordIndex, setCurrentChordIndex] = useState(0)
   const [currentStrumCount, setCurrentStrumCount] = useState(0)
   const [strumPattern, setStrumPattern] = useState<StrumNote[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
 
   const partRef = useRef<Tone.Part | null>(null)
+  const isPlaying = playbackState === "playing"
+
+  // Refs to hold latest values for use in Part callbacks (avoids stale closures)
+  const strumNotesRef = useRef(strumNotes)
+  const chordLineRef = useRef(chordLine)
+
+  // Keep refs updated
+  strumNotesRef.current = strumNotes
+  chordLineRef.current = chordLine
 
   // dnd-kit sensors for drag and drop
   const sensors = useSensors(
@@ -169,117 +190,153 @@ export default function AssembleChordLine() {
   // Calculate how many strums per chord based on pattern or default
   const strumsPerChord = strumPattern.length > 0 ? strumPattern.length : DEFAULT_STRUMS_PER_CHORD
 
-  const stopPlayback = () => {
+  // Internal function to clean up chord line playback
+  const cleanupChordLinePlayback = useCallback(() => {
     if (partRef.current) {
       partRef.current.stop()
       partRef.current.dispose()
       partRef.current = null
     }
-    Tone.getTransport().stop()
-    Tone.getTransport().position = 0
-    setIsPlaying(false)
     setCurrentChordIndex(0)
     setCurrentStrumCount(0)
-  }
+  }, [])
 
-  const startPlayback = async () => {
-    if (chordLine.length === 0) return
+  // Internal function to set up chord line playback (called when centralized playback starts)
+  const setupChordLinePlayback = useCallback(
+    (startTime: number) => {
+      if (chordLine.length === 0) return
 
-    await Tone.start()
-    Tone.getTransport().bpm.value = bpm
-
-    // Duration of one bar in Tone.js notation (4 quarter notes = 1 bar)
-    const barDuration = Tone.Time("1m").toSeconds()
-
-    // Total duration for all chords (each chord gets one bar)
-    const totalDuration = barDuration * chordLine.length
-
-    // Build part events with absolute times
-    const events: Array<{
-      time: number
-      chordIndex: number
-      strumIndex: number
-      direction: "up" | "down"
-    }> = []
-
-    for (let chordIdx = 0; chordIdx < chordLine.length; chordIdx++) {
-      const chordStartTime = chordIdx * barDuration
-
-      if (strumPattern.length > 0) {
-        // Use the custom strum pattern
-        strumPattern.forEach((note, strumIdx) => {
-          // note.position is 0-1 normalized within the bar
-          const strumTime = chordStartTime + note.position * barDuration
-          events.push({
-            time: strumTime,
-            chordIndex: chordIdx,
-            strumIndex: strumIdx,
-            direction: note.direction,
-          })
-        })
-      } else {
-        // Use default even strums (4 quarter notes)
-        for (let strumIdx = 0; strumIdx < DEFAULT_STRUMS_PER_CHORD; strumIdx++) {
-          const strumTime = chordStartTime + (strumIdx / DEFAULT_STRUMS_PER_CHORD) * barDuration
-          events.push({
-            time: strumTime,
-            chordIndex: chordIdx,
-            strumIndex: strumIdx,
-            direction: "down",
-          })
-        }
-      }
-    }
-
-    type StrumEvent = {
-      time: number
-      chordIndex: number
-      strumIndex: number
-      direction: "up" | "down"
-    }
-
-    partRef.current = new Tone.Part<StrumEvent>((time, event) => {
-      strumNotes(event.direction, chordLine[event.chordIndex].positions)
-      // Schedule state updates slightly after audio to avoid race conditions
-      Tone.getDraw().schedule(() => {
-        setCurrentChordIndex(event.chordIndex)
-        setCurrentStrumCount(event.strumIndex)
-      }, time)
-    }, events)
-
-    partRef.current.loop = true
-    partRef.current.loopEnd = totalDuration
-    partRef.current.start(0)
-    Tone.getTransport().start()
-    setIsPlaying(true)
-  }
-
-  const togglePlayback = async () => {
-    if (isPlaying) {
+      // Clean up any existing part
       if (partRef.current) {
         partRef.current.stop()
         partRef.current.dispose()
         partRef.current = null
       }
-      Tone.getTransport().pause()
-      setIsPlaying(false)
+
+      // Duration of one bar in Tone.js notation (4 quarter notes = 1 bar)
+      const barDuration = Tone.Time("1m").toSeconds()
+
+      // Total duration for all chords (each chord gets one bar)
+      const totalDuration = barDuration * chordLine.length
+
+      // Build part events with absolute times
+      const events: Array<{
+        time: number
+        chordIndex: number
+        strumIndex: number
+        direction: "up" | "down"
+      }> = []
+
+      for (let chordIdx = 0; chordIdx < chordLine.length; chordIdx++) {
+        const chordStartTime = chordIdx * barDuration
+
+        if (strumPattern.length > 0) {
+          // Use the custom strum pattern
+          strumPattern.forEach((note, strumIdx) => {
+            // note.position is 0-1 normalized within the bar
+            const strumTime = chordStartTime + note.position * barDuration
+            events.push({
+              time: strumTime,
+              chordIndex: chordIdx,
+              strumIndex: strumIdx,
+              direction: note.direction,
+            })
+          })
+        } else {
+          // Use default even strums (4 quarter notes)
+          for (let strumIdx = 0; strumIdx < DEFAULT_STRUMS_PER_CHORD; strumIdx++) {
+            const strumTime = chordStartTime + (strumIdx / DEFAULT_STRUMS_PER_CHORD) * barDuration
+            events.push({
+              time: strumTime,
+              chordIndex: chordIdx,
+              strumIndex: strumIdx,
+              direction: "down",
+            })
+          }
+        }
+      }
+
+      type StrumEvent = {
+        time: number
+        chordIndex: number
+        strumIndex: number
+        direction: "up" | "down"
+      }
+
+      partRef.current = new Tone.Part<StrumEvent>((time, event) => {
+        // Use refs to ensure we have the latest values (avoids stale closures)
+        const currentChordLine = chordLineRef.current
+        const currentStrumNotes = strumNotesRef.current
+
+        if (currentChordLine[event.chordIndex]) {
+          currentStrumNotes(event.direction, currentChordLine[event.chordIndex].positions, time)
+        }
+        // Schedule state updates slightly after audio to avoid race conditions
+        Tone.getDraw().schedule(() => {
+          setCurrentChordIndex(event.chordIndex)
+          setCurrentStrumCount(event.strumIndex)
+        }, time)
+      }, events)
+
+      partRef.current.loop = true
+      partRef.current.loopEnd = totalDuration
+      partRef.current.start(0)
+    },
+    [chordLine, strumPattern]
+  )
+
+  // Register player callbacks with the centralized playback system
+  useEffect(() => {
+    const callbacks: PlayerCallbacks = {
+      onPlay: (startTime) => {
+        setupChordLinePlayback(startTime)
+      },
+      onStop: () => {
+        cleanupChordLinePlayback()
+      },
+      onPause: () => {
+        // Part will pause automatically with transport
+      },
+      onResume: () => {
+        // Part will resume automatically with transport
+      },
+      onBpmChange: () => {
+        // BPM changes are handled by the transport automatically
+      },
+    }
+
+    registerPlayer(CHORD_LINE_PLAYER_ID, callbacks)
+
+    return () => {
+      unregisterPlayer(CHORD_LINE_PLAYER_ID)
+      cleanupChordLinePlayback()
+    }
+  }, [registerPlayer, unregisterPlayer, setupChordLinePlayback, cleanupChordLinePlayback])
+
+  const togglePlayback = async () => {
+    if (isPlaying) {
+      contextStopPlayback()
     } else {
+      if (chordLine.length === 0) return
       await startPlayback()
     }
   }
 
+  const handleStop = () => {
+    contextStopPlayback()
+  }
+
   useEffect(() => {
     if (isPlaying && chordLine.length === 0) {
-      stopPlayback()
+      contextStopPlayback()
     }
-  }, [chordLine.length, isPlaying])
+  }, [chordLine.length, isPlaying, contextStopPlayback])
 
   useEffect(() => {
     return () => {
       if (partRef.current) {
         partRef.current.dispose()
       }
-      Tone.getTransport().stop()
     }
   }, [])
 
@@ -333,7 +390,7 @@ export default function AssembleChordLine() {
           <Button
             variant="outline"
             size="icon"
-            onClick={stopPlayback}
+            onClick={handleStop}
             disabled={!isPlaying && currentChordIndex === 0}
           >
             <SquareIcon className="h-4 w-4" />

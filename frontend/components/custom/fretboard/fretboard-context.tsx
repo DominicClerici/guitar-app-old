@@ -1,7 +1,7 @@
 "use client"
 import { midiToFrequency } from "@/lib/midi-utils"
 import { InstrumentName, SampleLibrary } from "@/lib/SampleLibrary"
-import React, { useContext, useEffect, useRef, useState } from "react"
+import React, { useCallback, useContext, useEffect, useRef, useState } from "react"
 import * as Tone from "tone"
 
 export type FretPositions = [number, number, number, number, number, number]
@@ -19,6 +19,23 @@ export type EffectsSettings = {
     roomSize: number // Room size (0 to 1, where 1 is longest reverb)
     wet: number // Mix level (0 to 1)
   }
+}
+
+// Playback state types
+export type PlaybackState = "stopped" | "playing" | "paused"
+
+// Player interface - each component registers a player with these callbacks
+export type PlayerCallbacks = {
+  onPlay: (startTime: number) => void
+  onStop: () => void
+  onPause: () => void
+  onResume: (resumeTime: number) => void
+  onBpmChange: (newBpm: number) => void
+}
+
+export type RegisteredPlayer = {
+  id: string
+  callbacks: PlayerCallbacks
 }
 
 const DEFAULT_TUNING: Tuning = [0, 0, 0, 0, 0, 0] // EADGBE
@@ -40,7 +57,7 @@ const FretboardContext = React.createContext<{
   setFretPositions: React.Dispatch<React.SetStateAction<FretPositions>>
   tuning: Tuning
   setTuning: React.Dispatch<React.SetStateAction<Tuning>>
-  strumNotes: (strum?: "up" | "down", positions?: FretPositions) => void
+  strumNotes: (strum?: "up" | "down", positions?: FretPositions, time?: number) => void
   playNote: (string: number, fret: number, time?: number, duration?: string | number) => void
   releaseString: (string: number, time?: number) => void
   releaseAllStrings: (time?: number) => void
@@ -55,6 +72,17 @@ const FretboardContext = React.createContext<{
   setMuteOnNewStrum: React.Dispatch<React.SetStateAction<boolean>>
   effects: EffectsSettings
   setEffects: React.Dispatch<React.SetStateAction<EffectsSettings>>
+  // Centralized playback state
+  playbackState: PlaybackState
+  bpm: number
+  setBpm: (bpm: number) => void
+  registerPlayer: (id: string, callbacks: PlayerCallbacks) => void
+  unregisterPlayer: (id: string) => void
+  startPlayback: () => Promise<void>
+  stopPlayback: () => void
+  pausePlayback: () => void
+  resumePlayback: () => void
+  getTransportTime: () => number
 }>({
   fretPositions: [0, 0, 0, 0, 0, 0] as FretPositions,
   setFretPositions: () => {},
@@ -75,6 +103,17 @@ const FretboardContext = React.createContext<{
   setMuteOnNewStrum: () => {},
   effects: DEFAULT_EFFECTS,
   setEffects: () => {},
+  // Centralized playback defaults
+  playbackState: "stopped",
+  bpm: 120,
+  setBpm: () => {},
+  registerPlayer: () => {},
+  unregisterPlayer: () => {},
+  startPlayback: async () => {},
+  stopPlayback: () => {},
+  pausePlayback: () => {},
+  resumePlayback: () => {},
+  getTransportTime: () => 0,
 })
 
 export function FretboardContextProvider({ children }: { children: React.ReactNode }) {
@@ -89,6 +128,13 @@ export function FretboardContextProvider({ children }: { children: React.ReactNo
   const [muteOnNewStrum, setMuteOnNewStrum] = useState(true)
   // Track which frequency is currently playing on each string (for per-string note management)
   const stringFrequenciesRef = useRef<(number | null)[]>([null, null, null, null, null, null])
+
+  // Centralized playback state
+  const [playbackState, setPlaybackState] = useState<PlaybackState>("stopped")
+  const [bpm, setBpmState] = useState(120)
+  const registeredPlayersRef = useRef<Map<string, PlayerCallbacks>>(new Map())
+  const playbackStartTimeRef = useRef<number>(0)
+  const pausedAtRef = useRef<number>(0)
 
   const addChordToLine = () => {
     const hasNotes = fretPositions.some((fret) => fret !== -1)
@@ -144,7 +190,7 @@ export function FretboardContextProvider({ children }: { children: React.ReactNo
     await Tone.start()
   }
 
-  const strumNotes = (strum: "up" | "down" = "down", positions: FretPositions = fretPositions) => {
+  const strumNotes = useCallback((strum: "up" | "down" = "down", positions: FretPositions = fretPositions, time?: number) => {
     if (!instrumentRef.current) {
       console.error("Instrument not loaded")
       return
@@ -171,7 +217,7 @@ export function FretboardContextProvider({ children }: { children: React.ReactNo
     const downVelocities = [1.0, 0.85, 0.7, 0.55, 0.4, 0.25]
     const upVelocities = [0.5, 0.6, 0.7, 0.8, 0.9, 1]
 
-    const start = Tone.now()
+    const start = time ?? Tone.now()
     if (frequencies.length > 0) {
       const instrument = instrumentRef.current
       const strumDelay = 0.02
@@ -181,7 +227,7 @@ export function FretboardContextProvider({ children }: { children: React.ReactNo
         instrument.triggerAttackRelease(freq, "4", start + i * strumDelay, velocity)
       })
     }
-  }
+  }, [fretPositions, muteOnNewStrum, tuning])
 
   // Play a single note on a specific string, releasing any previous note on that string
   const playNote = (
@@ -244,6 +290,100 @@ export function FretboardContextProvider({ children }: { children: React.ReactNo
     }
   }
 
+  // Centralized playback control functions
+  const registerPlayer = useCallback((id: string, callbacks: PlayerCallbacks) => {
+    registeredPlayersRef.current.set(id, callbacks)
+  }, [])
+
+  const unregisterPlayer = useCallback((id: string) => {
+    registeredPlayersRef.current.delete(id)
+  }, [])
+
+  const setBpm = useCallback((newBpm: number) => {
+    const clampedBpm = Math.max(20, Math.min(300, newBpm))
+    setBpmState(clampedBpm)
+    Tone.getTransport().bpm.value = clampedBpm
+    // Notify all registered players of BPM change
+    registeredPlayersRef.current.forEach((callbacks) => {
+      callbacks.onBpmChange(clampedBpm)
+    })
+  }, [])
+
+  const startPlayback = useCallback(async () => {
+    if (playbackState === "playing") return
+
+    await Tone.start()
+    Tone.getTransport().bpm.value = bpm
+
+    // Reset transport position for fresh start
+    Tone.getTransport().position = 0
+
+    // Start slightly in the future to avoid scheduling errors with Parts
+    const startTime = Tone.now() + 0.1
+    playbackStartTimeRef.current = startTime
+
+    // Notify all registered players to set up their playback BEFORE starting transport
+    // This ensures Tone.Part instances are created and started before the transport begins
+    registeredPlayersRef.current.forEach((callbacks) => {
+      callbacks.onPlay(startTime)
+    })
+
+    // Start the transport AFTER players have set up their Parts
+    // Pass the startTime to align transport with scheduled events
+    Tone.getTransport().start(startTime)
+
+    setPlaybackState("playing")
+  }, [playbackState, bpm])
+
+  const stopPlayback = useCallback(() => {
+    Tone.getTransport().stop()
+    Tone.getTransport().position = 0
+
+    setPlaybackState("stopped")
+    playbackStartTimeRef.current = 0
+    pausedAtRef.current = 0
+
+    // Notify all registered players to stop
+    registeredPlayersRef.current.forEach((callbacks) => {
+      callbacks.onStop()
+    })
+
+    // Release all ringing notes
+    releaseAllStrings()
+  }, [])
+
+  const pausePlayback = useCallback(() => {
+    if (playbackState !== "playing") return
+
+    pausedAtRef.current = Tone.getTransport().seconds
+    Tone.getTransport().pause()
+
+    setPlaybackState("paused")
+
+    // Notify all registered players to pause
+    registeredPlayersRef.current.forEach((callbacks) => {
+      callbacks.onPause()
+    })
+  }, [playbackState])
+
+  const resumePlayback = useCallback(() => {
+    if (playbackState !== "paused") return
+
+    const resumeTime = Tone.now()
+    Tone.getTransport().start()
+
+    setPlaybackState("playing")
+
+    // Notify all registered players to resume
+    registeredPlayersRef.current.forEach((callbacks) => {
+      callbacks.onResume(resumeTime)
+    })
+  }, [playbackState])
+
+  const getTransportTime = useCallback(() => {
+    return Tone.getTransport().seconds
+  }, [])
+
   useEffect(() => {
     changeInstrument("guitar-acoustic")
   }, [])
@@ -284,6 +424,17 @@ export function FretboardContextProvider({ children }: { children: React.ReactNo
         setMuteOnNewStrum,
         effects,
         setEffects,
+        // Centralized playback
+        playbackState,
+        bpm,
+        setBpm,
+        registerPlayer,
+        unregisterPlayer,
+        startPlayback,
+        stopPlayback,
+        pausePlayback,
+        resumePlayback,
+        getTransportTime,
       }}
     >
       {children}
