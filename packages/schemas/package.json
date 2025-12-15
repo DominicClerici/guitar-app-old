@@ -6,7 +6,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc --build",
-    "dev": "tsc --build --watch",
+    "dev": "tsc-watch --build",
     "type-check": "tsc --noEmit",
     "lint": "eslint src --ext .ts,.tsx",
     "format": "prettier --write ."
@@ -29,6 +29,7 @@
   "devDependencies": {
     "@types/node": "^20.19.2",
     "prettier": "^3.6.2",
+    "tsc-watch": "^7.2.0",
     "typescript": "^5.9.2"
   }
 }

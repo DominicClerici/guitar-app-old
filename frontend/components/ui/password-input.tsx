@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils"
 
 const PasswordInput = React.forwardRef<
   HTMLInputElement,
-  React.InputHTMLAttributes<HTMLInputElement> & { withBackground?: boolean }
+  React.InputHTMLAttributes<HTMLInputElement>
 >(({ className, ...props }, ref) => {
   const [showPassword, setShowPassword] = React.useState(false)
   const disabled = props.value === "" || props.value === undefined || props.disabled
@@ -18,7 +18,6 @@ const PasswordInput = React.forwardRef<
     <div className="relative">
       <Input
         type={showPassword ? "text" : "password"}
-        withBackground={props.withBackground}
         className={cn("hide-password-toggle pr-10", className)}
         ref={ref}
         {...props}

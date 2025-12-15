@@ -3,7 +3,7 @@
   "private": true,
   "packageManager": "pnpm@10.11.0",
   "scripts": {
-    "dev": "concurrently --kill-others --names \"frontend,db\" \"pnpm --filter=frontend run dev\" \"pnpm --filter=@guitar/db run dev\"",
+    "dev": "concurrently --kill-others --names \"frontend,db,schemas\" \"pnpm --filter=frontend run dev\" \"pnpm --filter=@guitar/db run dev\" \"pnpm --filter=@guitar/schemas run dev\"",
     "build": "pnpm run build:packages && pnpm --filter=frontend run build",
     "build:packages": "pnpm --filter=@guitar/db run build && pnpm --filter=@guitar/schemas run build",
     "format": "prettier --write .",

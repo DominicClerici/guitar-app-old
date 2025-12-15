@@ -1,7 +1,9 @@
 "use client"
 import { applyTuningToNoteCharacter, getNoteFromFret } from "@/lib/midi-utils"
 import React, { useCallback, useEffect, useRef, useState } from "react"
-import useFretboardContext, { FretPositions } from "./fretboard-context"
+import { STANDARD_TUNING_NOTES } from "../tab-editor/context/tab-player-context"
+import { Tuning } from "../tab-editor/context/tab-tuning-context"
+import { FretPositions } from "./fretboard-context"
 
 export const NUM_STRINGS = 6
 export const NUM_FRETS = 18 // 0 (open) through 17
@@ -11,10 +13,19 @@ const NUT_WIDTH = 35
 const TOP_PADDING = 40
 const LEFT_PADDING = 30
 
-export default function FretboardCanvas() {
+interface FretboardCanvasProps {
+  fretPositions: FretPositions
+  setFretPositions: React.Dispatch<React.SetStateAction<FretPositions>>
+  tuning: Tuning
+}
+
+export default function FretboardCanvas({
+  fretPositions,
+  setFretPositions,
+  tuning,
+}: FretboardCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const canvasContainerRef = useRef<HTMLDivElement>(null)
-  const { fretPositions, setFretPositions, tuning } = useFretboardContext()
   const [canvasDimensions, setCanvasDimensions] = useState<{
     width: number
     height: number
@@ -72,7 +83,6 @@ export default function FretboardCanvas() {
         ctx.lineTo(x, TOP_PADDING + (NUM_STRINGS - 1) * STRING_SPACING + 5)
         ctx.stroke()
       }
-      console.log(TOP_PADDING + (NUM_STRINGS - 1) * STRING_SPACING + 5)
 
       // Draw fret numbers
       ctx.fillStyle = "#333"
@@ -118,28 +128,27 @@ export default function FretboardCanvas() {
       }
 
       // Draw string labels based on tuning
-      const stringBaseNotes = ["E", "B", "G", "D", "A", "E"] // High to
-      const tunedBaseNotes = stringBaseNotes.map((note, index) =>
+      const tunedNotes = STANDARD_TUNING_NOTES.map((note, index) =>
         applyTuningToNoteCharacter(note, tuning[index]),
       )
+
       ctx.fillStyle = "#333"
       ctx.font = "14px Arial"
       ctx.textAlign = "right"
       ctx.textBaseline = "alphabetic"
       for (let string = 0; string < NUM_STRINGS; string++) {
         const y = getStringY(string)
-        let tunedNote = applyTuningToNoteCharacter(tunedBaseNotes[string], tuning[string])
-        if (string === 0 && tunedNote == "E") {
-          tunedNote = "e"
+        if (string === 0 && tunedNotes[string] == "E") {
+          tunedNotes[string] = "e"
         }
-        ctx.fillText(tunedNote, LEFT_PADDING - 10, y + 5)
+        ctx.fillText(tunedNotes[string], LEFT_PADDING - 10, y + 5)
       }
 
       // Draw placed notes with note in circle
       ctx.fillStyle = "#3b82f6" // Tailwind blue-500
       for (let string = 0; string < NUM_STRINGS; string++) {
         const fret = fretPositions[string]
-        const note = getNoteFromFret(fret, tunedBaseNotes[string])
+        const note = getNoteFromFret(fret, tunedNotes[string] === "e" ? "E" : tunedNotes[string])
         if (fret >= 0) {
           const x = getFretX(fret)
           const y = getStringY(string)

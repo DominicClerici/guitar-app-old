@@ -9,7 +9,21 @@ export type SupabaseMetadata = {
   sub: string
 }
 
-export default async function getUserInfo() {
+type UsersRelations = NonNullable<
+  NonNullable<Parameters<typeof db.query.usersTable.findFirst>[0]>["with"]
+>
+
+type UserQueryResult<T extends UsersRelations | undefined> = NonNullable<
+  Awaited<ReturnType<typeof db.query.usersTable.findFirst<{ with: T }>>>
+>
+
+type UserWithMetadata<T extends UsersRelations | undefined> = UserQueryResult<T> & {
+  supabaseMetadata: SupabaseMetadata
+}
+
+export default async function getUserInfo<T extends UsersRelations | undefined = undefined>(
+  withRelations?: T,
+): Promise<UserWithMetadata<T> | null> {
   try {
     const supabase = await createClient()
     const { data, error } = await supabase.auth.getUser()
@@ -18,6 +32,7 @@ export default async function getUserInfo() {
     }
     const user = await db.query.usersTable.findFirst({
       where: eq(usersTable.id, data.user.id),
+      with: withRelations,
     })
     if (!user) {
       console.error("User not found but is logged in")
@@ -27,11 +42,11 @@ export default async function getUserInfo() {
       ...user,
       supabaseMetadata: data.user.user_metadata as SupabaseMetadata,
     }
-    return withMetadata
+    return withMetadata as UserWithMetadata<T>
   } catch (error) {
     console.error(error)
     return null
   }
 }
 
-export type UserInfo = NonNullable<Awaited<ReturnType<typeof getUserInfo>>>
+export type UserInfo<T extends UsersRelations | undefined = undefined> = UserWithMetadata<T>

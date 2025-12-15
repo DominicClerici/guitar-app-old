@@ -5,6 +5,7 @@ import { UserInfo } from "@/lib/fetches/getUserInfo"
 import registerUser from "@/lib/mutations/registerUser"
 import { createClient } from "@/lib/supabase/client"
 import { useState } from "react"
+import { toast } from "sonner"
 
 export default function AuthClient({ user }: { user: UserInfo | null }) {
   const supabase = createClient()
@@ -33,7 +34,7 @@ export default function AuthClient({ user }: { user: UserInfo | null }) {
       if (error) {
         console.error(error)
       } else {
-        console.log("Registration successful.")
+        toast.success("Registration successful.")
       }
     }
 

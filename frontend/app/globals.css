@@ -138,3 +138,75 @@
     @apply bg-background text-foreground;
   }
 }
+
+.animate-accordion-children .accordion-animation-target {
+  --stagger-delay: 30ms;
+}
+
+.animate-accordion-children .accordion-animation-target:nth-child(1) {
+  --child-index: 0;
+}
+.animate-accordion-children .accordion-animation-target:nth-child(2) {
+  --child-index: 1;
+}
+.animate-accordion-children .accordion-animation-target:nth-child(3) {
+  --child-index: 2;
+}
+.animate-accordion-children .accordion-animation-target:nth-child(4) {
+  --child-index: 3;
+}
+.animate-accordion-children .accordion-animation-target:nth-child(5) {
+  --child-index: 4;
+}
+.animate-accordion-children .accordion-animation-target:nth-child(6) {
+  --child-index: 5;
+}
+.animate-accordion-children .accordion-animation-target:nth-child(7) {
+  --child-index: 6;
+}
+.animate-accordion-children .accordion-animation-target:nth-child(8) {
+  --child-index: 7;
+}
+.animate-accordion-children .accordion-animation-target:nth-child(9) {
+  --child-index: 8;
+}
+.animate-accordion-children .accordion-animation-target:nth-child(10) {
+  --child-index: 9;
+}
+
+.animate-accordion-children[data-state="open"] .accordion-animation-target {
+  animation: accordion-content-in 150ms ease-out;
+  animation-delay: calc(var(--child-index, 0) * var(--stagger-delay));
+  animation-fill-mode: both;
+}
+
+.animate-accordion-children[data-state="closed"] .accordion-animation-target {
+  animation: accordion-content-out 150ms ease-in;
+  animation-delay: 0ms;
+  animation-fill-mode: both;
+}
+
+@keyframes accordion-content-out {
+  0% {
+    opacity: 1;
+    transform: translateY(0rem);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-1rem);
+  }
+}
+
+@keyframes accordion-content-in {
+  0% {
+    opacity: 0.2;
+    transform: translateY(-1rem);
+  }
+  75% {
+    transform: translateY(0rem);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0rem);
+  }
+}

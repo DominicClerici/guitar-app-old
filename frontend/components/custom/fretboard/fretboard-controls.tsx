@@ -1,22 +1,20 @@
-import { Button, buttonVariants } from "@/components/ui/button"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Switch } from "@/components/ui/switch"
-import { ChevronLeftIcon, ChevronRightIcon, RefreshCwIcon, SettingsIcon } from "lucide-react"
-import FilterControls from "./filter-controls"
+import { Button } from "@/components/ui/button"
+import { ChevronLeftIcon, ChevronRightIcon, RefreshCwIcon } from "lucide-react"
 import { NUM_FRETS, NUM_STRINGS } from "./fretboard-canvas"
-import useFretboardContext, { FretPositions } from "./fretboard-context"
+import { FretPositions } from "./fretboard-context"
 
-export default function FretControls() {
-  const {
-    fretPositions,
-    setFretPositions,
-    strumNotes,
-    addChordToLine,
-    muteOnNewStrum,
-    setMuteOnNewStrum,
-    effects,
-    setEffects,
-  } = useFretboardContext()
+interface FretControlsProps {
+  fretPositions: FretPositions
+  setFretPositions: React.Dispatch<React.SetStateAction<FretPositions>>
+  strumNotes: (strum?: "up" | "down", positions?: FretPositions, time?: number) => void
+  addChordToLine: () => void
+}
+export default function FretControls({
+  fretPositions,
+  setFretPositions,
+  strumNotes,
+  addChordToLine,
+}: FretControlsProps) {
   const handleLower = () => {
     setFretPositions((prev) => {
       const newPositions = [...prev] as FretPositions
@@ -80,21 +78,6 @@ export default function FretControls() {
       <Button variant="outline" onClick={handleAddToChordLine} disabled={isAllEmpty}>
         Add to Chord Line
       </Button>
-      <div className="bg-border h-6 w-px" />
-      <label className={buttonVariants({ variant: "outline" })}>
-        Mute on strum
-        <Switch onCheckedChange={setMuteOnNewStrum} checked={muteOnNewStrum} />
-      </label>
-      <Popover>
-        <PopoverTrigger asChild>
-          <Button variant="outline" size="icon">
-            <SettingsIcon />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-xs">
-          <FilterControls />
-        </PopoverContent>
-      </Popover>
     </div>
   )
 }
