@@ -490,7 +490,11 @@ export default function TabPlayer() {
       {/* Responsive container for bars */}
       <div ref={containerRef} className="space-y-6 rounded-lg border p-4">
         {barRows.map((row, rowIndex) => (
-          <div key={rowIndex} className="grid gap-4" style={{ gridTemplateColumns: `repeat(${barsPerRow}, 1fr)` }}>
+          <div
+            key={rowIndex}
+            className="grid gap-4"
+            style={{ gridTemplateColumns: `repeat(${barsPerRow}, 1fr)` }}
+          >
             {row.map((bar, posInRow) => {
               const barIndex = getBarIndex(rowIndex, posInRow)
               return (

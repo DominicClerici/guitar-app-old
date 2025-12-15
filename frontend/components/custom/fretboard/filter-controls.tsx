@@ -1,5 +1,4 @@
-import { Slider } from "@/components/ui/slider"
-import { Switch } from "@/components/ui/switch"
+"use client"
 import {
   Select,
   SelectContent,
@@ -7,10 +6,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import useFretboardContext, { IR_PRESETS, ImpulseResponsePreset } from "./fretboard-context"
+import { Slider } from "@/components/ui/slider"
+import { Switch } from "@/components/ui/switch"
+import useFretboardContext from "./fretboard-context"
 
 export default function FilterControls() {
-  const { effects, setEffects } = useFretboardContext()
+  const { effects, setEffects, irPresets, irPresetsLoading } = useFretboardContext()
   return (
     <div className="flex flex-col gap-4">
       {/* Master Section */}
@@ -97,22 +98,25 @@ export default function FilterControls() {
         <label className="flex items-center justify-between text-sm">
           <span className="flex flex-col">
             <span>Impulse Response</span>
-            <span className="text-muted-foreground text-xs">Room type</span>
+            <span className="text-muted-foreground text-xs">
+              {irPresetsLoading ? "Loading..." : `${irPresets.length} available`}
+            </span>
           </span>
           <Select
-            value={effects.reverb.preset}
-            onValueChange={(value: ImpulseResponsePreset) =>
+            value={effects.reverb.presetId}
+            onValueChange={(value: string) =>
               setEffects({
                 ...effects,
-                reverb: { ...effects.reverb, preset: value },
+                reverb: { ...effects.reverb, presetId: value },
               })
             }
+            disabled={irPresetsLoading || irPresets.length === 0}
           >
             <SelectTrigger className="w-40">
-              <SelectValue />
+              <SelectValue placeholder="Select room..." />
             </SelectTrigger>
             <SelectContent>
-              {IR_PRESETS.map((preset) => (
+              {irPresets.map((preset) => (
                 <SelectItem key={preset.id} value={preset.id}>
                   {preset.name}
                 </SelectItem>

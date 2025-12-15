@@ -13,28 +13,17 @@ export type ChordLineItem = {
   positions: FretPositions
 }
 
-// Available impulse response presets
-export type ImpulseResponsePreset =
-  | "small-room"
-  | "medium-hall"
-  | "large-hall"
-  | "studio"
-  | "church"
-  | "plate"
-
-export const IR_PRESETS: { id: ImpulseResponsePreset; name: string; url: string }[] = [
-  { id: "small-room", name: "Small Room", url: "/impulses/small-room.wav" },
-  { id: "medium-hall", name: "Medium Hall", url: "/impulses/medium-hall.wav" },
-  { id: "large-hall", name: "Large Hall", url: "/impulses/large-hall.wav" },
-  { id: "studio", name: "Studio", url: "/impulses/studio.wav" },
-  { id: "church", name: "Church", url: "/impulses/church.wav" },
-  { id: "plate", name: "Plate Reverb", url: "/impulses/plate.wav" },
-]
+// Impulse response preset type (dynamically loaded)
+export type ImpulseResponsePreset = {
+  id: string
+  name: string
+  url: string
+}
 
 export type EffectsSettings = {
   reverb: {
     enabled: boolean
-    preset: ImpulseResponsePreset // Which impulse response to use
+    presetId: string // ID of the selected impulse response
     wet: number // Mix level (0 to 1)
     preDelay: number // Pre-delay in seconds (0 to 0.1)
     decay: number // Decay multiplier (0.1 to 2) - affects how the IR is scaled
@@ -82,7 +71,7 @@ const DEFAULT_TUNING: Tuning = [0, 0, 0, 0, 0, 0] // EADGBE
 const DEFAULT_EFFECTS: EffectsSettings = {
   reverb: {
     enabled: true,
-    preset: "medium-hall",
+    presetId: "", // Will be set to first available preset on load
     wet: 0.3,
     preDelay: 0.02,
     decay: 1.0,
@@ -132,6 +121,9 @@ const FretboardContext = React.createContext<{
   setMuteOnNewStrum: React.Dispatch<React.SetStateAction<boolean>>
   effects: EffectsSettings
   setEffects: React.Dispatch<React.SetStateAction<EffectsSettings>>
+  // Impulse response presets (dynamically loaded)
+  irPresets: ImpulseResponsePreset[]
+  irPresetsLoading: boolean
   // Centralized playback state
   playbackState: PlaybackState
   bpm: number
@@ -163,6 +155,9 @@ const FretboardContext = React.createContext<{
   setMuteOnNewStrum: () => {},
   effects: DEFAULT_EFFECTS,
   setEffects: () => {},
+  // Impulse response presets defaults
+  irPresets: [],
+  irPresetsLoading: true,
   // Centralized playback defaults
   playbackState: "stopped",
   bpm: 120,
@@ -195,6 +190,10 @@ export function FretboardContextProvider({ children }: { children: React.ReactNo
   const [muteOnNewStrum, setMuteOnNewStrum] = useState(true)
   // Track which frequency is currently playing on each string (for per-string note management)
   const stringFrequenciesRef = useRef<(number | null)[]>([null, null, null, null, null, null])
+
+  // Dynamically loaded impulse response presets
+  const [irPresets, setIrPresets] = useState<ImpulseResponsePreset[]>([])
+  const [irPresetsLoading, setIrPresetsLoading] = useState(true)
 
   // Centralized playback state
   const [playbackState, setPlaybackState] = useState<PlaybackState>("stopped")
@@ -310,8 +309,9 @@ export function FretboardContextProvider({ children }: { children: React.ReactNo
     preDelayRef.current = preDelay
 
     // 2. Convolver (impulse response reverb for realistic room sound)
-    const irPreset = IR_PRESETS.find((p) => p.id === effects.reverb.preset) || IR_PRESETS[0]
-    const convolver = new Tone.Convolver(irPreset.url)
+    // Find the selected preset, or use the first available one
+    const irPreset = irPresets.find((p) => p.id === effects.reverb.presetId) || irPresets[0]
+    const convolver = new Tone.Convolver(irPreset?.url)
     convolverRef.current = convolver
 
     // 3. High cut filter (removes harsh high frequencies from reverb tail)
@@ -536,6 +536,30 @@ export function FretboardContextProvider({ children }: { children: React.ReactNo
     return Tone.getTransport().seconds
   }, [])
 
+  // Fetch impulse response presets from API
+  useEffect(() => {
+    async function fetchIrPresets() {
+      try {
+        const response = await fetch("/api/impulses")
+        const presets: ImpulseResponsePreset[] = await response.json()
+        setIrPresets(presets)
+
+        // Set first preset as default if none selected
+        if (presets.length > 0 && !effects.reverb.presetId) {
+          setEffects((prev) => ({
+            ...prev,
+            reverb: { ...prev.reverb, presetId: presets[0].id },
+          }))
+        }
+      } catch (error) {
+        console.error("Failed to fetch impulse response presets:", error)
+      } finally {
+        setIrPresetsLoading(false)
+      }
+    }
+    fetchIrPresets()
+  }, [])
+
   useEffect(() => {
     changeInstrument("guitar-acoustic")
   }, [])
@@ -564,11 +588,13 @@ export function FretboardContextProvider({ children }: { children: React.ReactNo
 
   // Update convolver preset (requires loading new impulse response)
   useEffect(() => {
-    if (convolverRef.current) {
-      const irPreset = IR_PRESETS.find((p) => p.id === effects.reverb.preset) || IR_PRESETS[0]
-      convolverRef.current.load(irPreset.url)
+    if (convolverRef.current && irPresets.length > 0 && effects.reverb.presetId) {
+      const irPreset = irPresets.find((p) => p.id === effects.reverb.presetId)
+      if (irPreset) {
+        convolverRef.current.load(irPreset.url)
+      }
     }
-  }, [effects.reverb.preset])
+  }, [effects.reverb.presetId, irPresets])
 
   // Update sampler volume
   useEffect(() => {
@@ -592,7 +618,12 @@ export function FretboardContextProvider({ children }: { children: React.ReactNo
       compressorRef.current.attack.value = effects.compressor.attack
       compressorRef.current.release.value = effects.compressor.release
     }
-  }, [effects.compressor.threshold, effects.compressor.ratio, effects.compressor.attack, effects.compressor.release])
+  }, [
+    effects.compressor.threshold,
+    effects.compressor.ratio,
+    effects.compressor.attack,
+    effects.compressor.release,
+  ])
 
   // Update master gain
   useEffect(() => {
@@ -623,6 +654,9 @@ export function FretboardContextProvider({ children }: { children: React.ReactNo
         setMuteOnNewStrum,
         effects,
         setEffects,
+        // Impulse response presets
+        irPresets,
+        irPresetsLoading,
         // Centralized playback
         playbackState,
         bpm,

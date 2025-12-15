@@ -282,7 +282,7 @@ export default function AssembleChordLine() {
       partRef.current.loopEnd = totalDuration
       partRef.current.start(0)
     },
-    [chordLine, strumPattern]
+    [chordLine, strumPattern],
   )
 
   // Register player callbacks with the centralized playback system
