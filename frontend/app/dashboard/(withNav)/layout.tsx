@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic"
+
 import DashboardNav from "@/components/custom/nav/dashboard-nav"
 import React from "react"
 
