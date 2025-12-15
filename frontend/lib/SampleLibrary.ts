@@ -10,6 +10,7 @@ interface LoadOptions {
   baseUrl?: string
   onload?: (() => void) | null
   minify?: boolean
+  volume?: number // Volume in dB (default 0)
 }
 
 interface SampleLibraryType {
@@ -30,11 +31,12 @@ export const SampleLibrary: SampleLibraryType = {
   onload: null,
 
   async load(arg?: LoadOptions) {
-    const options: Required<LoadOptions> = {
+    const options = {
       instruments: arg?.instruments ?? this.list[0],
       baseUrl: arg?.baseUrl ?? this.baseUrl,
       onload: arg?.onload ?? this.onload,
       minify: arg?.minify ?? false,
+      volume: arg?.volume ?? 0,
     }
 
     const minifySamples = (samples: NoteSamples): NoteSamples => {
@@ -56,8 +58,9 @@ export const SampleLibrary: SampleLibraryType = {
     const samples = minifySamples({ ...this[options.instruments] })
     const sampler = new Sampler(samples, {
       baseUrl: options.baseUrl + options.instruments + "/",
+      volume: options.volume,
     })
-    await sampler.toDestination()
+    // Don't connect to destination here - let the caller handle routing
     return sampler
   },
 

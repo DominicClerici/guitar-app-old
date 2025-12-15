@@ -19,6 +19,24 @@ export type EffectsSettings = {
     roomSize: number // Room size (0 to 1, where 1 is longest reverb)
     wet: number // Mix level (0 to 1)
   }
+  sampler: {
+    volume: number // Sampler volume in dB (-24 to 0)
+  }
+  limiter: {
+    enabled: boolean
+    threshold: number // Threshold in dB (-12 to 0)
+  }
+  compressor: {
+    enabled: boolean
+    threshold: number // Threshold in dB (-48 to 0)
+    ratio: number // Compression ratio (1 to 20)
+    attack: number // Attack time in seconds (0.001 to 0.1)
+    release: number // Release time in seconds (0.01 to 1)
+  }
+  master: {
+    gain: number // Master gain (0 to 1)
+  }
+  velocityScale: number // Scale factor for note velocities (0.1 to 1)
 }
 
 // Playback state types
@@ -44,8 +62,26 @@ const DEFAULT_EFFECTS: EffectsSettings = {
   reverb: {
     enabled: true,
     roomSize: 0.6,
-    wet: 0.6,
+    wet: 0.3,
   },
+  sampler: {
+    volume: -6,
+  },
+  limiter: {
+    enabled: true,
+    threshold: -1,
+  },
+  compressor: {
+    enabled: true,
+    threshold: -12,
+    ratio: 4,
+    attack: 0.003,
+    release: 0.25,
+  },
+  master: {
+    gain: 0.8,
+  },
+  velocityScale: 0.5,
 }
 
 // Base MIDI notes for standard tuning (E2, A2, D3, G3, B3, E4)
@@ -120,6 +156,9 @@ export function FretboardContextProvider({ children }: { children: React.ReactNo
   const [fretPositions, setFretPositions] = useState<FretPositions>([0, 0, 0, 0, 0, 0])
   const instrumentRef = useRef<Tone.Sampler | null>(null)
   const reverbRef = useRef<Tone.Freeverb | null>(null)
+  const limiterRef = useRef<Tone.Limiter | null>(null)
+  const compressorRef = useRef<Tone.Compressor | null>(null)
+  const masterGainRef = useRef<Tone.Gain | null>(null)
   const [tuning, setTuning] = useState<Tuning>(DEFAULT_TUNING)
   const [effects, setEffects] = useState<EffectsSettings>(DEFAULT_EFFECTS)
   const [instrument, setInstrument] = useState<InstrumentName>("guitar-acoustic")
@@ -163,6 +202,8 @@ export function FretboardContextProvider({ children }: { children: React.ReactNo
 
   const changeInstrument = async (newInstrument: InstrumentName) => {
     setInstrument(newInstrument)
+
+    // Dispose of existing nodes
     if (instrumentRef.current) {
       instrumentRef.current.disconnect()
       instrumentRef.current.dispose()
@@ -171,18 +212,61 @@ export function FretboardContextProvider({ children }: { children: React.ReactNo
       reverbRef.current.disconnect()
       reverbRef.current.dispose()
     }
+    if (compressorRef.current) {
+      compressorRef.current.disconnect()
+      compressorRef.current.dispose()
+    }
+    if (limiterRef.current) {
+      limiterRef.current.disconnect()
+      limiterRef.current.dispose()
+    }
+    if (masterGainRef.current) {
+      masterGainRef.current.disconnect()
+      masterGainRef.current.dispose()
+    }
+
+    // Build signal chain: Sampler -> Reverb -> Compressor -> Limiter -> Master Gain -> Destination
+
+    // Create master gain (final volume control before destination)
+    const masterGain = new Tone.Gain(effects.master.gain)
+    masterGain.toDestination()
+    masterGainRef.current = masterGain
+
+    // Create limiter (prevents clipping)
+    const limiter = new Tone.Limiter(effects.limiter.threshold)
+    limiter.connect(masterGain)
+    limiterRef.current = limiter
+
+    // Create compressor (dynamic range control)
+    const compressor = new Tone.Compressor({
+      threshold: effects.compressor.threshold,
+      ratio: effects.compressor.ratio,
+      attack: effects.compressor.attack,
+      release: effects.compressor.release,
+    })
+    // Connect compressor to limiter if enabled, otherwise bypass to limiter
+    if (effects.compressor.enabled) {
+      compressor.connect(limiter)
+    }
+    compressorRef.current = compressor
 
     // Create reverb effect (Freeverb is algorithmic, no async generation needed)
     const reverb = new Tone.Freeverb({
       roomSize: effects.reverb.roomSize,
       wet: effects.reverb.enabled ? effects.reverb.wet : 0,
     })
-    reverb.toDestination()
+    // Connect reverb to compressor if compressor is enabled, otherwise to limiter
+    if (effects.compressor.enabled) {
+      reverb.connect(compressor)
+    } else {
+      reverb.connect(limiter)
+    }
     reverbRef.current = reverb
 
     // Load instrument and connect to reverb
     const sampler = await SampleLibrary.load({
       instruments: newInstrument,
+      volume: effects.sampler.volume,
     })
     sampler.connect(reverb)
     instrumentRef.current = sampler
@@ -190,52 +274,50 @@ export function FretboardContextProvider({ children }: { children: React.ReactNo
     await Tone.start()
   }
 
-  const strumNotes = useCallback((strum: "up" | "down" = "down", positions: FretPositions = fretPositions, time?: number) => {
-    if (!instrumentRef.current) {
-      console.error("Instrument not loaded")
-      return
-    }
+  const strumNotes = useCallback(
+    (strum: "up" | "down" = "down", positions: FretPositions = fretPositions, time?: number) => {
+      if (!instrumentRef.current) {
+        console.error("Instrument not loaded")
+        return
+      }
 
-    // Release all currently ringing notes before playing new ones (like a real guitar)
-    if (muteOnNewStrum) {
-      instrumentRef.current.releaseAll()
-    }
+      // Release all currently ringing notes before playing new ones (like a real guitar)
+      if (muteOnNewStrum) {
+        instrumentRef.current.releaseAll()
+      }
 
-    const frequencies: number[] = []
+      const frequencies: number[] = []
 
-    for (let string = 0; string < 6; string++) {
-      const fret = positions[string]
-      if (fret === -1) continue
-      const midiNote = STANDARD_TUNING_MIDI[string] + tuning[string] + fret
+      for (let string = 0; string < 6; string++) {
+        const fret = positions[string]
+        if (fret === -1) continue
+        const midiNote = STANDARD_TUNING_MIDI[string] + tuning[string] + fret
 
-      frequencies.push(midiToFrequency(midiNote))
-    }
-    if (strum === "down") {
-      frequencies.reverse()
-    }
+        frequencies.push(midiToFrequency(midiNote))
+      }
+      if (strum === "down") {
+        frequencies.reverse()
+      }
 
-    const downVelocities = [1.0, 0.85, 0.7, 0.55, 0.4, 0.25]
-    const upVelocities = [0.5, 0.6, 0.7, 0.8, 0.9, 1]
+      const downVelocities = [1.0, 0.85, 0.7, 0.55, 0.4, 0.25].map((v) => v * effects.velocityScale)
+      const upVelocities = [0.5, 0.6, 0.7, 0.8, 0.9, 1].map((v) => v * effects.velocityScale)
 
-    const start = time ?? Tone.now()
-    if (frequencies.length > 0) {
-      const instrument = instrumentRef.current
-      const strumDelay = 0.02
+      const start = time ?? Tone.now()
+      if (frequencies.length > 0) {
+        const instrument = instrumentRef.current
+        const strumDelay = 0.02
 
-      frequencies.forEach((freq, i) => {
-        const velocity = strum === "down" ? downVelocities[i] : upVelocities[i]
-        instrument.triggerAttackRelease(freq, "4", start + i * strumDelay, velocity)
-      })
-    }
-  }, [fretPositions, muteOnNewStrum, tuning])
+        frequencies.forEach((freq, i) => {
+          const velocity = strum === "down" ? downVelocities[i] : upVelocities[i]
+          instrument.triggerAttackRelease(freq, "4", start + i * strumDelay, velocity)
+        })
+      }
+    },
+    [fretPositions, muteOnNewStrum, tuning, effects.velocityScale],
+  )
 
   // Play a single note on a specific string, releasing any previous note on that string
-  const playNote = (
-    string: number,
-    fret: number,
-    time?: number,
-    duration?: string | number
-  ) => {
+  const playNote = (string: number, fret: number, time?: number, duration?: string | number) => {
     if (!instrumentRef.current) {
       console.error("Instrument not loaded")
       return
@@ -401,6 +483,37 @@ export function FretboardContextProvider({ children }: { children: React.ReactNo
       reverbRef.current.roomSize.value = effects.reverb.roomSize
     }
   }, [effects.reverb.roomSize])
+
+  // Update sampler volume
+  useEffect(() => {
+    if (instrumentRef.current) {
+      instrumentRef.current.volume.value = effects.sampler.volume
+    }
+  }, [effects.sampler.volume])
+
+  // Update limiter threshold
+  useEffect(() => {
+    if (limiterRef.current) {
+      limiterRef.current.threshold.value = effects.limiter.threshold
+    }
+  }, [effects.limiter.threshold])
+
+  // Update compressor settings
+  useEffect(() => {
+    if (compressorRef.current) {
+      compressorRef.current.threshold.value = effects.compressor.threshold
+      compressorRef.current.ratio.value = effects.compressor.ratio
+      compressorRef.current.attack.value = effects.compressor.attack
+      compressorRef.current.release.value = effects.compressor.release
+    }
+  }, [effects.compressor.threshold, effects.compressor.ratio, effects.compressor.attack, effects.compressor.release])
+
+  // Update master gain
+  useEffect(() => {
+    if (masterGainRef.current) {
+      masterGainRef.current.gain.value = effects.master.gain
+    }
+  }, [effects.master.gain])
 
   return (
     <FretboardContext.Provider
