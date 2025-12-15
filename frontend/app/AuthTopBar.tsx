@@ -1,8 +1,7 @@
-import { createClient } from "@/lib/supabase/server"
+import getUserInfo from "@/lib/fetches/getUserInfo"
 import AuthClient from "./auth-client"
 
 export default async function AuthTopBar() {
-  const supabase = await createClient()
-  const user = await supabase.auth.getUser()
-  return <AuthClient user={user.data.user} />
+  const user = await getUserInfo()
+  return <AuthClient user={user} />
 }

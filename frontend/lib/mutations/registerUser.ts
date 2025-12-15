@@ -1,11 +1,11 @@
 "use server"
 
-import { createClient } from "@/lib/supabase/server"
 import { signUpSchema, z } from "@guitar/schemas"
+import { createClient } from "../supabase/server"
 
-export async function registerUser(data: z.infer<typeof signUpSchema>) {
+export default async function registerUser(values: z.infer<typeof signUpSchema>) {
   try {
-    const parsed = signUpSchema.safeParse(data)
+    const parsed = signUpSchema.safeParse(values)
     if (!parsed.success) {
       console.error("Validation error:", parsed.error)
       return { error: parsed.error.message }
@@ -16,7 +16,7 @@ export async function registerUser(data: z.infer<typeof signUpSchema>) {
       password: parsed.data.password,
       options: {
         data: {
-          fullName: parsed.data.fullName,
+          name: parsed.data.fullName,
         },
       },
     })
@@ -24,7 +24,7 @@ export async function registerUser(data: z.infer<typeof signUpSchema>) {
       console.error("Supabase sign up error:", error)
       return { error: error.message }
     }
-    return { success: true }
+    return { error: null }
   } catch (error) {
     console.error(error)
     return { error: "An unknown error occurred" }

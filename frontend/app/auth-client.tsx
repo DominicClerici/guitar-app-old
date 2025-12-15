@@ -1,14 +1,17 @@
 "use client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { UserInfo } from "@/lib/fetches/getUserInfo"
+import registerUser from "@/lib/mutations/registerUser"
 import { createClient } from "@/lib/supabase/client"
 import { useState } from "react"
 
-export default function AuthClient({ user }: { user: any }) {
+export default function AuthClient({ user }: { user: UserInfo | null }) {
   const supabase = createClient()
   const [values, setValues] = useState({
     email: "",
     password: "",
+    fullName: "Dominic",
   })
 
   if (!user) {
@@ -20,21 +23,17 @@ export default function AuthClient({ user }: { user: any }) {
       if (error) {
         console.error(error)
       }
-      if (data) {
+      if (data || !error) {
         window.location.reload()
       }
     }
 
     const handleRegister = async () => {
-      const { data, error } = await supabase.auth.signUp({
-        email: values.email,
-        password: values.password,
-      })
+      const { error } = await registerUser(values)
       if (error) {
         console.error(error)
-      }
-      if (data) {
-        window.location.reload()
+      } else {
+        console.log("Registration successful.")
       }
     }
 
