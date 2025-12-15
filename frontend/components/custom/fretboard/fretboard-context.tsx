@@ -41,6 +41,9 @@ const FretboardContext = React.createContext<{
   tuning: Tuning
   setTuning: React.Dispatch<React.SetStateAction<Tuning>>
   strumNotes: (strum?: "up" | "down", positions?: FretPositions) => void
+  playNote: (string: number, fret: number, time?: number, duration?: string | number) => void
+  releaseString: (string: number, time?: number) => void
+  releaseAllStrings: (time?: number) => void
   instrument: InstrumentName
   changeInstrument: (instrument: InstrumentName) => Promise<void>
   chordLine: ChordLineItem[]
@@ -58,6 +61,9 @@ const FretboardContext = React.createContext<{
   tuning: DEFAULT_TUNING,
   setTuning: () => {},
   strumNotes: () => {},
+  playNote: () => {},
+  releaseString: () => {},
+  releaseAllStrings: () => {},
   instrument: "guitar-acoustic",
   changeInstrument: async () => {},
   chordLine: [],
@@ -81,6 +87,8 @@ export function FretboardContextProvider({ children }: { children: React.ReactNo
   const [chordLine, setChordLine] = useState<ChordLineItem[]>([])
   const chordIdCounter = useRef(0)
   const [muteOnNewStrum, setMuteOnNewStrum] = useState(true)
+  // Track which frequency is currently playing on each string (for per-string note management)
+  const stringFrequenciesRef = useRef<(number | null)[]>([null, null, null, null, null, null])
 
   const addChordToLine = () => {
     const hasNotes = fretPositions.some((fret) => fret !== -1)
@@ -166,12 +174,73 @@ export function FretboardContextProvider({ children }: { children: React.ReactNo
     const start = Tone.now()
     if (frequencies.length > 0) {
       const instrument = instrumentRef.current
-      const strumDelay = 0.01
+      const strumDelay = 0.02
 
       frequencies.forEach((freq, i) => {
         const velocity = strum === "down" ? downVelocities[i] : upVelocities[i]
         instrument.triggerAttackRelease(freq, "4", start + i * strumDelay, velocity)
       })
+    }
+  }
+
+  // Play a single note on a specific string, releasing any previous note on that string
+  const playNote = (
+    string: number,
+    fret: number,
+    time?: number,
+    duration?: string | number
+  ) => {
+    if (!instrumentRef.current) {
+      console.error("Instrument not loaded")
+      return
+    }
+
+    const playTime = time ?? Tone.now()
+    const midiNote = STANDARD_TUNING_MIDI[string] + tuning[string] + fret
+    const frequency = midiToFrequency(midiNote)
+
+    // Release any currently playing note on this string
+    const currentFreq = stringFrequenciesRef.current[string]
+    if (currentFreq !== null) {
+      instrumentRef.current.triggerRelease(currentFreq, playTime)
+    }
+
+    // Play the new note
+    if (duration !== undefined) {
+      // Play with a specific duration
+      instrumentRef.current.triggerAttackRelease(frequency, duration, playTime)
+      // Clear the tracked frequency after duration (note will auto-release)
+      stringFrequenciesRef.current[string] = null
+    } else {
+      // Play until explicitly released
+      instrumentRef.current.triggerAttack(frequency, playTime)
+      stringFrequenciesRef.current[string] = frequency
+    }
+  }
+
+  // Release a specific string
+  const releaseString = (string: number, time?: number) => {
+    if (!instrumentRef.current) return
+
+    const releaseTime = time ?? Tone.now()
+    const currentFreq = stringFrequenciesRef.current[string]
+    if (currentFreq !== null) {
+      instrumentRef.current.triggerRelease(currentFreq, releaseTime)
+      stringFrequenciesRef.current[string] = null
+    }
+  }
+
+  // Release all strings
+  const releaseAllStrings = (time?: number) => {
+    if (!instrumentRef.current) return
+
+    const releaseTime = time ?? Tone.now()
+    for (let i = 0; i < 6; i++) {
+      const currentFreq = stringFrequenciesRef.current[i]
+      if (currentFreq !== null) {
+        instrumentRef.current.triggerRelease(currentFreq, releaseTime)
+        stringFrequenciesRef.current[i] = null
+      }
     }
   }
 
@@ -201,6 +270,9 @@ export function FretboardContextProvider({ children }: { children: React.ReactNo
         tuning,
         setTuning,
         strumNotes,
+        playNote,
+        releaseString,
+        releaseAllStrings,
         instrument,
         changeInstrument,
         chordLine,
