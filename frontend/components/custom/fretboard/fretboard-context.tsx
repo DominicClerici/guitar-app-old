@@ -1,8 +1,15 @@
 "use client"
 import { midiToFrequency } from "@/lib/midi-utils"
-import { InstrumentName, SampleLibrary } from "@/lib/SampleLibrary"
+import {
+  InstrumentName,
+  isStereoSamplers,
+  SampleLibrary,
+  StereoSamplers,
+} from "@/lib/SampleLibrary"
 import React, { useCallback, useContext, useEffect, useRef, useState } from "react"
 import * as Tone from "tone"
+
+type InstrumentRef = Tone.Sampler | StereoSamplers | null
 
 export type FretPositions = [number, number, number, number, number, number]
 
@@ -173,7 +180,8 @@ const FretboardContext = React.createContext<{
 
 export function FretboardContextProvider({ children }: { children: React.ReactNode }) {
   const [fretPositions, setFretPositions] = useState<FretPositions>([0, 0, 0, 0, 0, 0])
-  const instrumentRef = useRef<Tone.Sampler | null>(null)
+  const instrumentRef = useRef<InstrumentRef>(null)
+  const mergeRef = useRef<Tone.Merge | null>(null)
   const convolverRef = useRef<Tone.Convolver | null>(null)
   const reverbGainRef = useRef<Tone.Gain | null>(null) // Wet gain for convolver
   const dryGainRef = useRef<Tone.Gain | null>(null) // Dry signal path
@@ -232,8 +240,20 @@ export function FretboardContextProvider({ children }: { children: React.ReactNo
 
     // Dispose of existing nodes
     if (instrumentRef.current) {
-      instrumentRef.current.disconnect()
-      instrumentRef.current.dispose()
+      if (isStereoSamplers(instrumentRef.current)) {
+        instrumentRef.current.left.disconnect()
+        instrumentRef.current.left.dispose()
+        instrumentRef.current.right.disconnect()
+        instrumentRef.current.right.dispose()
+      } else {
+        instrumentRef.current.disconnect()
+        instrumentRef.current.dispose()
+      }
+    }
+    if (mergeRef.current) {
+      mergeRef.current.disconnect()
+      mergeRef.current.dispose()
+      mergeRef.current = null
     }
     if (convolverRef.current) {
       convolverRef.current.disconnect()
@@ -333,13 +353,32 @@ export function FretboardContextProvider({ children }: { children: React.ReactNo
     highCut.connect(reverbGain)
 
     // Load instrument and connect to both dry and wet paths
-    const sampler = await SampleLibrary.load({
+    const loadResult = await SampleLibrary.load({
       instruments: newInstrument,
       volume: effects.sampler.volume,
     })
-    sampler.connect(dryGain)
-    sampler.connect(preDelay)
-    instrumentRef.current = sampler
+
+    if (isStereoSamplers(loadResult)) {
+      // Create a merge node for stereo routing
+      const merge = new Tone.Merge()
+      mergeRef.current = merge
+
+      // Connect left sampler to left channel (input 0)
+      loadResult.left.connect(merge, 0, 0)
+      // Connect right sampler to right channel (input 1)
+      loadResult.right.connect(merge, 0, 1)
+
+      // Connect merge to effects chain
+      merge.connect(dryGain)
+      merge.connect(preDelay)
+
+      instrumentRef.current = loadResult
+    } else {
+      // Mono instrument - connect directly
+      loadResult.connect(dryGain)
+      loadResult.connect(preDelay)
+      instrumentRef.current = loadResult
+    }
 
     await Tone.start()
   }
@@ -353,7 +392,12 @@ export function FretboardContextProvider({ children }: { children: React.ReactNo
 
       // Release all currently ringing notes before playing new ones (like a real guitar)
       if (muteOnNewStrum) {
-        instrumentRef.current.releaseAll()
+        if (isStereoSamplers(instrumentRef.current)) {
+          instrumentRef.current.left.releaseAll()
+          instrumentRef.current.right.releaseAll()
+        } else {
+          instrumentRef.current.releaseAll()
+        }
       }
 
       const frequencies: number[] = []
@@ -377,10 +421,21 @@ export function FretboardContextProvider({ children }: { children: React.ReactNo
         const instrument = instrumentRef.current
         const strumDelay = 0.02
 
-        frequencies.forEach((freq, i) => {
-          const velocity = strum === "down" ? downVelocities[i] : upVelocities[i]
-          instrument.triggerAttackRelease(freq, "4", start + i * strumDelay, velocity)
-        })
+        if (isStereoSamplers(instrument)) {
+          // Stereo instrument - trigger both left and right samplers simultaneously
+          frequencies.forEach((freq, i) => {
+            const velocity = strum === "down" ? downVelocities[i] : upVelocities[i]
+            const noteTime = start + i * strumDelay
+            instrument.left.triggerAttackRelease(freq, "4", noteTime, velocity)
+            instrument.right.triggerAttackRelease(freq, "4", noteTime, velocity)
+          })
+        } else {
+          // Mono instrument
+          frequencies.forEach((freq, i) => {
+            const velocity = strum === "down" ? downVelocities[i] : upVelocities[i]
+            instrument.triggerAttackRelease(freq, "4", start + i * strumDelay, velocity)
+          })
+        }
       }
     },
     [fretPositions, muteOnNewStrum, tuning, effects.velocityScale],
@@ -396,22 +451,38 @@ export function FretboardContextProvider({ children }: { children: React.ReactNo
     const playTime = time ?? Tone.now()
     const midiNote = STANDARD_TUNING_MIDI[string] + tuning[string] + fret
     const frequency = midiToFrequency(midiNote)
+    const instrument = instrumentRef.current
 
     // Release any currently playing note on this string
     const currentFreq = stringFrequenciesRef.current[string]
     if (currentFreq !== null) {
-      instrumentRef.current.triggerRelease(currentFreq, playTime)
+      if (isStereoSamplers(instrument)) {
+        instrument.left.triggerRelease(currentFreq, playTime)
+        instrument.right.triggerRelease(currentFreq, playTime)
+      } else {
+        instrument.triggerRelease(currentFreq, playTime)
+      }
     }
 
     // Play the new note
     if (duration !== undefined) {
       // Play with a specific duration
-      instrumentRef.current.triggerAttackRelease(frequency, duration, playTime)
+      if (isStereoSamplers(instrument)) {
+        instrument.left.triggerAttackRelease(frequency, duration, playTime)
+        instrument.right.triggerAttackRelease(frequency, duration, playTime)
+      } else {
+        instrument.triggerAttackRelease(frequency, duration, playTime)
+      }
       // Clear the tracked frequency after duration (note will auto-release)
       stringFrequenciesRef.current[string] = null
     } else {
       // Play until explicitly released
-      instrumentRef.current.triggerAttack(frequency, playTime)
+      if (isStereoSamplers(instrument)) {
+        instrument.left.triggerAttack(frequency, playTime)
+        instrument.right.triggerAttack(frequency, playTime)
+      } else {
+        instrument.triggerAttack(frequency, playTime)
+      }
       stringFrequenciesRef.current[string] = frequency
     }
   }
@@ -423,7 +494,12 @@ export function FretboardContextProvider({ children }: { children: React.ReactNo
     const releaseTime = time ?? Tone.now()
     const currentFreq = stringFrequenciesRef.current[string]
     if (currentFreq !== null) {
-      instrumentRef.current.triggerRelease(currentFreq, releaseTime)
+      if (isStereoSamplers(instrumentRef.current)) {
+        instrumentRef.current.left.triggerRelease(currentFreq, releaseTime)
+        instrumentRef.current.right.triggerRelease(currentFreq, releaseTime)
+      } else {
+        instrumentRef.current.triggerRelease(currentFreq, releaseTime)
+      }
       stringFrequenciesRef.current[string] = null
     }
   }
@@ -436,7 +512,12 @@ export function FretboardContextProvider({ children }: { children: React.ReactNo
     for (let i = 0; i < 6; i++) {
       const currentFreq = stringFrequenciesRef.current[i]
       if (currentFreq !== null) {
-        instrumentRef.current.triggerRelease(currentFreq, releaseTime)
+        if (isStereoSamplers(instrumentRef.current)) {
+          instrumentRef.current.left.triggerRelease(currentFreq, releaseTime)
+          instrumentRef.current.right.triggerRelease(currentFreq, releaseTime)
+        } else {
+          instrumentRef.current.triggerRelease(currentFreq, releaseTime)
+        }
         stringFrequenciesRef.current[i] = null
       }
     }
@@ -599,7 +680,12 @@ export function FretboardContextProvider({ children }: { children: React.ReactNo
   // Update sampler volume
   useEffect(() => {
     if (instrumentRef.current) {
-      instrumentRef.current.volume.value = effects.sampler.volume
+      if (isStereoSamplers(instrumentRef.current)) {
+        instrumentRef.current.left.volume.value = effects.sampler.volume
+        instrumentRef.current.right.volume.value = effects.sampler.volume
+      } else {
+        instrumentRef.current.volume.value = effects.sampler.volume
+      }
     }
   }, [effects.sampler.volume])
 

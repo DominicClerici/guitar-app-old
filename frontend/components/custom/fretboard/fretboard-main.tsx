@@ -1,10 +1,10 @@
 "use client"
 
 import { Card } from "@/components/ui/card"
+import TabEditorChords from "../tab-editor/controls/tab-editor-chords"
 import AssembleChordLine from "./chord-line/assemble-chord-line"
 import FilterControls from "./filter-controls"
 import FretboardCanvas from "./fretboard-canvas"
-import FretboardChords from "./fretboard-chords"
 import useFretboardContext from "./fretboard-context"
 import FretControls from "./fretboard-controls"
 import FretboardInstrument from "./fretboard-instrument"
@@ -34,7 +34,7 @@ export default function FretboardMain() {
         addChordToLine={addChordToLine}
       />
       <div className="grid w-full grid-cols-3 gap-4">
-        <FretboardChords />
+        <TabEditorChords fretPositions={fretPositions} tuning={tuning} />
         <FretboardTuning />
         <FretboardInstrument />
       </div>

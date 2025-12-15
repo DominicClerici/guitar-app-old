@@ -23,9 +23,8 @@ export default function FretboardInstrument() {
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="guitar-acoustic">Acoustic Guitar</SelectItem>
-          <SelectItem value="guitar-electric">Electric Guitar</SelectItem>
-          <SelectItem value="guitar-nylon">Nylon Guitar</SelectItem>
-          <SelectItem value="guitar-acoustic-sf2">Acoustic Guitar (SF2)</SelectItem>
+          <SelectItem value="guitar-classical">Classical Guitar</SelectItem>
+          <SelectItem value="guitar-12-string">12-String Guitar</SelectItem>
         </SelectContent>
       </Select>
     </Card>

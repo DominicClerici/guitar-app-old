@@ -3,9 +3,9 @@
   "private": true,
   "packageManager": "pnpm@10.11.0",
   "scripts": {
-    "dev": "concurrently --kill-others --names \"frontend,db,schemas\" \"pnpm --filter=frontend run dev\" \"pnpm --filter=@guitar/db run dev\" \"pnpm --filter=@guitar/schemas run dev\"",
+    "dev": "concurrently --kill-others --names \"frontend,db,schemas,chord-detection\" \"pnpm --filter=frontend run dev\" \"pnpm --filter=@guitar/db run dev\" \"pnpm --filter=@guitar/schemas run dev\" \"pnpm --filter=@guitar/chord-detection run dev\"",
     "build": "pnpm run build:packages && pnpm --filter=frontend run build",
-    "build:packages": "pnpm --filter=@guitar/db run build && pnpm --filter=@guitar/schemas run build",
+    "build:packages": "pnpm --filter=@guitar/db run build && pnpm --filter=@guitar/schemas run build && pnpm --filter=@guitar/chord-detection run build",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "format-staged": "git diff --cached --name-only --diff-filter=ACMR | xargs prettier --write --ignore-unknown && git diff --cached --name-only --diff-filter=ACMR | xargs git add",

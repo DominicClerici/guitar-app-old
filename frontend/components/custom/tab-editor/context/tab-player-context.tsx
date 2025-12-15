@@ -1,5 +1,6 @@
 "use client"
 import { midiToFrequency } from "@/lib/midi-utils"
+import { isStereoSamplers } from "@/lib/SampleLibrary"
 import { createContext, useContext } from "react"
 import * as Tone from "tone"
 import { useTabEffectsContext } from "./tab-effects-context"
@@ -63,10 +64,21 @@ export function TabPlayerContextProvider({
       const instrument = instrumentRef.current
       const strumDelay = 0.02
 
-      frequencies.forEach((freq, i) => {
-        const velocity = strum === "down" ? downVelocities[i] : upVelocities[i]
-        instrument.triggerAttackRelease(freq, "4", start + i * strumDelay, velocity)
-      })
+      if (isStereoSamplers(instrument)) {
+        // Stereo instrument - trigger both left and right samplers simultaneously
+        frequencies.forEach((freq, i) => {
+          const velocity = strum === "down" ? downVelocities[i] : upVelocities[i]
+          const noteTime = start + i * strumDelay
+          instrument.left.triggerAttackRelease(freq, "4", noteTime, velocity)
+          instrument.right.triggerAttackRelease(freq, "4", noteTime, velocity)
+        })
+      } else {
+        // Mono instrument
+        frequencies.forEach((freq, i) => {
+          const velocity = strum === "down" ? downVelocities[i] : upVelocities[i]
+          instrument.triggerAttackRelease(freq, "4", start + i * strumDelay, velocity)
+        })
+      }
     }
   }
 

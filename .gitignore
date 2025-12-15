@@ -3,4 +3,5 @@ node_modules
 dist
 
 .env
-.tsbuildinfo
+
+tsconfig.tsbuildinfo

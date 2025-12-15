@@ -1,3 +1,4 @@
+import { identifyChord } from "@guitar/chord-detection"
 import { detect } from "@tonaljs/chord-detect"
 import { useMemo } from "react"
 import { FretPositions } from "../context/tab-fret-context"
@@ -74,6 +75,11 @@ export default function TabEditorChords({ fretPositions, tuning }: TabEditorChor
     return detectedChords.filter((chord, index) => detectedChords.indexOf(chord) === index)
   }, [noteNames])
 
+  const customDetectionResults = useMemo(() => {
+    if (activeNotes.length < 2) return { interpretations: [] }
+    return identifyChord(activeNotes.map((n) => n.noteName))
+  }, [activeNotes])
+
   // Get note names for display
   const noteNamesDisplay = activeNotes.map((n) => n.noteWithOctave).join(", ")
 
@@ -112,6 +118,29 @@ export default function TabEditorChords({ fretPositions, tuning }: TabEditorChor
                           }`}
                         >
                           {chord}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <span className="text-muted-foreground text-sm font-medium">
+                    custom detection:
+                  </span>
+                  {customDetectionResults.interpretations.length === 0 ? (
+                    <p className="text-muted-foreground mt-1 text-sm">No matching chords found</p>
+                  ) : (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {customDetectionResults.interpretations.map((chord, index) => (
+                        <span
+                          key={index}
+                          className={`rounded-full px-3 py-1 text-sm font-medium ${
+                            index === 0
+                              ? "bg-blue-500 text-white"
+                              : "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+                          }`}
+                        >
+                          {chord.symbol}
                         </span>
                       ))}
                     </div>

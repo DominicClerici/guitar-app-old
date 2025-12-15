@@ -157,7 +157,6 @@ export default function FretboardCanvas({
   // Draw dynamic elements (placed notes)
   const drawNotes = useCallback(
     (ctx: CanvasRenderingContext2D) => {
-      const startTime = performance.now()
       if (canvasDimensions.width === 0 || canvasDimensions.height === 0) {
         return
       }
@@ -190,8 +189,6 @@ export default function FretboardCanvas({
           ctx.fillStyle = "#3b82f6"
         }
       }
-      const endTime = performance.now()
-      console.log(`Fretboard canvas draw notes time: ${endTime - startTime}ms`)
     },
     [
       canvasDimensions.width,
