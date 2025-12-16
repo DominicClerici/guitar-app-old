@@ -1,6 +1,10 @@
 import { Button } from "@/components/ui/button"
+import { PauseIcon, PlayIcon, SquareIcon } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { STANDARD_TUNING_NOTES } from "../context/tab-player-context"
+import * as Tone from "tone"
+import { NoteEvent } from "../context/tab-data-context"
+import { PlayerCallbacks, STANDARD_TUNING_NOTES } from "../context/tab-player-context"
+import useTabContext from "../tab-context-main"
 
 export type TabNote = {
   string: number // 0-5 (0 = high E, 5 = low E)
@@ -15,7 +19,7 @@ const INTERVAL_CONFIG: Record<NoteInterval, { positionsPerBar: number; divisor: 
   "64th": { positionsPerBar: 64, divisor: 16 }, // 16 64th notes per beat, 64 per bar in 4/4
 }
 
-const bpm = 120
+const MELODY_PLAYER_ID = "tab-line-editor"
 
 // A bar contains notes at various positions
 export type TabBar = {
@@ -55,11 +59,42 @@ type CellPosition = {
 }
 
 export default function TabLineEditor() {
+  const {
+    isPlaying,
+    startPlayback,
+    stopPlayback,
+    registerPlayer,
+    unregisterPlayer,
+    playNote,
+    timeSignature,
+  } = useTabContext()
+
   const [bars, setBars] = useState<TabBar[]>([createEmptyBar()])
   const [interval, setInterval] = useState<NoteInterval>("32nd")
   // Container ref for responsive sizing
   const containerRef = useRef<HTMLDivElement>(null)
   const [containerWidth, setContainerWidth] = useState(0)
+
+  // Playback state tracking
+  const [currentBarIndex, setCurrentBarIndex] = useState(0)
+  const [currentPosition, setCurrentPosition] = useState(0)
+  const positionUpdateRef = useRef<number | null>(null)
+  const melodyPartRef = useRef<Tone.Part | null>(null)
+
+  // Track total melody bars for independent looping
+  const totalMelodyBarsRef = useRef(1)
+
+  // Refs to avoid stale closures in Tone.Part callbacks
+  const barsRef = useRef(bars)
+  const intervalRef = useRef(interval)
+
+  useEffect(() => {
+    barsRef.current = bars
+  }, [bars])
+
+  useEffect(() => {
+    intervalRef.current = interval
+  }, [interval])
 
   // Measure container width on mount and resize
   useEffect(() => {
@@ -207,21 +242,214 @@ export default function TabLineEditor() {
     }
   }
 
-  const getIntervalDuration = useCallback(() => {
-    const quarterNoteDuration = 60 / bpm // seconds per quarter note
-    return quarterNoteDuration / intervalDivisor
-  }, [bpm, intervalDivisor])
+  // Convert bars to NoteEvents for Tone.js scheduling
+  const convertBarsToNoteEvents = useCallback((): NoteEvent[] => {
+    const events: NoteEvent[] = []
+    const currentInterval = intervalRef.current
+    const currentBars = barsRef.current
+    const currentPositionsPerBar = INTERVAL_CONFIG[currentInterval].positionsPerBar
+
+    // Map interval to Tone.js note duration
+    const noteDuration =
+      currentInterval === "16th" ? "16n" : currentInterval === "32nd" ? "32n" : "64n"
+
+    currentBars.forEach((bar, barIndex) => {
+      bar.notes.forEach((note) => {
+        // Calculate time in bars:beats:sixteenths format
+        // For 4/4 time: position 0-15 for 16th notes maps to 4 beats
+        const beatsPerBar = timeSignature[0]
+        const positionsPerBeat = currentPositionsPerBar / beatsPerBar
+
+        const beat = Math.floor(note.position / positionsPerBeat)
+        const sixteenthsInBeat = (note.position % positionsPerBeat) * (4 / positionsPerBeat)
+
+        events.push({
+          id: `${bar.id}-${note.string}-${note.position}`,
+          time: `${barIndex}:${beat}:${sixteenthsInBeat}`,
+          string: note.string,
+          fret: note.fret,
+          duration: noteDuration,
+          velocity: 0.8,
+        })
+      })
+    })
+
+    return events
+  }, [timeSignature])
+
+  // Start continuous position tracking using requestAnimationFrame
+  const startPositionTracking = useCallback(() => {
+    const updatePosition = () => {
+      const position = Tone.getTransport().position as string
+      const [bars, beats, sixteenths] = position.split(":").map(Number)
+
+      // Calculate which bar we're in relative to the melody loop
+      const totalMelodyBars = totalMelodyBarsRef.current
+      const melodyBarIndex = bars % totalMelodyBars
+
+      setCurrentBarIndex(melodyBarIndex)
+
+      // Calculate position within the bar based on current interval
+      const currentPosPerBar = INTERVAL_CONFIG[intervalRef.current].positionsPerBar
+      const beatsPerBar = timeSignature[0]
+      const positionsPerBeat = currentPosPerBar / beatsPerBar
+      const positionInBar = Math.floor(
+        beats * positionsPerBeat + sixteenths * (positionsPerBeat / 4),
+      )
+      setCurrentPosition(positionInBar)
+
+      positionUpdateRef.current = requestAnimationFrame(updatePosition)
+    }
+    positionUpdateRef.current = requestAnimationFrame(updatePosition)
+  }, [timeSignature])
+
+  // Setup melody playback when player callbacks are triggered
+  const setupMelodyPlayback = useCallback(() => {
+    // Clean up existing part
+    if (melodyPartRef.current) {
+      melodyPartRef.current.stop()
+      melodyPartRef.current.dispose()
+      melodyPartRef.current = null
+    }
+
+    const events = convertBarsToNoteEvents()
+
+    // Store total melody bars for position tracking
+    const totalBars = barsRef.current.length
+    totalMelodyBarsRef.current = totalBars
+
+    // If no events, still start position tracking but don't create a part
+    if (events.length === 0) {
+      startPositionTracking()
+      return
+    }
+
+    const partEvents = events.map((event) => ({
+      time: event.time,
+      event,
+    }))
+
+    melodyPartRef.current = new Tone.Part<{ time: string | number; event: NoteEvent }>(
+      (time, value) => {
+        const { event } = value
+        playNote(event.string, event.fret, time, event.velocity || 0.8)
+      },
+      partEvents,
+    )
+
+    // Set loop to cover melody bars only - loops independently of chord line
+    melodyPartRef.current.loop = true
+    melodyPartRef.current.loopEnd = `${totalBars}:0:0`
+    melodyPartRef.current.start(0)
+
+    // Start continuous position tracking
+    startPositionTracking()
+  }, [convertBarsToNoteEvents, playNote, startPositionTracking])
+
+  const cleanupMelodyPlayback = useCallback(() => {
+    if (positionUpdateRef.current) {
+      cancelAnimationFrame(positionUpdateRef.current)
+      positionUpdateRef.current = null
+    }
+    if (melodyPartRef.current) {
+      melodyPartRef.current.stop()
+      melodyPartRef.current.dispose()
+      melodyPartRef.current = null
+    }
+    setCurrentBarIndex(0)
+    setCurrentPosition(0)
+  }, [])
+
+  // Register as a player to receive playback callbacks
+  useEffect(() => {
+    const callbacks: PlayerCallbacks = {
+      onPlay: () => {
+        setupMelodyPlayback()
+      },
+      onStop: () => {
+        cleanupMelodyPlayback()
+      },
+      onPause: () => {
+        // Stop position tracking on pause
+        if (positionUpdateRef.current) {
+          cancelAnimationFrame(positionUpdateRef.current)
+          positionUpdateRef.current = null
+        }
+      },
+      onResume: () => {
+        // Resume position tracking
+        startPositionTracking()
+      },
+      onBpmChange: () => {
+        // BPM is handled by transport automatically
+      },
+    }
+
+    registerPlayer(MELODY_PLAYER_ID, callbacks)
+
+    return () => {
+      unregisterPlayer(MELODY_PLAYER_ID)
+      cleanupMelodyPlayback()
+    }
+  }, [
+    registerPlayer,
+    unregisterPlayer,
+    setupMelodyPlayback,
+    cleanupMelodyPlayback,
+    startPositionTracking,
+  ])
+
+  // Check if there are any notes to play
+  const hasNotes = bars.some((bar) => bar.notes.length > 0)
+
+  const handleTogglePlayback = async () => {
+    if (isPlaying) {
+      stopPlayback()
+    } else {
+      if (hasNotes) {
+        await startPlayback()
+      }
+    }
+  }
+
+  const handleStop = () => {
+    stopPlayback()
+  }
 
   return (
-    <div className="mx-auto max-w-7xl px-4 pt-24">
+    <div className="w-full">
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Tab Editor</h1>
+        <h1 className="text-2xl font-bold">Melody Editor</h1>
         <div className="flex items-center gap-4">
+          {/* Playback Controls */}
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={handleTogglePlayback}
+              disabled={!hasNotes}
+            >
+              {isPlaying ? <PauseIcon className="h-4 w-4" /> : <PlayIcon className="h-4 w-4" />}
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={handleStop}
+              disabled={!isPlaying && currentBarIndex === 0}
+            >
+              <SquareIcon className="h-4 w-4" />
+            </Button>
+          </div>
+
+          <div className="bg-border h-6 w-px" />
+
+          {/* Interval Selection */}
           <div className="flex items-center gap-2">
             <Button
               variant={interval === "16th" ? "default" : "outline"}
               size="sm"
               onClick={() => handleIntervalChange("16th")}
+              disabled={isPlaying}
             >
               16th
             </Button>
@@ -229,6 +457,7 @@ export default function TabLineEditor() {
               variant={interval === "32nd" ? "default" : "outline"}
               size="sm"
               onClick={() => handleIntervalChange("32nd")}
+              disabled={isPlaying}
             >
               32nd
             </Button>
@@ -236,16 +465,17 @@ export default function TabLineEditor() {
               variant={interval === "64th" ? "default" : "outline"}
               size="sm"
               onClick={() => handleIntervalChange("64th")}
+              disabled={isPlaying}
             >
               64th
             </Button>
           </div>
-          <button
-            onClick={addBar}
-            className="bg-primary text-primary-foreground hover:bg-primary/90 rounded px-3 py-1.5 text-sm font-medium"
-          >
+
+          <div className="bg-border h-6 w-px" />
+
+          <Button variant="outline" size="sm" onClick={addBar} disabled={isPlaying}>
             Add Bar
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -268,7 +498,7 @@ export default function TabLineEditor() {
                     <span className="text-muted-foreground text-sm font-medium">
                       Bar {barIndex + 1}
                     </span>
-                    {bars.length > 1 && (
+                    {bars.length > 1 && !isPlaying && (
                       <button
                         onClick={() => removeBar(barIndex)}
                         className="text-destructive hover:text-destructive/80 text-sm"
@@ -302,14 +532,21 @@ export default function TabLineEditor() {
                               selectedCell?.position === posIndex
                             // Beat markers: every 4 positions for 16th, 8 for 32nd, 16 for 64th
                             const isBeatMarker = posIndex % intervalDivisor === 0
+                            // Highlight current playback position
+                            const isCurrentPosition =
+                              isPlaying &&
+                              barIndex === currentBarIndex &&
+                              posIndex === currentPosition
 
                             return (
                               <div
                                 key={posIndex}
                                 className={`relative flex h-4 min-w-3 flex-1 cursor-pointer items-center justify-center ${
                                   isBeatMarker ? "border-muted-foreground/30 border-l" : ""
-                                }`}
-                                onClick={() => handleCellClick(barIndex, stringIndex, posIndex)}
+                                } ${isCurrentPosition ? "bg-primary/20" : ""}`}
+                                onClick={() =>
+                                  !isPlaying && handleCellClick(barIndex, stringIndex, posIndex)
+                                }
                               >
                                 {isSelected ? (
                                   <input
@@ -324,7 +561,11 @@ export default function TabLineEditor() {
                                   />
                                 ) : note ? (
                                   <span
-                                    className={`absolute top-1/2 left-1/2 z-10 flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded font-mono text-xs ${"bg-primary text-primary-foreground"}`}
+                                    className={`absolute top-1/2 left-1/2 z-10 flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded font-mono text-xs ${
+                                      isCurrentPosition
+                                        ? "bg-green-500 text-white"
+                                        : "bg-primary text-primary-foreground"
+                                    }`}
                                   >
                                     {note.fret}
                                   </span>
@@ -363,12 +604,6 @@ export default function TabLineEditor() {
             })}
           </div>
         ))}
-      </div>
-
-      {/* Debug info for tuning context verification */}
-      <div className="text-muted-foreground mt-8 text-xs">
-        <p>Total notes in tab: {bars.reduce((sum, bar) => sum + bar.notes.length, 0)}</p>
-        <p>Bars per row: {barsPerRow}</p>
       </div>
     </div>
   )

@@ -18,7 +18,7 @@ export default function TabEditorTuning({ tuning, setTuning }: TabEditorTuningPr
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-1">
-        {tuning.map((note, index) => (
+        {tuning.toReversed().map((note, index) => (
           <div key={`tuning-${index}`} className="flex flex-col items-center">
             <InputWithTicker
               value={note}
@@ -28,14 +28,12 @@ export default function TabEditorTuning({ tuning, setTuning }: TabEditorTuningPr
               onValueChange={(value) =>
                 setTuning((prev) => {
                   const newTuning = [...prev] as Tuning
-                  newTuning[index] = value
+                  newTuning[5 - index] = value
                   return newTuning
                 })
               }
             />
-            <span className="text-muted-foreground text-sm">
-              {tunedNotes[index] === "E" && index === 5 ? "e" : tunedNotes[index]}
-            </span>
+            <span className="text-muted-foreground text-sm">{tunedNotes[5 - index]}</span>
           </div>
         ))}
       </div>

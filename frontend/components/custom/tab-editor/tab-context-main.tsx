@@ -5,7 +5,11 @@ import { TabDataContextProvider, useTabDataContext } from "./context/tab-data-co
 import TabEffectsContextProvider, { useTabEffectsContext } from "./context/tab-effects-context"
 import { TabFretContextProvider, useTabFretContext } from "./context/tab-fret-context"
 import { TabInstrumentContextProvider } from "./context/tab-instrument-context"
-import { TabPlayerContextProvider, useTabPlayerContext } from "./context/tab-player-context"
+import {
+  PlaybackState,
+  TabPlayerContextProvider,
+  useTabPlayerContext,
+} from "./context/tab-player-context"
 import { TabSettingsContextProvider, useTabSettingsContext } from "./context/tab-settings-context"
 import { TabTuningContextProvider, useTabTuningContext } from "./context/tab-tuning-context"
 
@@ -41,6 +45,9 @@ export function TabContextMain({ children, initialTabSettings }: TabContextMainP
     </TabContext.Provider>
   )
 }
+
+// Re-export types for convenience
+export type { PlaybackState }
 
 export function useTabContext() {
   const tabDataContext = useTabDataContext()
