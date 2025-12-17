@@ -7,6 +7,7 @@ type NoteName = (typeof NOTE_NAMES)[number] | (typeof FLAT_NOTE_NAMES)[number]
 // Input note can be a string like "E4", "C#3" or a MIDI number
 export type NoteInput = string | number
 
+import { analyzeChord } from "./analysis"
 import { type ChordWarning, generateChordWarnings } from "./warning"
 
 export interface ChordResult {
@@ -388,8 +389,10 @@ export function identifyChords(notes: NoteInput[], maxResults: number = 7): Chor
   // Add warnings to each chord result
   return topResults.map((chord) => {
     const warnings = generateChordWarnings(chord, topResults)
+    const analysis = analyzeChord(chord)
     return {
       ...chord,
+      analysis: analysis,
       warnings: warnings.length > 0 ? warnings : null,
     }
   })
