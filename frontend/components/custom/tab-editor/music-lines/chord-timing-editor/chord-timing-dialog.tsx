@@ -8,7 +8,7 @@ import ManualChordTiming from "./manual-chord-timing"
 export default function ChordTimingDialog() {
   const [currentTab, setCurrentTab] = useState<"detect" | "manual">("manual")
   return (
-    <Dialog defaultOpen>
+    <Dialog>
       <DialogTrigger asChild>
         <Button variant="outline">Strum Pattern</Button>
       </DialogTrigger>
