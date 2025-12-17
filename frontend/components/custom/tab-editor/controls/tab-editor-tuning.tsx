@@ -2,9 +2,9 @@
 
 import InputWithTicker from "@/components/ui/input-with-ticker"
 import { Separator } from "@/components/ui/separator"
+import { STANDARD_TUNING_NOTES } from "@/lib/constants"
 import { applyTuningToNoteCharacter } from "@/lib/midi-utils"
 import { arraysEqual } from "@/lib/utils"
-import { STANDARD_TUNING_NOTES } from "../context/tab-player-context"
 import { Tuning } from "../context/tab-tuning-context"
 
 interface TabEditorTuningProps {

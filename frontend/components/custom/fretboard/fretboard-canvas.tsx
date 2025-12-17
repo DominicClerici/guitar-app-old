@@ -1,7 +1,7 @@
 "use client"
+import { STANDARD_TUNING_NOTES } from "@/lib/constants"
 import { applyTuningToNoteCharacter, getNoteFromFret } from "@/lib/midi-utils"
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { STANDARD_TUNING_NOTES } from "../tab-editor/context/tab-player-context"
 import { Tuning } from "../tab-editor/context/tab-tuning-context"
 import { FretPositions } from "./fretboard-context"
 

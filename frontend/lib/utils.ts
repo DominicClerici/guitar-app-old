@@ -25,3 +25,7 @@ export function arraysEqual<T>(a: T[], b: T[]) {
   }
   return true
 }
+
+export function generateUUID(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
+}

@@ -14,12 +14,13 @@ export default function TabEditorMain() {
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col items-stretch gap-4 py-24">
       <TabEditorFretboard />
+      {/* <TabEditorFilterControls /> */}
+      <TabEditorChordAndMelodyControls />
       <div className="grid grid-cols-2 gap-4">
         <TabEditorChordsControls />
         <TabEditorTuningControls />
       </div>
-      {/* <TabEditorFilterControls /> */}
-      <TabEditorChordAndMelodyControls />
+      <TabEditorFilterControls />
     </div>
   )
 }

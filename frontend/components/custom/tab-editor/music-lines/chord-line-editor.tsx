@@ -19,13 +19,9 @@ import {
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import { PauseIcon, PlayIcon, SquareIcon, Trash2Icon, XIcon } from "lucide-react"
-import { useEffect, useRef, useState } from "react"
-import * as Tone from "tone"
+import { useState } from "react"
 import { FretPositions } from "../context/tab-fret-context"
-import { PlayerCallbacks } from "../context/tab-player-context"
 import useTabContext from "../tab-context-main"
-
-const CHORD_LINE_PLAYER_ID = "chord-line-editor"
 
 function MiniChordDisplay({
   positions,
@@ -134,20 +130,12 @@ export default function ChordLineEditor() {
     bpm,
     setBpm,
     isPlaying,
-    startPlayback,
-    stopPlayback,
-    registerPlayer,
-    unregisterPlayer,
   } = useTabContext()
 
   const [activeId, setActiveId] = useState<string | null>(null)
   const [currentChordIndex, setCurrentChordIndex] = useState(0)
   const [currentBeat, setCurrentBeat] = useState(0)
 
-  // Ref to track position updates from transport
-  const positionUpdateRef = useRef<number | null>(null)
-
-  // dnd-kit sensors for drag and drop
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
@@ -175,92 +163,11 @@ export default function ChordLineEditor() {
 
   const activeChord = activeId ? chordLine.find((item) => item.id === activeId) : null
 
-  // Register as a player to receive playback callbacks
-  useEffect(() => {
-    const callbacks: PlayerCallbacks = {
-      onPlay: () => {
-        setCurrentChordIndex(0)
-        setCurrentBeat(0)
-        // Start position tracking
-        const updatePosition = () => {
-          const position = Tone.getTransport().position as string
-          const [bars, beats] = position.split(":").map(Number)
-          // Each chord occupies 1 full bar, so chordIndex = bar number (mod total chords)
-          const chordIndex = bars % chordLine.length
-          setCurrentChordIndex(chordIndex)
-          setCurrentBeat(beats)
-          positionUpdateRef.current = requestAnimationFrame(updatePosition)
-        }
-        positionUpdateRef.current = requestAnimationFrame(updatePosition)
-      },
-      onStop: () => {
-        if (positionUpdateRef.current) {
-          cancelAnimationFrame(positionUpdateRef.current)
-          positionUpdateRef.current = null
-        }
-        setCurrentChordIndex(0)
-        setCurrentBeat(0)
-      },
-      onPause: () => {
-        if (positionUpdateRef.current) {
-          cancelAnimationFrame(positionUpdateRef.current)
-          positionUpdateRef.current = null
-        }
-      },
-      onResume: () => {
-        const updatePosition = () => {
-          const position = Tone.getTransport().position as string
-          const [bars, beats] = position.split(":").map(Number)
-          // Each chord occupies 1 full bar, so chordIndex = bar number (mod total chords)
-          const chordIndex = bars % chordLine.length
-          setCurrentChordIndex(chordIndex)
-          setCurrentBeat(beats)
-          positionUpdateRef.current = requestAnimationFrame(updatePosition)
-        }
-        positionUpdateRef.current = requestAnimationFrame(updatePosition)
-      },
-      onBpmChange: () => {
-        // BPM is handled by transport automatically
-      },
-    }
-
-    registerPlayer(CHORD_LINE_PLAYER_ID, callbacks)
-
-    return () => {
-      unregisterPlayer(CHORD_LINE_PLAYER_ID)
-      if (positionUpdateRef.current) {
-        cancelAnimationFrame(positionUpdateRef.current)
-      }
-    }
-  }, [registerPlayer, unregisterPlayer, chordLine.length])
-
-  // Stop playback if chord line becomes empty
-  useEffect(() => {
-    if (isPlaying && chordLine.length === 0) {
-      stopPlayback()
-    }
-  }, [chordLine.length, isPlaying, stopPlayback])
-
-  const handleTogglePlayback = async () => {
-    if (isPlaying) {
-      stopPlayback()
-    } else {
-      if (chordLine.length > 0) {
-        await startPlayback()
-      }
-    }
-  }
-
-  const handleStop = () => {
-    stopPlayback()
-  }
-
   return (
     <>
       <div className="mb-4 flex items-center justify-between">
         <h3 className="text-xl font-semibold">Chord Line</h3>
         <div className="flex items-center gap-2">
-          {/* BPM Control */}
           <div className="flex flex-col items-center">
             <Input
               type="number"
@@ -291,11 +198,10 @@ export default function ChordLineEditor() {
 
           <div className="bg-border h-6 w-px" />
 
-          {/* Playback Controls */}
           <Button
             variant="outline"
             size="icon"
-            onClick={handleTogglePlayback}
+            onClick={() => {}}
             disabled={chordLine.length === 0}
           >
             {isPlaying ? <PauseIcon className="h-4 w-4" /> : <PlayIcon className="h-4 w-4" />}
@@ -303,7 +209,7 @@ export default function ChordLineEditor() {
           <Button
             variant="outline"
             size="icon"
-            onClick={handleStop}
+            onClick={() => {}}
             disabled={!isPlaying && currentChordIndex === 0}
           >
             <SquareIcon className="h-4 w-4" />
