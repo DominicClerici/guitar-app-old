@@ -35,22 +35,22 @@ export default function InputWithTicker({
       />
       <div className="grid w-full grid-cols-2 grid-rows-1 items-stretch justify-stretch">
         <button
-          disabled={value >= max}
-          onClick={() => {
-            onValueChange(value + step)
-          }}
-          className="hover:bg-accent h-5 w-full cursor-pointer rounded-bl-sm border border-t-0 border-r-0 text-center leading-0 select-none disabled:pointer-events-none disabled:opacity-50"
-        >
-          +
-        </button>
-        <button
           disabled={value <= min}
           onClick={() => {
             onValueChange(value - step)
           }}
-          className="hover:bg-accent h-5 w-full cursor-pointer rounded-br-sm border border-t-0 border-l-0 text-center leading-0 select-none disabled:pointer-events-none disabled:opacity-50"
+          className="hover:bg-accent h-5 w-full cursor-pointer rounded-bl-sm border border-t-0 border-r-0 text-center leading-0 select-none disabled:pointer-events-none disabled:opacity-50"
         >
           -
+        </button>
+        <button
+          disabled={value >= max}
+          onClick={() => {
+            onValueChange(value + step)
+          }}
+          className="hover:bg-accent h-5 w-full cursor-pointer rounded-br-sm border border-t-0 border-l-0 text-center leading-0 select-none disabled:pointer-events-none disabled:opacity-50"
+        >
+          +
         </button>
       </div>
     </div>
