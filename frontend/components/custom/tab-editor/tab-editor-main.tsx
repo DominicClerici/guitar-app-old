@@ -8,7 +8,6 @@ import { useTabEffectsContext } from "./context/tab-effects-context"
 import TabEditorChords from "./controls/tab-editor-chords"
 import TabEditorTuning from "./controls/tab-editor-tuning"
 import ChordLineEditor from "./music-lines/chord-line-editor"
-import TabLineEditor from "./music-lines/tab-line-editor"
 import { useTabContext } from "./tab-context-main"
 
 export default function TabEditorMain() {
@@ -19,7 +18,7 @@ export default function TabEditorMain() {
         <TabEditorChordsControls />
         <TabEditorTuningControls />
       </div>
-      <TabEditorFilterControls />
+      {/* <TabEditorFilterControls /> */}
       <TabEditorChordAndMelodyControls />
     </div>
   )
@@ -27,10 +26,9 @@ export default function TabEditorMain() {
 
 function TabEditorChordAndMelodyControls() {
   return (
-    <>
+    <Card>
       <ChordLineEditor />
-      <TabLineEditor />
-    </>
+    </Card>
   )
 }
 

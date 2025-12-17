@@ -131,7 +131,7 @@ export default function TabEditorChords({ fretPositions, tuning }: TabEditorChor
                     <p className="text-muted-foreground mt-1 text-sm">No matching chords found</p>
                   ) : (
                     <div className="mt-2 flex flex-wrap gap-2">
-                      {customDetectionResults.interpretations.map((chord, index) => (
+                      {customDetectionResults.interpretations.slice(0, 5).map((chord, index) => (
                         <span
                           key={index}
                           className={`rounded-full px-3 py-1 text-sm font-medium ${

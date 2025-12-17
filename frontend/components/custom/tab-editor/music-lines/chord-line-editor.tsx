@@ -1,5 +1,4 @@
 import { Button } from "@/components/ui/button"
-import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import {
   closestCenter,
@@ -39,11 +38,11 @@ function MiniChordDisplay({
 }) {
   const minFret = positions.reduce(
     (min, fret) => (fret === -1 ? min : Math.min(min, fret)),
-    Infinity
+    Infinity,
   )
   const maxFret = positions.reduce(
     (max, fret) => (fret === -1 ? max : Math.max(max, fret)),
-    -Infinity
+    -Infinity,
   )
 
   const reversedPositions = [...positions].reverse()
@@ -58,7 +57,10 @@ function MiniChordDisplay({
     >
       <div className="flex gap-1">
         {reversedPositions.map((fret, index) => (
-          <div key={`chordLine-${index}`} className="relative flex h-24 w-4.5 flex-col items-center">
+          <div
+            key={`chordLine-${index}`}
+            className="relative flex h-24 w-4.5 flex-col items-center"
+          >
             <div
               className={`bg-muted-foreground/30 absolute left-1/2 h-24 -translate-x-1/2 ${index === 1 || index === 0 ? "w-0.5" : "w-px"} `}
             />
@@ -150,7 +152,7 @@ export default function ChordLineEditor() {
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
-    })
+    }),
   )
 
   const chordIds = chordLine.map((item) => item.id)
@@ -254,7 +256,7 @@ export default function ChordLineEditor() {
   }
 
   return (
-    <Card className="w-full">
+    <>
       <div className="mb-4 flex items-center justify-between">
         <h3 className="text-xl font-semibold">Chord Line</h3>
         <div className="flex items-center gap-2">
@@ -365,6 +367,6 @@ export default function ChordLineEditor() {
           </DragOverlay>
         </DndContext>
       )}
-    </Card>
+    </>
   )
 }

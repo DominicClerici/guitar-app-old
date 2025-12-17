@@ -178,7 +178,7 @@ export function TabDataContextProvider({ children }: { children: React.ReactNode
         } else {
           return { ...track, ...updates } as ChordTrack
         }
-      })
+      }),
     )
   }, [])
 
@@ -196,7 +196,7 @@ export function TabDataContextProvider({ children }: { children: React.ReactNode
           return { ...track, events: [...track.events, newEvent] }
         }
         return track
-      })
+      }),
     )
   }, [])
 
@@ -207,7 +207,7 @@ export function TabDataContextProvider({ children }: { children: React.ReactNode
           return { ...track, events: track.events.filter((e) => e.id !== eventId) }
         }
         return track
-      })
+      }),
     )
   }, [])
 
@@ -222,10 +222,10 @@ export function TabDataContextProvider({ children }: { children: React.ReactNode
             }
           }
           return track
-        })
+        }),
       )
     },
-    []
+    [],
   )
 
   // ============================================
@@ -242,7 +242,7 @@ export function TabDataContextProvider({ children }: { children: React.ReactNode
           return { ...track, events: [...track.events, newEvent] }
         }
         return track
-      })
+      }),
     )
   }, [])
 
@@ -253,7 +253,7 @@ export function TabDataContextProvider({ children }: { children: React.ReactNode
           return { ...track, events: track.events.filter((e) => e.id !== eventId) }
         }
         return track
-      })
+      }),
     )
   }, [])
 
@@ -268,10 +268,10 @@ export function TabDataContextProvider({ children }: { children: React.ReactNode
             }
           }
           return track
-        })
+        }),
       )
     },
-    []
+    [],
   )
 
   // ============================================
@@ -299,7 +299,7 @@ export function TabDataContextProvider({ children }: { children: React.ReactNode
 
       return events
     },
-    [timeSignature]
+    [timeSignature],
   )
 
   // ============================================
