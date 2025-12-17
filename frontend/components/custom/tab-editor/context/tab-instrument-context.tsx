@@ -12,7 +12,6 @@ export type InstrumentRef = Tone.Sampler | StereoSamplers | null
 
 const TabInstrumentContext = createContext<{
   instrument: InstrumentName
-  setInstrument: React.Dispatch<React.SetStateAction<InstrumentName>>
   changeInstrument: (instrument: InstrumentName) => Promise<void>
   instrumentRef: React.RefObject<InstrumentRef>
   isInstrumentLoaded: boolean
@@ -71,7 +70,7 @@ export function TabInstrumentContextProvider({ children }: { children: React.Rea
 
   return (
     <TabInstrumentContext.Provider
-      value={{ instrument, setInstrument, changeInstrument, instrumentRef, isInstrumentLoaded }}
+      value={{ instrument, changeInstrument, instrumentRef, isInstrumentLoaded }}
     >
       {children}
     </TabInstrumentContext.Provider>

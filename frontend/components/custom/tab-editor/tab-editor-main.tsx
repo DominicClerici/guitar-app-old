@@ -52,10 +52,15 @@ function TabEditorFilterControls() {
 }
 
 function TabEditorTuningControls() {
-  const { tuning, setTuning } = useTabContext()
+  const { tuning, setTuning, instrument, changeInstrument } = useTabContext()
   return (
     <Card>
-      <TabEditorTuning tuning={tuning} setTuning={setTuning} />
+      <TabEditorTuning
+        tuning={tuning}
+        setTuning={setTuning}
+        instrument={instrument}
+        changeInstrument={changeInstrument}
+      />
     </Card>
   )
 }

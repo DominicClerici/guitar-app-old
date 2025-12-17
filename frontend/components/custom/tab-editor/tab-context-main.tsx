@@ -4,7 +4,10 @@ import { createContext, useContext, useState } from "react"
 import { TabDataContextProvider, useTabDataContext } from "./context/tab-data-context"
 import TabEffectsContextProvider, { useTabEffectsContext } from "./context/tab-effects-context"
 import { TabFretContextProvider, useTabFretContext } from "./context/tab-fret-context"
-import { TabInstrumentContextProvider } from "./context/tab-instrument-context"
+import {
+  TabInstrumentContextProvider,
+  useTabInstrumentContext,
+} from "./context/tab-instrument-context"
 import { TabPlayerContextProvider, useTabPlayerContext } from "./context/tab-player-context"
 import { TabSettingsContextProvider, useTabSettingsContext } from "./context/tab-settings-context"
 import { TabTuningContextProvider, useTabTuningContext } from "./context/tab-tuning-context"
@@ -49,6 +52,7 @@ export function useTabContext() {
   const tabTuningContext = useTabTuningContext()
   const tabEffectsContext = useTabEffectsContext()
   const tabPlayerContext = useTabPlayerContext()
+  const tabInstrumentContext = useTabInstrumentContext()
   const context = useContext(TabContext)
 
   if (!context) {
@@ -62,6 +66,7 @@ export function useTabContext() {
     ...tabTuningContext,
     ...tabEffectsContext,
     ...tabPlayerContext,
+    ...tabInstrumentContext,
   }
 }
 

@@ -18,7 +18,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { PauseIcon, PlayIcon, SquareIcon, Trash2Icon, XIcon } from "lucide-react"
+import { PauseIcon, PlayIcon, ShareIcon, SquareIcon, Trash2Icon, XIcon } from "lucide-react"
 import { useState } from "react"
 import { FretPositions } from "../context/tab-fret-context"
 import useTabContext from "../tab-context-main"
@@ -83,6 +83,7 @@ function SortableMiniChord({
   isDragDisabled: boolean
   isOverlay?: boolean
 }) {
+  const { setFretPositions } = useTabContext()
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id,
     disabled: isDragDisabled,
@@ -117,6 +118,14 @@ function SortableMiniChord({
           onClick={onRemove}
         >
           <XIcon />
+        </Button>
+        <Button
+          variant="outline"
+          className={"hover:bg-destructive/5 hover:border-destructive/75 hover:text-destructive"}
+          size="iconXs"
+          onClick={() => setFretPositions(positions)}
+        >
+          <ShareIcon />
         </Button>
       </div>
     </div>

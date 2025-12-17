@@ -1,5 +1,5 @@
 import { Card } from "@/components/ui/card"
-import { detect } from "@tonaljs/chord-detect"
+
 import { useMemo } from "react"
 import useFretboardContext from "./fretboard-context"
 
@@ -65,7 +65,7 @@ export default function FretboardChords() {
     const noteNames = [...new Set(activeNotes.map((n) => n.noteName))]
 
     // Use tonal.js chord detection
-    const chords = detect(noteNames)
+    const chords = [] as string[]
 
     return chords
   }, [activeNotes])
@@ -94,7 +94,7 @@ export default function FretboardChords() {
               <div>
                 <span className="text-muted-foreground text-sm font-medium">Possible chords:</span>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {detectedChords.map((chord, index) => (
+                  {detectedChords.map((chord: string, index: number) => (
                     <span
                       key={index}
                       className={`rounded-full px-3 py-1 text-sm font-medium ${

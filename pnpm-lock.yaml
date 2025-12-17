@@ -117,9 +117,6 @@ importers:
       '@supabase/supabase-js':
         specifier: ^2.87.1
         version: 2.87.1
-      '@tonaljs/chord-detect':
-        specifier: ^4.9.1
-        version: 4.9.1
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -1760,30 +1757,6 @@ packages:
 
   '@tailwindcss/postcss@4.1.17':
     resolution: {integrity: sha512-+nKl9N9mN5uJ+M7dBOOCzINw94MPstNR/GtIhz1fpZysxL/4a+No64jCBD6CPN+bIHWFx3KWuu8XJRrj/572Dw==}
-
-  '@tonaljs/chord-detect@4.9.1':
-    resolution: {integrity: sha512-rV/9+R7aZ9cQorQ3jdNMMMh63onosglYZM71Q0n7KKcWMAGrxF66MzxBG82xy+w1QDMJQslB3iHfDHUiS6wRjA==}
-
-  '@tonaljs/chord-type@5.1.1':
-    resolution: {integrity: sha512-ti4WzRYvvjH7to0G3zlJFq7WsjHqmcqbk8Jv98aZSR5YumLdY/ua2yOPPyoPq82n6vfgjZsacnAZ3v8/SodOcw==}
-
-  '@tonaljs/collection@4.9.0':
-    resolution: {integrity: sha512-Mk0h7O54nT6PgNVcUYauzxa5KOB23+0AOKudWzRH7JhJIN9vhVIC7PtwZXE+/G051UTbHSFIcN/afkgF4nB/8A==}
-
-  '@tonaljs/pcset@4.10.1':
-    resolution: {integrity: sha512-CZG1rpKc38yMfpEJsbDTvsTmQqsek9xxcuMgK64Tr6sP1lEiDuZJbQeKVWWRnreBF2FQ1cEGLmfOpvSO+40csA==}
-
-  '@tonaljs/pitch-distance@5.0.5':
-    resolution: {integrity: sha512-dTfjsU0zyrj5YmiFio5prPaD5w7sBmHp4nnmlEg70nHY+SerAH0KiO9HM9usttVgRFUaXl0Gc7OI8YMGfSFmug==}
-
-  '@tonaljs/pitch-interval@6.1.0':
-    resolution: {integrity: sha512-9ZMxA7V4UgySnOKPIG6HECzhDb8mbiTCIdNNIzCIfz5XpjUmohku2YZpVVWMacLHgyeQicJzNoRiPel5oSAn4A==}
-
-  '@tonaljs/pitch-note@6.1.0':
-    resolution: {integrity: sha512-A4OSLo8DjM38u73862LnDmL4YInDDRBmg0fojXcvu4cyU3oOlqndyeHOra1OVoH/WW46uNIxNs1wJDZNPWL5KQ==}
-
-  '@tonaljs/pitch@5.0.2':
-    resolution: {integrity: sha512-mxaXJPPe+LIJdjzpZEl8I8Wx3dEvlzkBbsr2Ltwc2dTAdnErAZ5R0TxVq2egF27lMvQN2QPQPWI9iDPPdVUmrg==}
 
   '@tybys/wasm-util@0.10.1':
     resolution: {integrity: sha512-9tTaPJLSiejZKx+Bmog4uSubteqTvFrVrURwkmHixBo0G4seD0zUxp98E1DzUBJxLQ3NPwXrGKDiVjwx/DpPsg==}
@@ -5091,42 +5064,6 @@ snapshots:
       '@tailwindcss/oxide': 4.1.17
       postcss: 8.5.6
       tailwindcss: 4.1.17
-
-  '@tonaljs/chord-detect@4.9.1':
-    dependencies:
-      '@tonaljs/chord-type': 5.1.1
-      '@tonaljs/pcset': 4.10.1
-      '@tonaljs/pitch-note': 6.1.0
-
-  '@tonaljs/chord-type@5.1.1':
-    dependencies:
-      '@tonaljs/pcset': 4.10.1
-
-  '@tonaljs/collection@4.9.0': {}
-
-  '@tonaljs/pcset@4.10.1':
-    dependencies:
-      '@tonaljs/collection': 4.9.0
-      '@tonaljs/pitch': 5.0.2
-      '@tonaljs/pitch-distance': 5.0.5
-      '@tonaljs/pitch-interval': 6.1.0
-      '@tonaljs/pitch-note': 6.1.0
-
-  '@tonaljs/pitch-distance@5.0.5':
-    dependencies:
-      '@tonaljs/pitch': 5.0.2
-      '@tonaljs/pitch-interval': 6.1.0
-      '@tonaljs/pitch-note': 6.1.0
-
-  '@tonaljs/pitch-interval@6.1.0':
-    dependencies:
-      '@tonaljs/pitch': 5.0.2
-
-  '@tonaljs/pitch-note@6.1.0':
-    dependencies:
-      '@tonaljs/pitch': 5.0.2
-
-  '@tonaljs/pitch@5.0.2': {}
 
   '@tybys/wasm-util@0.10.1':
     dependencies:
