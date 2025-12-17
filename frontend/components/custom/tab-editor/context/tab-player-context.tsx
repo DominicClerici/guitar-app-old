@@ -34,7 +34,7 @@ export function TabPlayerContextProvider({
   const { fretPositions } = useTabFretContext()
   const { effects } = useTabEffectsContext()
   const { instrumentRef, isInstrumentLoaded } = useTabInstrumentContext()
-  const { chordLine, bpm } = useTabDataContext()
+  const { chordLine, strumPattern, bpm } = useTabDataContext()
 
   const partRef = useRef<Tone.Part | null>(null)
 
@@ -106,6 +106,11 @@ export function TabPlayerContextProvider({
       return
     }
 
+    if (strumPattern.length === 0) {
+      toast.error("No strum pattern defined. Add strums to the pattern first.")
+      return
+    }
+
     if (!isInstrumentLoaded) {
       toast.error("Instrument not loaded yet. Please wait.")
       return
@@ -118,29 +123,38 @@ export function TabPlayerContextProvider({
       partRef.current = null
     }
 
-    // Build events from chord line
-    // Each chord takes 4 beats (1 bar), with a downstrum on each beat
-    type PartEvent = { time: string; positions: FretPositions; strum: "up" | "down" }
+    // Calculate bar duration in seconds (4 beats per bar in 4/4 time)
+    const barDurationSeconds = (4 / bpm) * 60
+
+    // Build events from chord line using the strum pattern
+    // Each chord takes 1 bar, strum positions are 0-1 normalized within the bar
+    type PartEvent = { time: number; positions: FretPositions; strum: "up" | "down" }
     const events: PartEvent[] = []
 
     chordLine.forEach((chord: ChordLineItem, chordIndex: number) => {
-      for (let beat = 0; beat < 4; beat++) {
+      strumPattern.forEach((strum) => {
+        // Calculate exact time in seconds
+        // chordIndex gives us which bar, strum.position (0-1) gives us position within that bar
+        const timeInSeconds = (chordIndex + strum.position) * barDurationSeconds
         events.push({
-          time: `${chordIndex}:${beat}:0`,
+          time: timeInSeconds,
           positions: chord.positions,
-          strum: "down",
+          strum: strum.direction,
         })
-      }
+      })
     })
 
-    // Create the Part
+    // Total loop duration in seconds
+    const totalDurationSeconds = chordLine.length * barDurationSeconds
+
+    // Create the Part with seconds-based timing
     const part = new Tone.Part<PartEvent>((time, event) => {
       strumNotes(event.strum, event.positions, time)
     }, events)
 
     part.loop = true
     part.loopStart = 0
-    part.loopEnd = `${chordLine.length}:0:0`
+    part.loopEnd = totalDurationSeconds
 
     partRef.current = part
 
@@ -150,7 +164,7 @@ export function TabPlayerContextProvider({
     Tone.getTransport().start()
 
     setIsPlaying(true)
-  }, [chordLine, isInstrumentLoaded, strumNotes, setIsPlaying])
+  }, [chordLine, strumPattern, bpm, isInstrumentLoaded, strumNotes, setIsPlaying])
 
   const stopPlayback = useCallback(() => {
     Tone.getTransport().stop()

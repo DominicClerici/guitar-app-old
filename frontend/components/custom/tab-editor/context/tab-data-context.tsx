@@ -4,8 +4,6 @@ import { arrayMove } from "@dnd-kit/sortable"
 import { createContext, useCallback, useContext, useState } from "react"
 import { FretPositions } from "./tab-fret-context"
 
-export type TimeSignature = [number, number]
-
 // a single chord strum
 export type ChordStrum = {
   position: number // 0-1 normalized within the bar 0 is the start of the bar, 1 is the end of the bar, .125 is the 1/8th of a bar, etc.
@@ -18,7 +16,7 @@ export type ChordStrum = {
 export type ChordLineItem = {
   id: string
   positions: FretPositions
-  pattern: ChordStrum[]
+  // pattern: ChordStrum[] For now, we use global pattern
 }
 
 type TabDataContextType = {
@@ -32,18 +30,28 @@ type TabDataContextType = {
   removeChordEvent: (eventId: string) => void
   updateChordEvent: (eventId: string, updates: Partial<ChordLineItem>) => void
 
+  // Default strum pattern applied to all chords during playback
+  strumPattern: ChordStrum[]
+  setStrumPattern: React.Dispatch<React.SetStateAction<ChordStrum[]>>
+
   bpm: number
   setBpm: (bpm: number) => void
-  timeSignature: [number, number]
-  setTimeSignature: (timeSignature: [number, number]) => void
 }
 
 const TabDataContext = createContext<TabDataContextType | null>(null)
 
+// Default strum pattern: 4 downstrums on each beat
+const DEFAULT_STRUM_PATTERN: ChordStrum[] = [
+  { position: 0, direction: "down", velocity: 1, mute: false },
+  { position: 0.25, direction: "down", velocity: 1, mute: false },
+  { position: 0.5, direction: "down", velocity: 1, mute: false },
+  { position: 0.75, direction: "down", velocity: 1, mute: false },
+]
+
 export function TabDataContextProvider({ children }: { children: React.ReactNode }) {
   const [chordLine, setChordLine] = useState<ChordLineItem[]>([])
+  const [strumPattern, setStrumPattern] = useState<ChordStrum[]>(DEFAULT_STRUM_PATTERN)
   const [bpm, setBpm] = useState(120)
-  const [timeSignature, setTimeSignature] = useState<[number, number]>([4, 4])
 
   const removeChordFromLine = useCallback((id: string) => {
     setChordLine((prev) => prev.filter((item) => item.id !== id))
@@ -85,10 +93,12 @@ export function TabDataContextProvider({ children }: { children: React.ReactNode
         addChordEvent,
         removeChordEvent,
         updateChordEvent,
+
+        strumPattern,
+        setStrumPattern,
+
         bpm,
         setBpm,
-        timeSignature,
-        setTimeSignature,
       }}
     >
       {children}
