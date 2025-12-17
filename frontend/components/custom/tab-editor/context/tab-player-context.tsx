@@ -37,6 +37,8 @@ export function TabPlayerContextProvider({
   const { chordLine, strumPattern, bpm } = useTabDataContext()
 
   const partRef = useRef<Tone.Part | null>(null)
+  // Track the currently playing frequency on each string (index 0-5, null if not playing)
+  const activeStringFrequencies = useRef<(number | null)[]>([null, null, null, null, null, null])
 
   const strumNotes = useCallback(
     (strum: "up" | "down" = "down", positions: FretPositions = fretPositions, time?: number) => {
@@ -47,40 +49,56 @@ export function TabPlayerContextProvider({
         return
       }
 
-      const frequencies: number[] = []
+      const instrument = instrumentRef.current
+      const start = time ?? Tone.now()
+      const strumDelay = 0.02
+
+      const stringNotes: { stringIndex: number; frequency: number }[] = []
 
       for (let string = 0; string < 6; string++) {
         const fret = positions[string]
         if (fret === -1) continue
         const midiNote = STANDARD_TUNING_MIDI[string] + tuning[string] + fret
-        frequencies.push(midiToFrequency(midiNote))
+        const frequency = midiToFrequency(midiNote)
+        stringNotes.push({ stringIndex: string, frequency })
       }
 
+      // Reverse for down strum (low strings first in terms of pitch, which are higher indices)
       if (strum === "down") {
-        frequencies.reverse()
+        stringNotes.reverse()
       }
 
       const downVelocities = DOWN_VELOCITIES.standard.map((v) => v * effects.velocityScale)
       const upVelocities = UP_VELOCITIES.standard.map((v) => v * effects.velocityScale)
 
-      const start = time ?? Tone.now()
-      if (frequencies.length > 0) {
-        const instrument = instrumentRef.current
-        const strumDelay = 0.02
+      if (stringNotes.length > 0) {
+        stringNotes.forEach((note, i) => {
+          const velocity = strum === "down" ? downVelocities[i] : upVelocities[i]
+          const noteTime = start + i * strumDelay
 
-        if (isStereoSamplers(instrument)) {
-          frequencies.forEach((freq, i) => {
-            const velocity = strum === "down" ? downVelocities[i] : upVelocities[i]
-            const noteTime = start + i * strumDelay
-            instrument.left.triggerAttack(freq, noteTime, velocity)
-            instrument.right.triggerAttack(freq, noteTime, velocity)
-          })
-        } else {
-          frequencies.forEach((freq, i) => {
-            const velocity = strum === "down" ? downVelocities[i] : upVelocities[i]
-            instrument.triggerAttack(freq, start + i * strumDelay, velocity)
-          })
-        }
+          // Release the old frequency on this string if one is playing
+          const oldFreq = activeStringFrequencies.current[note.stringIndex]
+          if (oldFreq !== null) {
+            const releaseTime = Math.max(0, noteTime - 0.001)
+            if (isStereoSamplers(instrument)) {
+              instrument.left.triggerRelease(oldFreq, releaseTime)
+              instrument.right.triggerRelease(oldFreq, releaseTime)
+            } else {
+              instrument.triggerRelease(oldFreq, releaseTime)
+            }
+          }
+
+          // Trigger the new note
+          if (isStereoSamplers(instrument)) {
+            instrument.left.triggerAttack(note.frequency, noteTime, velocity)
+            instrument.right.triggerAttack(note.frequency, noteTime, velocity)
+          } else {
+            instrument.triggerAttack(note.frequency, noteTime, velocity)
+          }
+
+          // Update tracking
+          activeStringFrequencies.current[note.stringIndex] = note.frequency
+        })
       }
     },
     [fretPositions, isInstrumentLoaded, tuning, effects.velocityScale, instrumentRef],
@@ -123,18 +141,13 @@ export function TabPlayerContextProvider({
       partRef.current = null
     }
 
-    // Calculate bar duration in seconds (4 beats per bar in 4/4 time)
     const barDurationSeconds = (4 / bpm) * 60
 
-    // Build events from chord line using the strum pattern
-    // Each chord takes 1 bar, strum positions are 0-1 normalized within the bar
     type PartEvent = { time: number; positions: FretPositions; strum: "up" | "down" }
     const events: PartEvent[] = []
 
     chordLine.forEach((chord: ChordLineItem, chordIndex: number) => {
       strumPattern.forEach((strum) => {
-        // Calculate exact time in seconds
-        // chordIndex gives us which bar, strum.position (0-1) gives us position within that bar
         const timeInSeconds = (chordIndex + strum.position) * barDurationSeconds
         events.push({
           time: timeInSeconds,
@@ -144,10 +157,8 @@ export function TabPlayerContextProvider({
       })
     })
 
-    // Total loop duration in seconds
     const totalDurationSeconds = chordLine.length * barDurationSeconds
 
-    // Create the Part with seconds-based timing
     const part = new Tone.Part<PartEvent>((time, event) => {
       strumNotes(event.strum, event.positions, time)
     }, events)
@@ -158,7 +169,6 @@ export function TabPlayerContextProvider({
 
     partRef.current = part
 
-    // Reset and start
     Tone.getTransport().position = 0
     part.start(0)
     Tone.getTransport().start()
@@ -175,6 +185,9 @@ export function TabPlayerContextProvider({
       partRef.current.dispose()
       partRef.current = null
     }
+
+    // Clear active string tracking
+    activeStringFrequencies.current = [null, null, null, null, null, null]
 
     setIsPlaying(false)
   }, [setIsPlaying])

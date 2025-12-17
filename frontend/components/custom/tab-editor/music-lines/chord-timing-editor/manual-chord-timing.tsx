@@ -303,7 +303,7 @@ export default function ManualChordTiming() {
           {/* Interactive grid area */}
           <div
             ref={gridRef}
-            className="relative mx-6 h-full grow cursor-crosshair"
+            className="relative ml-4 h-full grow cursor-crosshair"
             onMouseMove={handleMouseMove}
             onMouseLeave={handleMouseLeave}
             onClick={handleClick}
@@ -432,7 +432,7 @@ export default function ManualChordTiming() {
             )}
           </div>
 
-          <div className="relative flex w-px flex-col items-center pr-4">
+          <div className="relative flex w-px flex-col items-center pr-2">
             <div className="h-full w-0 border-r border-dashed" />
             <span className="text-muted-foreground/50 absolute -bottom-5 text-sm leading-4">1</span>
           </div>

@@ -12,7 +12,7 @@ export default function ChordTimingDialog() {
       <DialogTrigger asChild>
         <Button variant="outline">Strum Pattern</Button>
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="sm:max-w-3xl">
         <DialogTitle>Chord Timing</DialogTitle>
         <Tabs value={currentTab} onValueChange={(v) => setCurrentTab(v as "detect" | "manual")}>
           <TabsList>
