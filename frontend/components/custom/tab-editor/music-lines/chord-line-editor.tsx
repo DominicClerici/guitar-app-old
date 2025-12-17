@@ -22,6 +22,7 @@ import { PauseIcon, PlayIcon, SquareIcon, Trash2Icon, XIcon } from "lucide-react
 import { useState } from "react"
 import { FretPositions } from "../context/tab-fret-context"
 import useTabContext from "../tab-context-main"
+import ChordTimingDialog from "./chord-timing-editor/chord-timing-dialog"
 
 function MiniChordDisplay({ positions }: { positions: FretPositions }) {
   const minFret = positions.reduce(
@@ -131,6 +132,8 @@ export default function ChordLineEditor() {
     bpm,
     setBpm,
     isPlaying,
+    startPlayback,
+    stopPlayback,
   } = useTabContext()
 
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -167,6 +170,8 @@ export default function ChordLineEditor() {
       <div className="mb-4 flex items-center justify-between">
         <h3 className="text-xl font-semibold">Chord Line</h3>
         <div className="flex items-center gap-2">
+          <ChordTimingDialog />
+          <div className="bg-border h-6 w-px" />
           <div className="flex flex-col items-center">
             <Input
               type="number"
@@ -200,12 +205,18 @@ export default function ChordLineEditor() {
           <Button
             variant="outline"
             size="icon"
-            onClick={() => {}}
+            onClick={() => {
+              if (isPlaying) {
+                stopPlayback()
+              } else {
+                startPlayback()
+              }
+            }}
             disabled={chordLine.length === 0}
           >
             {isPlaying ? <PauseIcon className="h-4 w-4" /> : <PlayIcon className="h-4 w-4" />}
           </Button>
-          <Button variant="outline" size="icon" onClick={() => {}}>
+          <Button variant="outline" size="icon" onClick={stopPlayback} disabled={!isPlaying}>
             <SquareIcon className="h-4 w-4" />
           </Button>
 

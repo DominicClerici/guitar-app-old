@@ -8,7 +8,7 @@ export type TimeSignature = [number, number]
 
 // a single chord strum
 export type ChordStrum = {
-  position: any // TODO: Think of a flexible way to define this. This is the time when the chord is strummed in its bar.
+  position: number // 0-1 normalized within the bar 0 is the start of the bar, 1 is the end of the bar, .125 is the 1/8th of a bar, etc.
   direction: "up" | "down"
   velocity: number // leave unimplemented, just adding for data structure
   mute: boolean // leave unimplemented, just adding for data structure
@@ -19,15 +19,6 @@ export type ChordLineItem = {
   id: string
   positions: FretPositions
   pattern: ChordStrum[]
-}
-
-export type ChordLine = {
-  id: string
-  name: string
-  volume: number
-  timeSignature: TimeSignature
-  bpm: number
-  chords: ChordLineItem[]
 }
 
 type TabDataContextType = {
