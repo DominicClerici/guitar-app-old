@@ -10,16 +10,6 @@ import { FretPositions, useTabFretContext } from "./tab-fret-context"
 import { useTabInstrumentContext } from "./tab-instrument-context"
 import { useTabTuningContext } from "./tab-tuning-context"
 
-export type PlaybackState = "stopped" | "playing" | "paused"
-
-export type PlayerCallbacks = {
-  onPlay: (startTime: number) => void
-  onStop: () => void
-  onPause: () => void
-  onResume: (resumeTime: number) => void
-  onBpmChange: (newBpm: number) => void
-}
-
 type TabPlayerContextType = {
   strumNotes: (strum?: "up" | "down", positions?: FretPositions, time?: number) => void
   currentPosition: { bar: number; beat: number; sixteenth: number }

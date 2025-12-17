@@ -4,18 +4,30 @@ import { arrayMove } from "@dnd-kit/sortable"
 import { createContext, useCallback, useContext, useState } from "react"
 import { FretPositions } from "./tab-fret-context"
 
-export type ChordEvent = {
-  id: string
-  time: string | number
-  positions: FretPositions // [-1, 3, 2, 0, 1, 0] style
-  strum: "up" | "down" | "none"
-  duration?: string | number
-  velocity?: number
+export type TimeSignature = [number, number]
+
+// a single chord strum
+export type ChordStrum = {
+  position: any // TODO: Think of a flexible way to define this. This is the time when the chord is strummed in its bar.
+  direction: "up" | "down"
+  velocity: number // leave unimplemented, just adding for data structure
+  mute: boolean // leave unimplemented, just adding for data structure
 }
 
+// For now limited to 1 chord per bar of music
 export type ChordLineItem = {
   id: string
   positions: FretPositions
+  pattern: ChordStrum[]
+}
+
+export type ChordLine = {
+  id: string
+  name: string
+  volume: number
+  timeSignature: TimeSignature
+  bpm: number
+  chords: ChordLineItem[]
 }
 
 type TabDataContextType = {
@@ -25,9 +37,9 @@ type TabDataContextType = {
   reorderChordLine: (oldIndex: number, newIndex: number) => void
   clearChordLine: () => void
 
-  addChordEvent: (event: Omit<ChordEvent, "id">) => void
+  addChordEvent: (event: Omit<ChordLineItem, "id">) => void
   removeChordEvent: (eventId: string) => void
-  updateChordEvent: (eventId: string, updates: Partial<ChordEvent>) => void
+  updateChordEvent: (eventId: string, updates: Partial<ChordLineItem>) => void
 
   bpm: number
   setBpm: (bpm: number) => void
@@ -54,8 +66,8 @@ export function TabDataContextProvider({ children }: { children: React.ReactNode
     setChordLine([])
   }, [])
 
-  const addChordEvent = useCallback((event: Omit<ChordEvent, "id">) => {
-    const newEvent: ChordEvent = {
+  const addChordEvent = useCallback((event: Omit<ChordLineItem, "id">) => {
+    const newEvent: ChordLineItem = {
       ...event,
       id: generateUUID("chord"),
     }
@@ -66,7 +78,7 @@ export function TabDataContextProvider({ children }: { children: React.ReactNode
     setChordLine((prev) => prev.filter((e) => e.id !== eventId))
   }, [])
 
-  const updateChordEvent = useCallback((eventId: string, updates: Partial<ChordEvent>) => {
+  const updateChordEvent = useCallback((eventId: string, updates: Partial<ChordLineItem>) => {
     setChordLine((prev) => prev.map((e) => (e.id === eventId ? { ...e, ...updates } : e)))
   }, [])
 

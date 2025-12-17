@@ -1,4 +1,5 @@
 "use client"
+import { generateUUID } from "@/lib/utils"
 import { createContext, useContext, useState } from "react"
 import { useTabDataContext } from "./tab-data-context"
 
@@ -19,7 +20,11 @@ export function TabFretContextProvider({ children }: { children: React.ReactNode
     if (hasNotes) {
       setChordLine((prev) => [
         ...prev,
-        { id: `chord-${chordLine.length + 1}`, positions: [...fretPositions] as FretPositions },
+        {
+          id: generateUUID("chord"),
+          positions: [...fretPositions] as FretPositions,
+          pattern: [],
+        },
       ])
     }
   }

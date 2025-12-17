@@ -23,15 +23,7 @@ import { useState } from "react"
 import { FretPositions } from "../context/tab-fret-context"
 import useTabContext from "../tab-context-main"
 
-function MiniChordDisplay({
-  positions,
-  isActive,
-  isDragging,
-}: {
-  positions: FretPositions
-  isActive: boolean
-  isDragging?: boolean
-}) {
+function MiniChordDisplay({ positions }: { positions: FretPositions }) {
   const minFret = positions.reduce(
     (min, fret) => (fret === -1 ? min : Math.min(min, fret)),
     Infinity,
@@ -45,11 +37,7 @@ function MiniChordDisplay({
 
   return (
     <div
-      className={`group relative flex touch-none flex-col items-center rounded-lg border-2 p-2 transition-colors ${
-        isActive
-          ? "border-primary bg-primary/10"
-          : "border-border bg-muted/50 hover:border-muted-foreground/50"
-      } ${isDragging ? "opacity-50" : ""}`}
+      className={`bg-background relative flex touch-none flex-col items-center rounded-md border p-2`}
     >
       <div className="flex gap-1">
         {reversedPositions.map((fret, index) => (
@@ -84,15 +72,15 @@ function MiniChordDisplay({
 function SortableMiniChord({
   id,
   positions,
-  isActive,
   onRemove,
   isDragDisabled,
+  isOverlay = false,
 }: {
   id: string
   positions: FretPositions
-  isActive: boolean
   onRemove: () => void
   isDragDisabled: boolean
+  isOverlay?: boolean
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id,
@@ -104,19 +92,32 @@ function SortableMiniChord({
     transition,
     cursor: isDragDisabled ? "default" : "grab",
   }
-
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners} className="group relative">
-      <button
-        onClick={(e) => {
-          e.stopPropagation()
-          onRemove()
-        }}
-        className="bg-destructive text-destructive-foreground absolute -top-2 -right-2 z-20 flex h-5 w-5 items-center justify-center rounded-full opacity-0 transition-opacity group-hover:opacity-100"
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      style={style}
+      data-dragging={isDragging}
+      className={`group relative ${isDragging ? "opacity-50" : ""} cursor-default! px-2 py-1`}
+    >
+      <div
+        {...listeners}
+        className={`relative z-10 ${isOverlay ? "cursor-grabbing" : "cursor-grab"}`}
       >
-        <XIcon className="h-3 w-3" />
-      </button>
-      <MiniChordDisplay positions={positions} isActive={isActive} isDragging={isDragging} />
+        <MiniChordDisplay positions={positions} />
+      </div>
+      <div
+        className={` ${isOverlay ? "" : "-translate-y-2 opacity-0 transition-all duration-125 group-hover:translate-y-0 group-hover:opacity-100"} bg-background z-0 -mt-1.5 flex cursor-default items-center gap-1 rounded-b-lg border border-t-0 p-0.5 pt-2`}
+      >
+        <Button
+          variant="outline"
+          className={"hover:bg-destructive/5 hover:border-destructive/75 hover:text-destructive"}
+          size="iconXs"
+          onClick={onRemove}
+        >
+          <XIcon />
+        </Button>
+      </div>
     </div>
   )
 }
@@ -133,8 +134,6 @@ export default function ChordLineEditor() {
   } = useTabContext()
 
   const [activeId, setActiveId] = useState<string | null>(null)
-  const [currentChordIndex, setCurrentChordIndex] = useState(0)
-  const [currentBeat, setCurrentBeat] = useState(0)
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -206,12 +205,7 @@ export default function ChordLineEditor() {
           >
             {isPlaying ? <PauseIcon className="h-4 w-4" /> : <PlayIcon className="h-4 w-4" />}
           </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => {}}
-            disabled={!isPlaying && currentChordIndex === 0}
-          >
+          <Button variant="outline" size="icon" onClick={() => {}}>
             <SquareIcon className="h-4 w-4" />
           </Button>
 
@@ -240,35 +234,27 @@ export default function ChordLineEditor() {
           onDragEnd={handleDragEnd}
         >
           <SortableContext items={chordIds} strategy={rectSortingStrategy}>
-            <div className="flex flex-wrap gap-3">
-              {chordLine.map((item, index) => (
-                <div key={item.id} className="flex flex-col items-center gap-1">
-                  <SortableMiniChord
-                    id={item.id}
-                    positions={item.positions}
-                    isActive={isPlaying && index === currentChordIndex}
-                    onRemove={() => removeChordFromLine(item.id)}
-                    isDragDisabled={isPlaying}
-                  />
-                  {isPlaying && index === currentChordIndex && (
-                    <div className="flex gap-1">
-                      {Array.from({ length: 4 }).map((_, i) => (
-                        <div
-                          key={i}
-                          className={`h-2 w-2 rounded-full ${
-                            i <= currentBeat % 4 ? "bg-primary" : "bg-muted"
-                          }`}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
+            <div className="flex flex-wrap">
+              {chordLine.map((item) => (
+                <SortableMiniChord
+                  id={item.id}
+                  key={item.id}
+                  positions={item.positions}
+                  onRemove={() => removeChordFromLine(item.id)}
+                  isDragDisabled={isPlaying}
+                />
               ))}
             </div>
           </SortableContext>
           <DragOverlay>
             {activeChord ? (
-              <MiniChordDisplay positions={activeChord.positions} isActive={false} />
+              <SortableMiniChord
+                id={activeChord.id}
+                positions={activeChord.positions}
+                onRemove={() => {}}
+                isDragDisabled={isPlaying}
+                isOverlay={true}
+              />
             ) : null}
           </DragOverlay>
         </DndContext>
