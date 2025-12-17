@@ -1,8 +1,9 @@
 import { Button } from "@/components/ui/button"
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
 import InputWithTicker from "@/components/ui/input-with-ticker"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
-import { ArrowDownIcon, ArrowUpIcon, Trash2Icon } from "lucide-react"
+import { ArrowDownIcon, ArrowUpIcon, PlayIcon, SquareIcon, Trash2Icon } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import * as Tone from "tone"
 import { ChordStrum } from "../../context/tab-data-context"
@@ -13,12 +14,55 @@ const UP_STRUM_FREQ = 523.25 // C5 (slightly higher)
 
 type PreviewSource = "editor" | "saved" | null
 
+// Quantization utility functions
+function getQuantizeGrid(subdivisions: number): number[] {
+  const positionsPerBar = 4 * (subdivisions + 1)
+  const positions: number[] = []
+  for (let i = 0; i < positionsPerBar; i++) {
+    positions.push(i / positionsPerBar)
+  }
+  return positions
+}
+
+function getNearestQuantizePositions(
+  position: number,
+  subdivisions: number,
+): { lower: number; upper: number; nearest: number } {
+  const grid = getQuantizeGrid(subdivisions)
+  let lower = 0
+  let upper = grid[grid.length - 1]
+
+  for (let i = 0; i < grid.length; i++) {
+    if (grid[i] <= position) lower = grid[i]
+    if (grid[i] >= position) {
+      upper = grid[i]
+      break
+    }
+  }
+
+  const nearest = position - lower <= upper - position ? lower : upper
+  return { lower, upper, nearest }
+}
+
+function getQuantizedPosition(position: number, subdivisions: number, percent: number): number {
+  const { nearest } = getNearestQuantizePositions(position, subdivisions)
+  const distance = nearest - position
+  return position + distance * (percent / 100)
+}
+
+function isAlignedToGrid(position: number, subdivisions: number, tolerance = 0.001): boolean {
+  const grid = getQuantizeGrid(subdivisions)
+  return grid.some((gridPos) => Math.abs(gridPos - position) < tolerance)
+}
+
 export default function ManualChordTiming() {
   const { strumPattern, setStrumPattern, bpm } = useTabContext()
 
   const [localPattern, setLocalPattern] = useState<ChordStrum[]>(() => [...strumPattern])
   const [subdivisions, setSubdivisions] = useState(1)
   const [hoverPosition, setHoverPosition] = useState<number | null>(null)
+  const [localBpm, setLocalBpm] = useState(bpm)
+  const [placementMode, setPlacementMode] = useState<"snap" | "free">("free")
   const gridRef = useRef<HTMLDivElement>(null)
 
   const [previewPlaying, setPreviewPlaying] = useState<PreviewSource>(null)
@@ -26,6 +70,14 @@ export default function ManualChordTiming() {
   const synthRef = useRef<Tone.Synth | null>(null)
   const partRef = useRef<Tone.Part | null>(null)
   const animationFrameRef = useRef<number | null>(null)
+
+  // Quantization state for all strums
+  const [globalQuantizeOpen, setGlobalQuantizeOpen] = useState(false)
+  const [globalQuantizePercent, setGlobalQuantizePercent] = useState(50)
+
+  // Quantization state for single strum (track by position)
+  const [singleQuantizePosition, setSingleQuantizePosition] = useState<number | null>(null)
+  const [singleQuantizePercent, setSingleQuantizePercent] = useState(50)
 
   useEffect(() => {
     setLocalPattern([...strumPattern])
@@ -93,15 +145,15 @@ export default function ManualChordTiming() {
         setHoverPosition(null)
         return
       }
-      // get any elements under the mouse
       const elements = document.elementsFromPoint(e.clientX, e.clientY)
       if (elements.some((element) => element.classList.contains("data-is-strum"))) {
         setHoverPosition(null)
         return
       }
-      setHoverPosition(snapToPosition(rawPosition))
+      const position = placementMode === "free" ? rawPosition : snapToPosition(rawPosition)
+      setHoverPosition(position)
     },
-    [getPositionFromMouse, snapToPosition],
+    [getPositionFromMouse, snapToPosition, placementMode],
   )
 
   const handleMouseLeave = useCallback(() => {
@@ -114,15 +166,20 @@ export default function ManualChordTiming() {
       const rawPosition = getPositionFromMouse(e)
       if (rawPosition === null) return
 
-      const snappedPosition = snapToPosition(rawPosition)
+      const targetPosition = placementMode === "free" ? rawPosition : snapToPosition(rawPosition)
 
-      const existingIndex = localPattern.findIndex((strum) => strum.position === snappedPosition)
+      const tolerance = placementMode === "free" ? 0.0075 : 0.001
+      const existingIndex = localPattern.findIndex(
+        (strum) => Math.abs(strum.position - targetPosition) < tolerance,
+      )
 
       if (existingIndex !== -1) {
-        setLocalPattern((prev) => prev.filter((strum) => strum.position !== snappedPosition))
+        setLocalPattern((prev) =>
+          prev.filter((strum) => Math.abs(strum.position - targetPosition) >= tolerance),
+        )
       } else {
         const newStrum: ChordStrum = {
-          position: snappedPosition,
+          position: targetPosition,
           direction: "down",
           velocity: 1,
           mute: false,
@@ -130,23 +187,85 @@ export default function ManualChordTiming() {
         setLocalPattern((prev) => [...prev, newStrum].sort((a, b) => a.position - b.position))
       }
     },
-    [getPositionFromMouse, snapToPosition, localPattern, hoverPosition],
+    [getPositionFromMouse, snapToPosition, localPattern, hoverPosition, placementMode],
   )
 
   const positionToBeat = (position: number) => {
     const beat = position * 4 + 1
     if (beat % 1 === 0) return null
-    return beat.toFixed(2)
+    return beat.toFixed(placementMode === "free" ? 3 : 2)
   }
 
   const hoverHasStrum = useMemo(() => {
     if (hoverPosition === null) return false
-    const tolerance = 0.001
+    const tolerance = placementMode === "free" ? 0.0075 : 0.001
     return localPattern.some((strum) => Math.abs(strum.position - hoverPosition) < tolerance)
-  }, [hoverPosition, localPattern])
+  }, [hoverPosition, localPattern, placementMode])
+
+  // Check if all strums are aligned to the current global quantize grid
+  const allStrumsAligned = useMemo(() => {
+    if (localPattern.length === 0) return true
+    return localPattern.every((strum) => isAlignedToGrid(strum.position, subdivisions))
+  }, [localPattern, subdivisions])
+
+  // Get the quantize grid for global quantization
+  const globalQuantizeGrid = useMemo(() => {
+    return getQuantizeGrid(subdivisions)
+  }, [subdivisions])
+
+  // Get preview positions for all strums when global quantize is open
+  const globalQuantizePreviews = useMemo(() => {
+    if (!globalQuantizeOpen) return []
+    return localPattern
+      .filter((strum) => !isAlignedToGrid(strum.position, subdivisions))
+      .map((strum) => ({
+        original: strum.position,
+        preview: getQuantizedPosition(strum.position, subdivisions, globalQuantizePercent),
+      }))
+  }, [globalQuantizeOpen, localPattern, subdivisions, globalQuantizePercent])
+
+  // Get single strum quantize info
+  const singleQuantizeInfo = useMemo(() => {
+    if (singleQuantizePosition === null) return null
+    const { lower, upper } = getNearestQuantizePositions(singleQuantizePosition, subdivisions)
+    const preview = getQuantizedPosition(
+      singleQuantizePosition,
+      subdivisions,
+      singleQuantizePercent,
+    )
+    const isAligned = isAlignedToGrid(singleQuantizePosition, subdivisions)
+    return { lower, upper, preview, isAligned }
+  }, [singleQuantizePosition, subdivisions, singleQuantizePercent])
+
+  // Apply global quantization
+  const applyGlobalQuantize = useCallback(() => {
+    setLocalPattern((prev) =>
+      prev.map((strum) => ({
+        ...strum,
+        position: getQuantizedPosition(strum.position, subdivisions, globalQuantizePercent),
+      })),
+    )
+    setGlobalQuantizeOpen(false)
+  }, [subdivisions, globalQuantizePercent])
+
+  // Apply single strum quantization
+  const applySingleQuantize = useCallback(() => {
+    if (singleQuantizePosition === null) return
+    setLocalPattern((prev) =>
+      prev.map((strum) =>
+        strum.position === singleQuantizePosition
+          ? {
+              ...strum,
+              position: getQuantizedPosition(strum.position, subdivisions, singleQuantizePercent),
+            }
+          : strum,
+      ),
+    )
+    setSingleQuantizePosition(null)
+  }, [singleQuantizePosition, subdivisions, singleQuantizePercent])
 
   const startPlayheadAnimation = useCallback(() => {
-    const barDurationSeconds = (4 / bpm) * 60
+    const barDurationSeconds = (4 / localBpm) * 60
 
     const animate = () => {
       const transportSeconds = Tone.getTransport().seconds
@@ -156,7 +275,7 @@ export default function ManualChordTiming() {
     }
 
     animationFrameRef.current = requestAnimationFrame(animate)
-  }, [bpm])
+  }, [localBpm])
 
   const stopPlayheadAnimation = useCallback(() => {
     if (animationFrameRef.current !== null) {
@@ -190,7 +309,7 @@ export default function ManualChordTiming() {
 
       await Tone.start()
 
-      Tone.getTransport().bpm.value = bpm
+      Tone.getTransport().bpm.value = localBpm
 
       const synth = new Tone.Synth({
         oscillator: { type: "sine" },
@@ -203,7 +322,7 @@ export default function ManualChordTiming() {
       }).toDestination()
       synthRef.current = synth
 
-      const barDurationSeconds = (4 / bpm) * 60
+      const barDurationSeconds = (4 / localBpm) * 60
 
       type PartEvent = { time: number; direction: "up" | "down" }
       const events: PartEvent[] = pattern.map((strum) => ({
@@ -229,7 +348,7 @@ export default function ManualChordTiming() {
       startPlayheadAnimation()
       setPreviewPlaying(source)
     },
-    [bpm, stopPreview, startPlayheadAnimation],
+    [localBpm, stopPreview, startPlayheadAnimation],
   )
 
   const toggleEditorPreview = useCallback(() => {
@@ -270,22 +389,117 @@ export default function ManualChordTiming() {
       const pattern = currentSource === "editor" ? localPattern : strumPattern
       startPreview(currentSource, pattern)
     }
-  }, [bpm]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [localBpm]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="flex flex-col gap-2">
-      <p>Manual timing</p>
+    <div className="flex flex-col gap-6">
+      <div className="flex items-stretch gap-2">
+        <div className="flex grow items-center gap-4 rounded-md border p-2">
+          <div>
+            Placement mode:
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant={placementMode === "snap" ? "default" : "outline"}
+                onClick={() => setPlacementMode("snap")}
+              >
+                Snap
+              </Button>
+              <Button
+                size="sm"
+                variant={placementMode === "free" ? "default" : "outline"}
+                onClick={() => setPlacementMode("free")}
+              >
+                Free
+              </Button>
+            </div>
+          </div>
 
-      <div className="rounded-lg border p-2">
-        Subdivisions per beat:
-        <div className="w-16">
-          <InputWithTicker
-            value={subdivisions}
-            onValueChange={(value) => setSubdivisions(value)}
-            step={1}
-            min={0}
-            max={11}
-          />
+          <div>
+            BPM:
+            <div className="w-16">
+              <InputWithTicker
+                value={localBpm}
+                onValueChange={(value) => setLocalBpm(value)}
+                step={5}
+                min={30}
+                max={240}
+              />
+            </div>
+          </div>
+          <div>
+            Subdivisions:
+            <div className="w-16">
+              <InputWithTicker
+                value={subdivisions}
+                onValueChange={(value) => setSubdivisions(value)}
+                step={1}
+                min={0}
+                max={11}
+              />
+            </div>
+          </div>
+          <div>
+            <Popover open={globalQuantizeOpen} onOpenChange={setGlobalQuantizeOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={localPattern.length === 0 || allStrumsAligned}
+                >
+                  Quantize
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent side="top" className="flex flex-col gap-2">
+                <div>
+                  Percent:
+                  <div className="w-16">
+                    <InputWithTicker
+                      value={globalQuantizePercent}
+                      onValueChange={(value) => setGlobalQuantizePercent(value)}
+                      step={5}
+                      min={0}
+                      max={100}
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={applyGlobalQuantize}>
+                    Apply
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setGlobalQuantizeOpen(false)}>
+                    Cancel
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
+          </div>
+        </div>
+        <div className="flex flex-col gap-2 rounded-md border p-2">
+          <Button size="sm" onClick={handleSave} disabled={!hasUnsavedChanges}>
+            Save
+          </Button>
+          <Button size="sm" variant="outline" onClick={handleCancel} disabled={!hasUnsavedChanges}>
+            Cancel
+          </Button>
+          <div className="flex gap-2">
+            <Button
+              size="icon"
+              variant="outline"
+              onClick={handleClear}
+              disabled={localPattern.length === 0}
+            >
+              <Trash2Icon />
+            </Button>
+            <Button
+              size="icon"
+              variant="outline"
+              onClick={toggleEditorPreview}
+              disabled={localPattern.length === 0}
+            >
+              {previewPlaying === "editor" ? <SquareIcon /> : <PlayIcon />}
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -342,7 +556,16 @@ export default function ManualChordTiming() {
 
             {/* Existing strums (local editing state) */}
             {localPattern.map((strum, index) => (
-              <HoverCard key={`strum-${index}`} openDelay={75} closeDelay={0}>
+              <HoverCard
+                key={`strum-${index}`}
+                openDelay={75}
+                closeDelay={0}
+                onOpenChange={(open) => {
+                  if (!open) {
+                    setSingleQuantizePosition(null)
+                  }
+                }}
+              >
                 <HoverCardTrigger asChild>
                   <div
                     style={{ left: `${strum.position * 100}%`, transform: "translateX(-50%)" }}
@@ -395,9 +618,110 @@ export default function ManualChordTiming() {
                   >
                     {strum.direction === "up" ? <ArrowUpIcon /> : <ArrowDownIcon />}
                   </Button>
+                  <Popover
+                    open={singleQuantizePosition === strum.position}
+                    onOpenChange={(open) => {
+                      if (open) {
+                        setSingleQuantizePosition(strum.position)
+                        setSingleQuantizePercent(100)
+                      } else {
+                        setSingleQuantizePosition(null)
+                      }
+                    }}
+                  >
+                    <PopoverTrigger asChild>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={isAlignedToGrid(strum.position, subdivisions)}
+                      >
+                        Quantize
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent side="bottom" className="data-is-strum flex flex-col gap-2">
+                      <div>
+                        Percent:
+                        <div className="w-16">
+                          <InputWithTicker
+                            value={singleQuantizePercent}
+                            onValueChange={(value) => setSingleQuantizePercent(value)}
+                            step={5}
+                            min={0}
+                            max={100}
+                          />
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline" onClick={applySingleQuantize}>
+                          Apply
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setSingleQuantizePosition(null)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
                 </HoverCardContent>
               </HoverCard>
             ))}
+
+            {/* Global quantize grid lines (shown when global quantize popover is open) */}
+            {globalQuantizeOpen &&
+              globalQuantizeGrid.map((position) => (
+                <div
+                  key={`global-grid-${position}`}
+                  className="pointer-events-none absolute top-0 h-full w-px bg-yellow-500/40"
+                  style={{ left: `${position * 100}%`, transform: "translateX(-50%)" }}
+                />
+              ))}
+
+            {/* Global quantize preview positions (where strums will move to) */}
+            {globalQuantizeOpen &&
+              globalQuantizePreviews.map(({ original, preview }) => (
+                <div
+                  key={`global-preview-${original}`}
+                  className="pointer-events-none absolute top-0 h-full"
+                  style={{ left: `${preview * 100}%`, transform: "translateX(-50%)" }}
+                >
+                  <div className="h-full w-1 rounded-full bg-yellow-500/70" />
+                </div>
+              ))}
+
+            {/* Single strum quantize: two nearest grid lines */}
+            {singleQuantizeInfo && singleQuantizePosition !== null && (
+              <>
+                <div
+                  className="pointer-events-none absolute top-0 h-full w-px bg-yellow-500/40"
+                  style={{
+                    left: `${singleQuantizeInfo.lower * 100}%`,
+                    transform: "translateX(-50%)",
+                  }}
+                />
+                <div
+                  className="pointer-events-none absolute top-0 h-full w-px bg-yellow-500/40"
+                  style={{
+                    left: `${singleQuantizeInfo.upper * 100}%`,
+                    transform: "translateX(-50%)",
+                  }}
+                />
+                {/* Preview position for single strum */}
+                {!singleQuantizeInfo.isAligned && (
+                  <div
+                    className="pointer-events-none absolute top-0 h-full"
+                    style={{
+                      left: `${singleQuantizeInfo.preview * 100}%`,
+                      transform: "translateX(-50%)",
+                    }}
+                  >
+                    <div className="h-full w-1 rounded-full bg-yellow-500/70" />
+                  </div>
+                )}
+              </>
+            )}
 
             {/* Hover indicator */}
             {hoverPosition !== null && (
@@ -439,44 +763,18 @@ export default function ManualChordTiming() {
         </div>
       </div>
 
-      {/* Action buttons */}
-      <div className="mt-8 flex gap-2">
-        <Button size="sm" onClick={handleSave} disabled={!hasUnsavedChanges}>
-          Save
-        </Button>
-        <Button size="sm" variant="outline" onClick={handleCancel} disabled={!hasUnsavedChanges}>
-          Cancel
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={handleClear}
-          disabled={localPattern.length === 0}
-        >
-          Clear
-        </Button>
-        <Button
-          size="sm"
-          variant={previewPlaying === "editor" ? "destructive" : "secondary"}
-          onClick={toggleEditorPreview}
-          disabled={localPattern.length === 0}
-        >
-          {previewPlaying === "editor" ? "Stop" : "Preview"}
-        </Button>
-      </div>
-
       {/* Saved pattern preview */}
       {strumPattern.length > 0 && (
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-2 pr-2 pl-6">
           <div className="flex items-center gap-2">
-            <p className="text-muted-foreground text-sm">Saved pattern:</p>
+            <p className="font-medium">Saved pattern:</p>
             <Button
-              size="sm"
+              size="iconXs"
               variant={previewPlaying === "saved" ? "destructive" : "outline"}
               onClick={toggleSavedPreview}
               className="h-6 px-2 text-xs"
             >
-              {previewPlaying === "saved" ? "Stop" : "Preview"}
+              {previewPlaying === "saved" ? <SquareIcon /> : <PlayIcon />}
             </Button>
           </div>
           <div className="bg-muted/30 relative h-8 rounded border">
