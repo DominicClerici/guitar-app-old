@@ -1,12 +1,13 @@
 import { Button } from "@/components/ui/button"
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
 import InputWithTicker from "@/components/ui/input-with-ticker"
 import { cn } from "@/lib/utils"
+import { ArrowDownIcon, ArrowUpIcon, Trash2Icon } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import * as Tone from "tone"
 import { ChordStrum } from "../../context/tab-data-context"
 import useTabContext from "../../tab-context-main"
 
-// Sine tone frequencies for preview
 const DOWN_STRUM_FREQ = 440 // A4
 const UP_STRUM_FREQ = 523.25 // C5 (slightly higher)
 
@@ -15,25 +16,21 @@ type PreviewSource = "editor" | "saved" | null
 export default function ManualChordTiming() {
   const { strumPattern, setStrumPattern, bpm } = useTabContext()
 
-  // Local editing state - initialized from saved pattern
   const [localPattern, setLocalPattern] = useState<ChordStrum[]>(() => [...strumPattern])
   const [subdivisions, setSubdivisions] = useState(1)
   const [hoverPosition, setHoverPosition] = useState<number | null>(null)
   const gridRef = useRef<HTMLDivElement>(null)
 
-  // Preview playback state
   const [previewPlaying, setPreviewPlaying] = useState<PreviewSource>(null)
-  const [playheadPosition, setPlayheadPosition] = useState(0) // 0-1 normalized position
+  const [playheadPosition, setPlayheadPosition] = useState(0)
   const synthRef = useRef<Tone.Synth | null>(null)
   const partRef = useRef<Tone.Part | null>(null)
   const animationFrameRef = useRef<number | null>(null)
 
-  // Sync local state when saved pattern changes externally
   useEffect(() => {
     setLocalPattern([...strumPattern])
   }, [strumPattern])
 
-  // Check if local pattern differs from saved
   const hasUnsavedChanges = useMemo(() => {
     if (localPattern.length !== strumPattern.length) return true
     return localPattern.some(
@@ -96,6 +93,12 @@ export default function ManualChordTiming() {
         setHoverPosition(null)
         return
       }
+      // get any elements under the mouse
+      const elements = document.elementsFromPoint(e.clientX, e.clientY)
+      if (elements.some((element) => element.classList.contains("data-is-strum"))) {
+        setHoverPosition(null)
+        return
+      }
       setHoverPosition(snapToPosition(rawPosition))
     },
     [getPositionFromMouse, snapToPosition],
@@ -107,6 +110,7 @@ export default function ManualChordTiming() {
 
   const handleClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
+      if (hoverPosition === null) return
       const rawPosition = getPositionFromMouse(e)
       if (rawPosition === null) return
 
@@ -126,7 +130,7 @@ export default function ManualChordTiming() {
         setLocalPattern((prev) => [...prev, newStrum].sort((a, b) => a.position - b.position))
       }
     },
-    [getPositionFromMouse, snapToPosition, localPattern],
+    [getPositionFromMouse, snapToPosition, localPattern, hoverPosition],
   )
 
   const positionToBeat = (position: number) => {
@@ -141,7 +145,6 @@ export default function ManualChordTiming() {
     return localPattern.some((strum) => Math.abs(strum.position - hoverPosition) < tolerance)
   }, [hoverPosition, localPattern])
 
-  // Start playhead animation
   const startPlayheadAnimation = useCallback(() => {
     const barDurationSeconds = (4 / bpm) * 60
 
@@ -155,7 +158,6 @@ export default function ManualChordTiming() {
     animationFrameRef.current = requestAnimationFrame(animate)
   }, [bpm])
 
-  // Stop playhead animation
   const stopPlayheadAnimation = useCallback(() => {
     if (animationFrameRef.current !== null) {
       cancelAnimationFrame(animationFrameRef.current)
@@ -164,7 +166,6 @@ export default function ManualChordTiming() {
     setPlayheadPosition(0)
   }, [])
 
-  // Stop preview and clean up resources
   const stopPreview = useCallback(() => {
     stopPlayheadAnimation()
     if (partRef.current) {
@@ -181,20 +182,16 @@ export default function ManualChordTiming() {
     setPreviewPlaying(null)
   }, [stopPlayheadAnimation])
 
-  // Start preview playback for a given pattern
   const startPreview = useCallback(
     async (source: PreviewSource, pattern: ChordStrum[]) => {
       if (pattern.length === 0) return
 
-      // Stop any existing preview first
       stopPreview()
 
       await Tone.start()
 
-      // Set BPM to match the actual player
       Tone.getTransport().bpm.value = bpm
 
-      // Create synth for sine tones
       const synth = new Tone.Synth({
         oscillator: { type: "sine" },
         envelope: {
@@ -206,18 +203,14 @@ export default function ManualChordTiming() {
       }).toDestination()
       synthRef.current = synth
 
-      // Calculate bar duration in seconds (4 beats per bar in 4/4 time)
-      // This matches exactly how tab-player-context.tsx calculates timing
       const barDurationSeconds = (4 / bpm) * 60
 
-      // Build events from the pattern
       type PartEvent = { time: number; direction: "up" | "down" }
       const events: PartEvent[] = pattern.map((strum) => ({
         time: strum.position * barDurationSeconds,
         direction: strum.direction,
       }))
 
-      // Create the Part with seconds-based timing (same as tab-player-context.tsx)
       const part = new Tone.Part<PartEvent>((time, event) => {
         const freq = event.direction === "down" ? DOWN_STRUM_FREQ : UP_STRUM_FREQ
         synth.triggerAttackRelease(freq, "16n", time)
@@ -229,7 +222,6 @@ export default function ManualChordTiming() {
 
       partRef.current = part
 
-      // Reset and start (same pattern as tab-player-context.tsx)
       Tone.getTransport().position = 0
       part.start(0)
       Tone.getTransport().start()
@@ -240,7 +232,6 @@ export default function ManualChordTiming() {
     [bpm, stopPreview, startPlayheadAnimation],
   )
 
-  // Toggle preview for editor pattern
   const toggleEditorPreview = useCallback(() => {
     if (previewPlaying === "editor") {
       stopPreview()
@@ -249,7 +240,6 @@ export default function ManualChordTiming() {
     }
   }, [previewPlaying, stopPreview, startPreview, localPattern])
 
-  // Toggle preview for saved pattern
   const toggleSavedPreview = useCallback(() => {
     if (previewPlaying === "saved") {
       stopPreview()
@@ -258,7 +248,6 @@ export default function ManualChordTiming() {
     }
   }, [previewPlaying, stopPreview, startPreview, strumPattern])
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (animationFrameRef.current !== null) {
@@ -275,10 +264,8 @@ export default function ManualChordTiming() {
     }
   }, [])
 
-  // Stop preview if BPM changes while playing
   useEffect(() => {
     if (previewPlaying) {
-      // Restart preview with new BPM
       const currentSource = previewPlaying
       const pattern = currentSource === "editor" ? localPattern : strumPattern
       startPreview(currentSource, pattern)
@@ -355,22 +342,61 @@ export default function ManualChordTiming() {
 
             {/* Existing strums (local editing state) */}
             {localPattern.map((strum, index) => (
-              <div
-                key={index}
-                className="absolute top-0 h-full"
-                style={{ left: `${strum.position * 100}%`, transform: "translateX(-50%)" }}
-              >
-                <div
-                  className={cn(
-                    "h-full w-1 rounded-full",
-                    strum.direction === "down" ? "bg-primary" : "bg-primary/70",
-                  )}
-                />
-                {/* Direction indicator */}
-                <div className="text-primary absolute -top-5 left-1/2 -translate-x-1/2 text-xs">
-                  {strum.direction === "down" ? "↓" : "↑"}
-                </div>
-              </div>
+              <HoverCard key={`strum-${index}`} openDelay={75} closeDelay={0}>
+                <HoverCardTrigger asChild>
+                  <div
+                    style={{ left: `${strum.position * 100}%`, transform: "translateX(-50%)" }}
+                    className="data-is-strum absolute top-0 h-full cursor-pointer hover:px-2"
+                  >
+                    <div className="relative h-full w-1">
+                      <div
+                        className={cn(
+                          "h-full w-1 rounded-full",
+                          strum.direction === "down" ? "bg-primary" : "bg-primary/70",
+                        )}
+                      />
+                      {/* Direction indicator */}
+                      <div className="text-primary absolute -top-5 left-1/2 -translate-x-1/2 text-xs">
+                        {strum.direction === "down" ? "↓" : "↑"}
+                      </div>
+                    </div>
+                  </div>
+                </HoverCardTrigger>
+                <HoverCardContent
+                  sideOffset={0}
+                  className="data-is-strum flex items-center gap-2 p-1"
+                >
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    onClick={() => {
+                      setLocalPattern((prev) =>
+                        prev.filter((existingStrum) => existingStrum.position !== strum.position),
+                      )
+                    }}
+                  >
+                    <Trash2Icon />
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    onClick={() => {
+                      setLocalPattern((prev) =>
+                        prev.map((existingStrum) =>
+                          existingStrum.position === strum.position
+                            ? {
+                                ...existingStrum,
+                                direction: existingStrum.direction === "down" ? "up" : "down",
+                              }
+                            : existingStrum,
+                        ),
+                      )
+                    }}
+                  >
+                    {strum.direction === "up" ? <ArrowUpIcon /> : <ArrowDownIcon />}
+                  </Button>
+                </HoverCardContent>
+              </HoverCard>
             ))}
 
             {/* Hover indicator */}
