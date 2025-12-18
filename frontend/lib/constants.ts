@@ -1,5 +1,6 @@
 export const STANDARD_TUNING_MIDI = [64, 59, 55, 50, 45, 40] // E4, B3, G3, D3, A2, E2
 export const STANDARD_TUNING_NOTES = ["E", "B", "G", "D", "A", "E"]
+export const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
 export const DOWN_VELOCITIES = {
   standard: [1.0, 0.85, 0.7, 0.55, 0.4, 0.25],

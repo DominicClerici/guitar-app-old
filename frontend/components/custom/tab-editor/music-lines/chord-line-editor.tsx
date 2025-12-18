@@ -1,5 +1,4 @@
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import {
   closestCenter,
   DndContext,
@@ -18,11 +17,10 @@ import {
   useSortable,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { PauseIcon, PlayIcon, ShareIcon, SquareIcon, Trash2Icon, XIcon } from "lucide-react"
+import { ShareIcon, XIcon } from "lucide-react"
 import { useState } from "react"
 import { FretPositions } from "../context/tab-fret-context"
 import useTabContext from "../tab-context-main"
-import ChordTimingDialog from "./chord-timing-editor/chord-timing-dialog"
 
 function MiniChordDisplay({ positions }: { positions: FretPositions }) {
   const minFret = positions.reduce(
@@ -176,72 +174,6 @@ export default function ChordLineEditor() {
 
   return (
     <>
-      <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-xl font-semibold">Chord Line</h3>
-        <div className="flex items-center gap-2">
-          <ChordTimingDialog />
-          <div className="bg-border h-6 w-px" />
-          <div className="flex flex-col items-center">
-            <Input
-              type="number"
-              value={bpm}
-              min={30}
-              max={240}
-              step={1}
-              onChange={(e) => setBpm(Math.round(Number(e.target.value)))}
-              className="h-6 w-16 rounded-b-none p-0 text-center font-mono text-base!"
-            />
-            <div className="grid grid-cols-2 grid-rows-1 items-stretch justify-stretch">
-              <button
-                disabled={bpm >= 240}
-                onClick={() => setBpm(Math.round((bpm + 5) / 5) * 5)}
-                className="hover:bg-accent h-4 w-8 rounded-bl-sm border border-t-0 border-r-0 text-center leading-0 not-disabled:cursor-pointer"
-              >
-                +
-              </button>
-              <button
-                disabled={bpm <= 30}
-                onClick={() => setBpm(Math.round((bpm - 5) / 5) * 5)}
-                className="hover:bg-accent h-4 w-8 rounded-br-sm border border-t-0 border-l-0 text-center leading-0 not-disabled:cursor-pointer"
-              >
-                -
-              </button>
-            </div>
-          </div>
-
-          <div className="bg-border h-6 w-px" />
-
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => {
-              if (isPlaying) {
-                stopPlayback()
-              } else {
-                startPlayback()
-              }
-            }}
-            disabled={chordLine.length === 0}
-          >
-            {isPlaying ? <PauseIcon className="h-4 w-4" /> : <PlayIcon className="h-4 w-4" />}
-          </Button>
-          <Button variant="outline" size="icon" onClick={stopPlayback} disabled={!isPlaying}>
-            <SquareIcon className="h-4 w-4" />
-          </Button>
-
-          <div className="bg-border h-6 w-px" />
-
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={clearChordLine}
-            disabled={chordLine.length === 0}
-          >
-            <Trash2Icon className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-
       {chordLine.length === 0 ? (
         <p className="text-muted-foreground text-sm">
           No chords added yet. Use &quot;Add to Chord Line&quot; to add chords.

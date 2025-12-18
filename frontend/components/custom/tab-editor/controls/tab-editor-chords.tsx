@@ -1,13 +1,8 @@
+import { NOTE_NAMES, STANDARD_TUNING_MIDI } from "@/lib/constants"
 import { identifyChords } from "@guitar/chord-detection"
 import { useMemo } from "react"
 import { FretPositions } from "../context/tab-fret-context"
 import { Tuning } from "../context/tab-tuning-context"
-
-// Standard tuning MIDI notes: String 0 is high E (E4), String 5 is low E (E2)
-const STANDARD_TUNING_MIDI = [64, 59, 55, 50, 45, 40] // E4, B3, G3, D3, A2, E2
-
-// Note names in chromatic order
-const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
 // Convert MIDI note number to note name (e.g., 64 -> "E")
 function midiToNoteName(midi: number): string {
@@ -58,27 +53,11 @@ export default function TabEditorChords({ fretPositions, tuning }: TabEditorChor
     return notes
   }, [fretPositions, tuning])
 
-  // Get unique note names for chord detection
-  const noteNames = useMemo(() => {
-    return [...new Set(activeNotes.map((n) => n.noteName))]
-  }, [activeNotes])
-
-  // // Detect chords using @tonaljs/chord-detect
-  // const chordDetectResults = useMemo(() => {
-  //   if (noteNames.length < 2) return []
-
-  //   // Remove duplicates but keep order
-  //   return detectedChords.filter((chord, index) => detectedChords.indexOf(chord) === index)
-  // }, [noteNames])
-
   const customDetectionResults = useMemo(() => {
     if (activeNotes.length < 3) return []
     return identifyChords(activeNotes.map((n) => n.noteWithOctave))
   }, [activeNotes])
-  console.log(customDetectionResults)
 
-  const chordDetectResults = [] as string[]
-  // Get note names for display
   const noteNamesDisplay = activeNotes.map((n) => n.noteWithOctave).join(", ")
 
   return (
@@ -96,54 +75,26 @@ export default function TabEditorChords({ fretPositions, tuning }: TabEditorChor
             {activeNotes.length < 2 ? (
               <p className="text-muted-foreground text-sm">Select at least 2 notes</p>
             ) : (
-              <div className="space-y-4">
-                {/* @tonaljs/chord-detect results */}
-                <div>
-                  <span className="text-muted-foreground text-sm font-medium">
-                    @tonaljs/chord-detect:
-                  </span>
-                  {chordDetectResults.length === 0 ? (
-                    <p className="text-muted-foreground mt-1 text-sm">No matching chords found</p>
-                  ) : (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {chordDetectResults.map((chord, index) => (
-                        <span
-                          key={index}
-                          className={`rounded-full px-3 py-1 text-sm font-medium ${
-                            index === 0
-                              ? "bg-blue-500 text-white"
-                              : "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
-                          }`}
-                        >
-                          {chord}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <span className="text-muted-foreground text-sm font-medium">
-                    custom detection:
-                  </span>
-                  {customDetectionResults.length === 0 ? (
-                    <p className="text-muted-foreground mt-1 text-sm">No matching chords found</p>
-                  ) : (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {customDetectionResults.map((chord, index) => (
-                        <span
-                          key={index}
-                          className={`rounded-full px-3 py-1 text-sm font-medium ${
-                            index === 0
-                              ? "bg-blue-500 text-white"
-                              : "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
-                          }`}
-                        >
-                          {chord.name}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
+              <div>
+                <span className="text-muted-foreground text-sm font-medium">custom detection:</span>
+                {customDetectionResults.length === 0 ? (
+                  <p className="text-muted-foreground mt-1 text-sm">No matching chords found</p>
+                ) : (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {customDetectionResults.map((chord, index) => (
+                      <span
+                        key={index}
+                        className={`rounded-full px-3 py-1 text-sm font-medium ${
+                          index === 0
+                            ? "bg-blue-500 text-white"
+                            : "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+                        }`}
+                      >
+                        {chord.name}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </>

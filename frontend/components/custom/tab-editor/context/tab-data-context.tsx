@@ -1,8 +1,11 @@
 "use client"
+import { InstrumentName } from "@/lib/SampleLibrary"
 import { generateUUID } from "@/lib/utils"
 import { arrayMove } from "@dnd-kit/sortable"
 import { createContext, useCallback, useContext, useState } from "react"
 import { FretPositions } from "./tab-fret-context"
+
+export type MusicLineType = "chord" | "bass" | "drum"
 
 // a single chord strum
 export type ChordStrum = {
@@ -15,9 +18,21 @@ export type ChordStrum = {
 // For now limited to 1 chord per bar of music
 export type ChordLineItem = {
   id: string
+  type: "chord"
+  instrument: InstrumentName
   positions: FretPositions
   // pattern: ChordStrum[] For now, we use global pattern
 }
+
+export type DrumLineItem = {
+  id: string
+  type: "drum"
+  instrument: InstrumentName
+  positions: FretPositions
+  // pattern: ChordStrum[] For now, we use global pattern
+}
+
+export type MusicLineItem = ChordLineItem | DrumLineItem
 
 type TabDataContextType = {
   chordLine: ChordLineItem[]

@@ -7,7 +7,7 @@ import FretControls from "../fretboard/fretboard-controls"
 import { useTabEffectsContext } from "./context/tab-effects-context"
 import TabEditorChords from "./controls/tab-editor-chords"
 import TabEditorTuning from "./controls/tab-editor-tuning"
-import ChordLineEditor from "./music-lines/chord-line-editor"
+import MusicLineEditor from "./music-lines/music-line-editor"
 import useTabContext from "./tab-context-main"
 
 export default function TabEditorMain() {
@@ -15,21 +15,13 @@ export default function TabEditorMain() {
     <div className="mx-auto flex w-full max-w-7xl flex-col items-stretch gap-4 py-24">
       <TabEditorFretboard />
       {/* <TabEditorFilterControls /> */}
-      <TabEditorChordAndMelodyControls />
+      <MusicLineEditor />
       <div className="grid grid-cols-2 gap-4">
         <TabEditorChordsControls />
         <TabEditorTuningControls />
       </div>
       <TabEditorFilterControls />
     </div>
-  )
-}
-
-function TabEditorChordAndMelodyControls() {
-  return (
-    <Card>
-      <ChordLineEditor />
-    </Card>
   )
 }
 
