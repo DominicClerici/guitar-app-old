@@ -16,7 +16,12 @@ import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
 import { useEffect, useState } from "react"
 import { EffectsSettings } from "../tab-editor/context/tab-effects-context"
-import { ImpulseResponsePreset } from "./fretboard-context"
+
+export type ImpulseResponsePreset = {
+  id: string
+  name: string
+  url: string
+}
 
 interface FilterControlsProps {
   effects: EffectsSettings

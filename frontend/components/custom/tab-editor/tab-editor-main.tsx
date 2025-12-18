@@ -8,7 +8,7 @@ import { useTabEffectsContext } from "./context/tab-effects-context"
 import TabEditorChords from "./controls/tab-editor-chords"
 import TabEditorTuning from "./controls/tab-editor-tuning"
 import ChordLineEditor from "./music-lines/chord-line-editor"
-import { useTabContext } from "./tab-context-main"
+import useTabContext from "./tab-context-main"
 
 export default function TabEditorMain() {
   return (

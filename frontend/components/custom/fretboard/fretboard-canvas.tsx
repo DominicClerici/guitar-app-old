@@ -2,8 +2,8 @@
 import { STANDARD_TUNING_NOTES } from "@/lib/constants"
 import { applyTuningToNoteCharacter, getNoteFromFret } from "@/lib/midi-utils"
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { FretPositions } from "../tab-editor/context/tab-fret-context"
 import { Tuning } from "../tab-editor/context/tab-tuning-context"
-import { FretPositions } from "./fretboard-context"
 
 export const NUM_STRINGS = 6
 export const NUM_FRETS = 18 // 0 (open) through 17

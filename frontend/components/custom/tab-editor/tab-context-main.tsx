@@ -45,7 +45,7 @@ export function TabContextMain({ children, initialTabSettings }: TabContextMainP
   )
 }
 
-export function useTabContext() {
+export default function useTabContext() {
   const tabDataContext = useTabDataContext()
   const tabSettingsContext = useTabSettingsContext()
   const tabFretContext = useTabFretContext()
@@ -69,5 +69,3 @@ export function useTabContext() {
     ...tabInstrumentContext,
   }
 }
-
-export default useTabContext

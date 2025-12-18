@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button"
 import { ChevronLeftIcon, ChevronRightIcon, RefreshCwIcon } from "lucide-react"
+import { FretPositions } from "../tab-editor/context/tab-fret-context"
 import { NUM_FRETS, NUM_STRINGS } from "./fretboard-canvas"
-import { FretPositions } from "./fretboard-context"
 
 interface FretControlsProps {
   fretPositions: FretPositions

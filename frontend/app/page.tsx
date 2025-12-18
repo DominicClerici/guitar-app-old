@@ -1,14 +1,5 @@
-import { FretboardContextProvider } from "@/components/custom/fretboard/fretboard-context"
-import FretboardMain from "@/components/custom/fretboard/fretboard-main"
-import TabPlayer from "@/components/custom/tabs/tab-player"
-import AuthTopBar from "./AuthTopBar"
+import Link from "next/link"
 
 export default function Home() {
-  return (
-    <FretboardContextProvider>
-      <AuthTopBar />
-      <FretboardMain />
-      <TabPlayer />
-    </FretboardContextProvider>
-  )
+  return <Link href="/dashboard">Go to dashboard</Link>
 }
