@@ -1,5 +1,20 @@
-import { Stack } from "expo-router";
+import { Stack } from "expo-router"
+import * as ScreenOrientation from "expo-screen-orientation"
 
 export default function RootLayout() {
-  return <Stack />;
+  return (
+    <Stack
+      screenOptions={{
+        headerShown: false,
+      }}
+      screenListeners={{
+        beforeRemove: async () => {
+          // Reset to portrait when leaving any screen that might have changed orientation
+          await ScreenOrientation.lockAsync(
+            ScreenOrientation.OrientationLock.PORTRAIT_UP
+          )
+        },
+      }}
+    />
+  )
 }
