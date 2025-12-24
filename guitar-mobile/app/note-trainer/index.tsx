@@ -4,6 +4,7 @@ import * as ScreenOrientation from "expo-screen-orientation"
 import { useEffect, useState } from "react"
 import { Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-native"
 
+import { theme } from "@/utils/theme"
 import { Fretboard, getPositionsForNote, type NoteName } from "../../components/fretboard"
 
 type Mode = "manual" | "auto"
@@ -180,7 +181,7 @@ export default function NoteTrainer() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#1a1a1a",
+    backgroundColor: theme.colors.background,
     paddingLeft: "7.5%",
     paddingRight: "5%",
     paddingTop: "2%",
@@ -200,7 +201,7 @@ const styles = StyleSheet.create({
   },
   modeToggle: {
     flexDirection: "row",
-    backgroundColor: "#333",
+    backgroundColor: theme.colors.muted,
     borderRadius: 8,
     overflow: "hidden",
   },
@@ -212,12 +213,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#007AFF",
   },
   modeButtonText: {
-    color: "#888",
+    color: theme.colors.mutedForeground,
     fontSize: 14,
     fontWeight: "600",
   },
   modeButtonTextActive: {
-    color: "#fff",
+    color: theme.colors.primary,
   },
   noteSelectContainer: {
     position: "relative",
@@ -225,14 +226,14 @@ const styles = StyleSheet.create({
   noteSelect: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#333",
+    backgroundColor: theme.colors.muted,
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,
     gap: 8,
   },
   noteSelectText: {
-    color: "#fff",
+    color: theme.colors.primary,
     fontSize: 16,
     fontWeight: "600",
   },
@@ -240,7 +241,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: "100%",
     left: 0,
-    backgroundColor: "#333",
+    backgroundColor: theme.colors.muted,
     borderRadius: 8,
     marginTop: 4,
     zIndex: 100,
@@ -250,23 +251,23 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   notePickerItemActive: {
-    backgroundColor: "#007AFF",
+    backgroundColor: theme.colors.muted,
   },
   notePickerItemText: {
-    color: "#fff",
+    color: theme.colors.primary,
     fontSize: 16,
   },
   notePickerItemTextActive: {
     fontWeight: "600",
   },
   startButton: {
-    backgroundColor: "#34C759",
+    backgroundColor: theme.colors.muted,
     paddingHorizontal: 24,
     paddingVertical: 8,
     borderRadius: 8,
   },
   startButtonText: {
-    color: "#fff",
+    color: theme.colors.primary,
     fontSize: 14,
     fontWeight: "600",
   },
@@ -274,7 +275,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#fff",
+    backgroundColor: theme.colors.background,
     paddingHorizontal: 40,
   },
   rotateIcon: {
@@ -283,29 +284,29 @@ const styles = StyleSheet.create({
   rotateTitle: {
     fontSize: 28,
     fontWeight: "bold",
-    color: "#1a1a1a",
+    color: theme.colors.background,
     marginBottom: 12,
   },
   rotateSubtitle: {
     fontSize: 16,
-    color: "#666",
+    color: theme.colors.mutedForeground,
     textAlign: "center",
     marginBottom: 32,
   },
   rotateButton: {
-    backgroundColor: "#007AFF",
+    backgroundColor: theme.colors.muted,
     paddingHorizontal: 32,
     paddingVertical: 16,
     borderRadius: 8,
   },
   rotateButtonText: {
-    color: "#fff",
+    color: theme.colors.primary,
     fontSize: 18,
     fontWeight: "600",
   },
   fretboardText: {
     fontSize: 32,
     fontWeight: "bold",
-    color: "#fff",
+    color: theme.colors.primary,
   },
 })

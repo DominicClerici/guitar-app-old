@@ -1,3 +1,4 @@
+import { theme } from "@/utils/theme"
 import { Link } from "expo-router"
 import { Pressable, StyleSheet, Text, View } from "react-native"
 
@@ -19,21 +20,22 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#fff",
+    backgroundColor: theme.colors.background,
   },
   title: {
     fontSize: 32,
     fontWeight: "bold",
     marginBottom: 40,
+    color: theme.colors.primary,
   },
   button: {
-    backgroundColor: "#007AFF",
+    backgroundColor: theme.colors.muted,
     paddingHorizontal: 32,
     paddingVertical: 16,
     borderRadius: 8,
   },
   buttonText: {
-    color: "#fff",
+    color: theme.colors.primary,
     fontSize: 18,
     fontWeight: "600",
   },

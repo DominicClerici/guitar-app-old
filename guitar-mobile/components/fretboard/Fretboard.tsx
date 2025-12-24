@@ -124,161 +124,170 @@ export function Fretboard({
       {containerSize && (
         <GestureDetector gesture={panGesture}>
           <View
-            style={[styles.fretboard, { width: fretboardWidth + nutWidth, height: availableHeight }]}
-          >
-          {/* Nut (the bar at the end of the fretboard near the headstock) */}
-          <View
             style={[
-              styles.nut,
-              { width: nutWidth, height: availableHeight, borderRightWidth: nutBorderWidth },
+              styles.fretboard,
+              { width: fretboardWidth + nutWidth, height: availableHeight },
             ]}
           >
-            {tuning.map((note, index) => (
-              <View
-                key={`open-${index}`}
-                style={[
-                  styles.openStringContainer,
-                  {
-                    position: "absolute",
-                    top: (index + 1) * stringSpacing - stringSpacing / 2,
-                    height: stringSpacing,
-                    width: nutWidth,
-                  },
-                ]}
-              >
-                <Text style={[styles.openStringText, { fontSize }]}>{note}</Text>
-              </View>
-            ))}
-          </View>
-
-          {/* Fretboard surface */}
-          <View
-            style={[styles.fretboardSurface, { width: fretboardWidth, height: availableHeight }]}
-          >
-            {/* Fret markers (dots) */}
-            <View style={styles.fretMarkersContainer}>
-              {Array.from({ length: fretCount }, (_, i) => i + 1).map((fret) => {
-                const isSingleDot = SINGLE_DOT_FRETS.includes(fret)
-                const isDoubleDot = DOUBLE_DOT_FRETS.includes(fret)
-                // Center dot in the middle of the fret (between fret-1 wire and fret wire)
-                const left = (fret - 0.5) * fretWidth - dotSize / 2
-
-                const dotStyle = {
-                  width: dotSize,
-                  height: dotSize,
-                  borderRadius: dotSize / 2,
-                  backgroundColor: "#d4d4d4",
-                }
-
-                if (isSingleDot) {
-                  return (
-                    <View key={`dot-${fret}`} style={[styles.fretDotSingle, dotStyle, { left }]} />
-                  )
-                }
-                if (isDoubleDot) {
-                  return (
-                    <View
-                      key={`dot-${fret}`}
-                      style={[styles.doubleDotContainer, { left, width: dotSize }]}
-                    >
-                      <View style={dotStyle} />
-                      <View style={dotStyle} />
-                    </View>
-                  )
-                }
-                return null
-              })}
+            {/* Nut (the bar at the end of the fretboard near the headstock) */}
+            <View
+              style={[
+                styles.nut,
+                { width: nutWidth, height: availableHeight, borderRightWidth: nutBorderWidth },
+              ]}
+            >
+              {tuning.map((note, index) => (
+                <View
+                  key={`open-${index}`}
+                  style={[
+                    styles.openStringContainer,
+                    {
+                      position: "absolute",
+                      top: (index + 1) * stringSpacing - stringSpacing / 2,
+                      height: stringSpacing,
+                      width: nutWidth,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.openStringText, { fontSize }]}>{note}</Text>
+                </View>
+              ))}
             </View>
 
-            {/* Fret wires */}
-            {Array.from({ length: fretCount }, (_, i) => i + 1).map((fret) => (
-              <View
-                key={`fret-${fret}`}
-                style={[
-                  styles.fretWire,
-                  {
-                    left: fret * fretWidth - fretWireWidth / 2,
-                    height: availableHeight,
-                    width: fretWireWidth,
-                  },
-                ]}
-              />
-            ))}
+            {/* Fretboard surface */}
+            <View
+              style={[styles.fretboardSurface, { width: fretboardWidth, height: availableHeight }]}
+            >
+              {/* Fret markers (dots) */}
+              <View style={styles.fretMarkersContainer}>
+                {Array.from({ length: fretCount }, (_, i) => i + 1).map((fret) => {
+                  const isSingleDot = SINGLE_DOT_FRETS.includes(fret)
+                  const isDoubleDot = DOUBLE_DOT_FRETS.includes(fret)
+                  // Center dot in the middle of the fret (between fret-1 wire and fret wire)
+                  const left = (fret - 0.5) * fretWidth - dotSize / 2
 
-            {/* Strings */}
-            {tuning.map((_, stringIndex) => {
-              // String thickness - thicker strings at top (low E), thinner at bottom (high E)
-              const thickness = 1 + (stringCount - 1 - stringIndex) * 0.5
-              return (
+                  const dotStyle = {
+                    width: dotSize,
+                    height: dotSize,
+                    borderRadius: dotSize / 2,
+                    backgroundColor: "#d4d4d4",
+                  }
+
+                  if (isSingleDot) {
+                    return (
+                      <View
+                        key={`dot-${fret}`}
+                        style={[styles.fretDotSingle, dotStyle, { left }]}
+                      />
+                    )
+                  }
+                  if (isDoubleDot) {
+                    return (
+                      <View
+                        key={`dot-${fret}`}
+                        style={[styles.doubleDotContainer, { left, width: dotSize }]}
+                      >
+                        <View style={dotStyle} />
+                        <View style={dotStyle} />
+                      </View>
+                    )
+                  }
+                  return null
+                })}
+              </View>
+
+              {/* Fret wires */}
+              {Array.from({ length: fretCount }, (_, i) => i + 1).map((fret) => (
                 <View
-                  key={`string-${stringIndex}`}
+                  key={`fret-${fret}`}
                   style={[
-                    styles.string,
+                    styles.fretWire,
                     {
-                      top: (stringIndex + 1) * stringSpacing - thickness / 2,
-                      width: fretboardWidth,
-                      height: thickness,
+                      left: fret * fretWidth - fretWireWidth / 2,
+                      height: availableHeight,
+                      width: fretWireWidth,
                     },
                   ]}
                 />
-              )
-            })}
+              ))}
 
-            {/* Interactive fret positions */}
-            {tuning.map((_, stringIndex) =>
-              Array.from({ length: fretCount }, (_, i) => i + 1).map((fret) => {
-                const note = getNoteAtPosition(stringIndex, fret, tuning)
-                // Center the marker in the middle of the fret (between fret-1 wire and fret wire)
-                const left = (fret - 1) * fretWidth
-                const top = (stringIndex + 1) * stringSpacing - stringSpacing / 2
-
+              {/* Strings */}
+              {tuning.map((_, stringIndex) => {
+                // String thickness - thicker strings at top (low E), thinner at bottom (high E)
+                const thickness = 1 + (stringCount - 1 - stringIndex) * 0.5
                 return (
                   <View
-                    key={`pos-${stringIndex}-${fret}`}
+                    key={`string-${stringIndex}`}
                     style={[
-                      styles.fretPosition,
+                      styles.string,
                       {
-                        left,
-                        top,
-                        width: fretWidth,
-                        height: stringSpacing,
+                        top: (stringIndex + 1) * stringSpacing - thickness / 2,
+                        width: fretboardWidth,
+                        height: thickness,
                       },
                     ]}
-                  >
-                    <FretMarker
-                      stringIndex={stringIndex}
-                      fret={fret}
-                      note={note}
-                      showNote={showAllNotes}
-                      isHighlighted={isPositionHighlighted(stringIndex, fret)}
-                      isCorrect={isPositionCorrect(stringIndex, fret)}
-                      isIncorrect={isPositionIncorrect(stringIndex, fret)}
-                      onPress={onFretPress}
-                      width={fretWidth}
-                      height={stringSpacing}
-                    />
-                  </View>
+                  />
                 )
-              }),
-            )}
-          </View>
+              })}
 
-          {/* Fret numbers */}
-          <View
-            style={[
-              styles.fretNumbers,
-              { width: fretboardWidth, left: nutWidth, bottom: -fretNumberFontSize * 1.5 },
-            ]}
-          >
-            {Array.from({ length: fretCount }, (_, i) => i + 1).map((fret) => (
-              <View key={`num-${fret}`} style={[styles.fretNumberContainer, { width: fretWidth }]}>
-                <Text style={[styles.fretNumberText, { fontSize: fretNumberFontSize }]}>
-                  {fret}
-                </Text>
-              </View>
-            ))}
+              {/* Interactive fret positions */}
+              {tuning.map((_, stringIndex) =>
+                Array.from({ length: fretCount }, (_, i) => i + 1).map((fret) => {
+                  const note = getNoteAtPosition(stringIndex, fret, tuning)
+                  // Center the marker in the middle of the fret (between fret-1 wire and fret wire)
+                  const left = (fret - 1) * fretWidth
+                  const top = (stringIndex + 1) * stringSpacing - stringSpacing / 2
+
+                  return (
+                    <View
+                      key={`pos-${stringIndex}-${fret}`}
+                      style={[
+                        styles.fretPosition,
+                        {
+                          left,
+                          top,
+                          width: fretWidth,
+                          height: stringSpacing,
+                        },
+                      ]}
+                    >
+                      <FretMarker
+                        stringIndex={stringIndex}
+                        fret={fret}
+                        note={note}
+                        showNote={showAllNotes}
+                        isHighlighted={isPositionHighlighted(stringIndex, fret)}
+                        isCorrect={isPositionCorrect(stringIndex, fret)}
+                        isIncorrect={isPositionIncorrect(stringIndex, fret)}
+                        onPress={onFretPress}
+                        width={fretWidth}
+                        height={stringSpacing}
+                      />
+                    </View>
+                  )
+                }),
+              )}
+            </View>
+
+            {/* Fret numbers */}
+            <View
+              style={[
+                styles.fretNumbers,
+                { width: fretboardWidth, left: nutWidth, bottom: -fretNumberFontSize * 1.5 },
+              ]}
+            >
+              {Array.from({ length: fretCount }, (_, i) => i + 1).map((fret) => (
+                <View
+                  key={`num-${fret}`}
+                  style={[styles.fretNumberContainer, { width: fretWidth }]}
+                >
+                  <Text style={[styles.fretNumberText, { fontSize: fretNumberFontSize }]}>
+                    {fret}
+                  </Text>
+                </View>
+              ))}
+            </View>
           </View>
-        </View>
         </GestureDetector>
       )}
     </View>
