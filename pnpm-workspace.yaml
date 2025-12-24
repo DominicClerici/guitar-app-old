@@ -1,8 +1,13 @@
 packages:
   - frontend
   - packages/*
+  - guitar-mobile
 catalog:
   drizzle-orm: ^0.45.1
   zod: ^4.1.13
+nodeLinker: hoisted
 onlyBuiltDependencies:
   - supabase
+overrides:
+  react: 19.1.0
+  react-dom: 19.1.0
