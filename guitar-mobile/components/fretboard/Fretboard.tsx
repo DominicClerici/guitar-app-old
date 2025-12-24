@@ -1,5 +1,7 @@
-import { useState } from "react"
+import * as Haptics from "expo-haptics"
+import { useRef, useState } from "react"
 import { LayoutChangeEvent, StyleSheet, Text, View } from "react-native"
+import { Gesture, GestureDetector } from "react-native-gesture-handler"
 
 import { FretMarker } from "./FretMarker"
 import {
@@ -31,6 +33,7 @@ export function Fretboard({
   onFretPress,
 }: FretboardProps) {
   const [containerSize, setContainerSize] = useState<{ width: number; height: number } | null>(null)
+  const lastPositionRef = useRef<{ stringIndex: number; fret: number } | null>(null)
 
   const handleLayout = (event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout
@@ -48,7 +51,7 @@ export function Fretboard({
   const fretboardWidth = availableWidth - nutWidth
 
   // Calculate fret width and string spacing
-  const fretWidth = fretboardWidth / (fretCount + 1)
+  const fretWidth = fretboardWidth / fretCount
   const stringSpacing = availableHeight / (stringCount + 1)
 
   // Responsive element sizes based on available space
@@ -67,12 +70,62 @@ export function Fretboard({
   const isPositionIncorrect = (stringIndex: number, fret: number) =>
     incorrectPositions.some((p) => p.stringIndex === stringIndex && p.fret === fret)
 
+  // Calculate string and fret from touch coordinates (relative to fretboard surface)
+  const getPositionFromCoordinates = (x: number, y: number) => {
+    if (!containerSize) return null
+
+    // x is relative to fretboard surface (after nut)
+    const fret = Math.floor(x / fretWidth) + 1
+    const stringIndex = Math.floor(y / stringSpacing)
+
+    // Clamp values to valid range
+    const clampedFret = Math.max(1, Math.min(fret, fretCount))
+    const clampedStringIndex = Math.max(0, Math.min(stringIndex, stringCount - 1))
+
+    return { stringIndex: clampedStringIndex, fret: clampedFret }
+  }
+
+  const handlePositionChange = (stringIndex: number, fret: number) => {
+    const note = getNoteAtPosition(stringIndex, fret, tuning)
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+    onFretPress?.(stringIndex, fret, note)
+  }
+
+  const panGesture = Gesture.Pan()
+    .runOnJS(true)
+    .onStart((event) => {
+      // Adjust x to account for nut width
+      const x = event.x - nutWidth
+      const position = getPositionFromCoordinates(x, event.y)
+      if (position) {
+        lastPositionRef.current = position
+        handlePositionChange(position.stringIndex, position.fret)
+      }
+    })
+    .onUpdate((event) => {
+      // Adjust x to account for nut width
+      const x = event.x - nutWidth
+      const position = getPositionFromCoordinates(x, event.y)
+      if (position) {
+        const last = lastPositionRef.current
+        // Only trigger if position changed
+        if (!last || last.stringIndex !== position.stringIndex || last.fret !== position.fret) {
+          lastPositionRef.current = position
+          handlePositionChange(position.stringIndex, position.fret)
+        }
+      }
+    })
+    .onEnd(() => {
+      lastPositionRef.current = null
+    })
+
   return (
     <View style={styles.container} onLayout={handleLayout}>
       {containerSize && (
-        <View
-          style={[styles.fretboard, { width: fretboardWidth + nutWidth, height: availableHeight }]}
-        >
+        <GestureDetector gesture={panGesture}>
+          <View
+            style={[styles.fretboard, { width: fretboardWidth + nutWidth, height: availableHeight }]}
+          >
           {/* Nut (the bar at the end of the fretboard near the headstock) */}
           <View
             style={[
@@ -83,7 +136,15 @@ export function Fretboard({
             {tuning.map((note, index) => (
               <View
                 key={`open-${index}`}
-                style={[styles.openStringContainer, { height: stringSpacing }]}
+                style={[
+                  styles.openStringContainer,
+                  {
+                    position: "absolute",
+                    top: (index + 1) * stringSpacing - stringSpacing / 2,
+                    height: stringSpacing,
+                    width: nutWidth,
+                  },
+                ]}
               >
                 <Text style={[styles.openStringText, { fontSize }]}>{note}</Text>
               </View>
@@ -99,6 +160,7 @@ export function Fretboard({
               {Array.from({ length: fretCount }, (_, i) => i + 1).map((fret) => {
                 const isSingleDot = SINGLE_DOT_FRETS.includes(fret)
                 const isDoubleDot = DOUBLE_DOT_FRETS.includes(fret)
+                // Center dot in the middle of the fret (between fret-1 wire and fret wire)
                 const left = (fret - 0.5) * fretWidth - dotSize / 2
 
                 const dotStyle = {
@@ -115,7 +177,10 @@ export function Fretboard({
                 }
                 if (isDoubleDot) {
                   return (
-                    <View key={`dot-${fret}`} style={[styles.doubleDotContainer, { left }]}>
+                    <View
+                      key={`dot-${fret}`}
+                      style={[styles.doubleDotContainer, { left, width: dotSize }]}
+                    >
                       <View style={dotStyle} />
                       <View style={dotStyle} />
                     </View>
@@ -161,9 +226,10 @@ export function Fretboard({
 
             {/* Interactive fret positions */}
             {tuning.map((_, stringIndex) =>
-              Array.from({ length: fretCount + 1 }, (_, fret) => {
+              Array.from({ length: fretCount }, (_, i) => i + 1).map((fret) => {
                 const note = getNoteAtPosition(stringIndex, fret, tuning)
-                const left = fret === 0 ? -nutWidth / 2 : (fret - 0.5) * fretWidth
+                // Center the marker in the middle of the fret (between fret-1 wire and fret wire)
+                const left = (fret - 1) * fretWidth
                 const top = (stringIndex + 1) * stringSpacing - stringSpacing / 2
 
                 return (
@@ -213,6 +279,7 @@ export function Fretboard({
             ))}
           </View>
         </View>
+        </GestureDetector>
       )}
     </View>
   )
@@ -259,9 +326,10 @@ const styles = StyleSheet.create({
   },
   doubleDotContainer: {
     position: "absolute",
-    height: "100%",
-    justifyContent: "space-around",
-    paddingVertical: "25%",
+    top: 0,
+    bottom: 0,
+    justifyContent: "space-evenly",
+    alignItems: "center",
   },
   fretWire: {
     position: "absolute",

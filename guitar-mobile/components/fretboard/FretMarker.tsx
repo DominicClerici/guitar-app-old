@@ -1,3 +1,4 @@
+import * as Haptics from "expo-haptics"
 import { Pressable, StyleSheet, Text, View } from "react-native"
 
 import type { NoteName } from "./fretboardData"
@@ -28,6 +29,7 @@ export function FretMarker({
   height,
 }: FretMarkerProps) {
   const handlePress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
     onPress?.(stringIndex, fret, note)
   }
 
