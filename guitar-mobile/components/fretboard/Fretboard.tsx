@@ -3,6 +3,7 @@ import { useRef, useState } from "react"
 import { LayoutChangeEvent, StyleSheet, Text, View } from "react-native"
 import { Gesture, GestureDetector } from "react-native-gesture-handler"
 
+import { theme } from "@/utils/theme"
 import { FretMarker } from "./FretMarker"
 import {
   DOUBLE_DOT_FRETS,
@@ -20,7 +21,6 @@ export interface FretboardProps {
   highlightedPositions?: Array<{ stringIndex: number; fret: number }>
   hintPositions?: Array<{ stringIndex: number; fret: number }>
   correctPositions?: Array<{ stringIndex: number; fret: number }>
-  incorrectPositions?: Array<{ stringIndex: number; fret: number }>
   onFretPress?: (stringIndex: number, fret: number, note: NoteName) => void
 }
 
@@ -31,7 +31,6 @@ export function Fretboard({
   highlightedPositions = [],
   hintPositions = [],
   correctPositions = [],
-  incorrectPositions = [],
   onFretPress,
 }: FretboardProps) {
   const [containerSize, setContainerSize] = useState<{ width: number; height: number } | null>(null)
@@ -53,27 +52,27 @@ export function Fretboard({
   const fretboardWidth = availableWidth - nutWidth
 
   // Calculate fret width and string spacing
+  // String spacing is the gap between strings. With half spacing at top/bottom,
+  // we have (stringCount - 1) full gaps + 2 half gaps = stringCount total gaps worth of space
   const fretWidth = fretboardWidth / fretCount
-  const stringSpacing = availableHeight / (stringCount + 1)
+  const stringSpacing = availableHeight / stringCount
 
   // Responsive element sizes based on available space
-  const dotSize = Math.min(stringSpacing * 0.4, fretWidth * 0.3, 14)
+  const dotSize = Math.min(stringSpacing * 0.3, fretWidth * 0.2, 12)
   const fretWireWidth = Math.max(2, availableHeight * 0.008)
   const nutBorderWidth = Math.max(3, availableHeight * 0.012)
   const fontSize = Math.min(stringSpacing * 0.5, 14)
   const fretNumberFontSize = Math.min(12, availableHeight * 0.05)
 
   const isPositionHighlighted = (stringIndex: number, fret: number) =>
-    highlightedPositions.some((p) => p.stringIndex === stringIndex && p.fret === fret)
+    highlightedPositions.some((p) => p.stringIndex === stringIndex && p.fret === fret) ||
+    isPositionCorrect(stringIndex, fret)
 
   const isPositionHint = (stringIndex: number, fret: number) =>
     hintPositions.some((p) => p.stringIndex === stringIndex && p.fret === fret)
 
   const isPositionCorrect = (stringIndex: number, fret: number) =>
     correctPositions.some((p) => p.stringIndex === stringIndex && p.fret === fret)
-
-  const isPositionIncorrect = (stringIndex: number, fret: number) =>
-    incorrectPositions.some((p) => p.stringIndex === stringIndex && p.fret === fret)
 
   // Calculate string and fret from touch coordinates (relative to fretboard surface)
   const getPositionFromCoordinates = (x: number, y: number) => {
@@ -148,7 +147,7 @@ export function Fretboard({
                     styles.openStringContainer,
                     {
                       position: "absolute",
-                      top: (index + 1) * stringSpacing - stringSpacing / 2,
+                      top: index * stringSpacing,
                       height: stringSpacing,
                       width: nutWidth,
                     },
@@ -175,7 +174,7 @@ export function Fretboard({
                     width: dotSize,
                     height: dotSize,
                     borderRadius: dotSize / 2,
-                    backgroundColor: "#d4d4d4",
+                    backgroundColor: theme.colors.accent,
                   }
 
                   if (isSingleDot) {
@@ -226,7 +225,7 @@ export function Fretboard({
                     style={[
                       styles.string,
                       {
-                        top: (stringIndex + 1) * stringSpacing - thickness / 2,
+                        top: stringSpacing / 2 + stringIndex * stringSpacing - thickness / 2,
                         width: fretboardWidth,
                         height: thickness,
                       },
@@ -241,7 +240,7 @@ export function Fretboard({
                   const note = getNoteAtPosition(stringIndex, fret, tuning)
                   // Center the marker in the middle of the fret (between fret-1 wire and fret wire)
                   const left = (fret - 1) * fretWidth
-                  const top = (stringIndex + 1) * stringSpacing - stringSpacing / 2
+                  const top = stringIndex * stringSpacing
 
                   return (
                     <View
@@ -263,8 +262,6 @@ export function Fretboard({
                         showNote={showAllNotes}
                         isHighlighted={isPositionHighlighted(stringIndex, fret)}
                         isHint={isPositionHint(stringIndex, fret)}
-                        isCorrect={isPositionCorrect(stringIndex, fret)}
-                        isIncorrect={isPositionIncorrect(stringIndex, fret)}
                         onPress={onFretPress}
                         width={fretWidth}
                         height={stringSpacing}
@@ -306,11 +303,15 @@ const styles = StyleSheet.create({
   },
   fretboard: {
     flexDirection: "row",
+    borderTopColor: theme.colors.muted,
+    borderTopWidth: 1,
+    borderBottomColor: theme.colors.muted,
+    borderBottomWidth: 1,
     position: "relative",
   },
   nut: {
-    backgroundColor: "#f5f5dc",
-    borderRightColor: "#8B4513",
+    borderRightColor: theme.colors.muted,
+    borderRightWidth: 2,
     justifyContent: "space-around",
     alignItems: "center",
     zIndex: 10,
@@ -320,11 +321,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   openStringText: {
-    color: "#333",
+    color: theme.colors.muted,
     fontWeight: "bold",
   },
   fretboardSurface: {
-    backgroundColor: "#3d2817",
     position: "relative",
   },
   fretMarkersContainer: {
@@ -348,11 +348,11 @@ const styles = StyleSheet.create({
   },
   fretWire: {
     position: "absolute",
-    backgroundColor: "#c0c0c0",
+    backgroundColor: theme.colors.accent,
   },
   string: {
     position: "absolute",
-    backgroundColor: "#d4af37",
+    backgroundColor: theme.colors.mutedForeground,
     left: 0,
   },
   fretPosition: {
@@ -366,6 +366,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   fretNumberText: {
-    color: "#888",
+    color: theme.colors.muted,
   },
 })

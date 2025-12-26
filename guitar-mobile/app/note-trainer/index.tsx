@@ -23,7 +23,7 @@ const ALL_NOTES = NOTES
 // Frequency tolerance for note detection (±5%)
 const FREQUENCY_TOLERANCE = 0.05
 // How long a note must be held to register (ms)
-const HOLD_DURATION_MS = 500
+const HOLD_DURATION_MS = 150
 // Delay after completing all positions before next note (ms)
 const NEXT_NOTE_DELAY_MS = 2000
 
@@ -54,7 +54,7 @@ function getNoteFrequency(note: NoteName, octave: number): number {
 function frequencyMatchesNote(
   detectedFrequency: number,
   targetNote: NoteName,
-  tolerancePercent: number = FREQUENCY_TOLERANCE
+  tolerancePercent: number = FREQUENCY_TOLERANCE,
 ): number | null {
   // Check octaves 2-6 (typical guitar range)
   for (let octave = 2; octave <= 6; octave++) {
@@ -86,7 +86,9 @@ export default function NoteTrainer() {
   // Practice mode state
   const [isPracticing, setIsPracticing] = useState(false)
   const [practiceNote, setPracticeNote] = useState<NoteName | null>(null)
-  const [playedPositions, setPlayedPositions] = useState<Array<{ stringIndex: number; fret: number }>>([])
+  const [playedPositions, setPlayedPositions] = useState<
+    Array<{ stringIndex: number; fret: number }>
+  >([])
 
   // Track which note+octave combinations have been played
   const playedOctavesRef = useRef<Set<string>>(new Set())
@@ -140,7 +142,7 @@ export default function NoteTrainer() {
             const newPositions = [...prev]
             for (const pos of positions) {
               const exists = newPositions.some(
-                (p) => p.stringIndex === pos.stringIndex && p.fret === pos.fret
+                (p) => p.stringIndex === pos.stringIndex && p.fret === pos.fret,
               )
               if (!exists) {
                 newPositions.push(pos)
@@ -187,7 +189,7 @@ export default function NoteTrainer() {
         }
       }
     },
-    [isPracticing, practiceNote, isTransitioning]
+    [isPracticing, practiceNote, isTransitioning],
   )
 
   const { startListening, stopListening } = usePitchDetection({
@@ -313,19 +315,14 @@ export default function NoteTrainer() {
   }
 
   // Get highlighted positions based on mode
-  const highlightedPositions =
-    mode === "manual"
-      ? getPositionsForNote(selectedNote)
-      : []
+  const highlightedPositions = mode === "manual" ? getPositionsForNote(selectedNote) : []
 
   // In practice mode with hints, show unplayed positions as grayed-out hints
   const hintPositions =
     mode === "practice" && showNotes && practiceNote
       ? getPositionsForNote(practiceNote).filter(
           (pos) =>
-            !playedPositions.some(
-              (p) => p.stringIndex === pos.stringIndex && p.fret === pos.fret
-            )
+            !playedPositions.some((p) => p.stringIndex === pos.stringIndex && p.fret === pos.fret),
         )
       : []
 
@@ -399,11 +396,13 @@ export default function NoteTrainer() {
           <View style={styles.practiceControls}>
             {/* Current note display */}
             {practiceNote && (
-              <View style={[styles.currentNoteDisplay, isTransitioning && styles.transitionDisplay]}>
-                <Text style={styles.currentNoteLabel}>
-                  {isTransitioning ? "Nice!" : "Find:"}
-                </Text>
-                <Text style={[styles.currentNoteText, isTransitioning && styles.transitionNoteText]}>
+              <View
+                style={[styles.currentNoteDisplay, isTransitioning && styles.transitionDisplay]}
+              >
+                <Text style={styles.currentNoteLabel}>{isTransitioning ? "Nice!" : "Find:"}</Text>
+                <Text
+                  style={[styles.currentNoteText, isTransitioning && styles.transitionNoteText]}
+                >
                   {practiceNote}
                 </Text>
                 <Text style={styles.progressText}>
@@ -421,10 +420,7 @@ export default function NoteTrainer() {
               <Text style={styles.startButtonText}>{isPracticing ? "Stop" : "Start"}</Text>
             </Pressable>
             <Pressable
-              style={[
-                styles.startButton,
-                showNotes && styles.activeButton,
-              ]}
+              style={[styles.startButton, showNotes && styles.activeButton]}
               onPress={() => setShowNotes(!showNotes)}
             >
               <Text style={styles.startButtonText}>Show Hints</Text>
@@ -457,6 +453,8 @@ const styles = StyleSheet.create({
   },
   fretboardContainer: {
     flex: 1,
+    marginTop: "auto",
+    maxHeight: "65%",
   },
   controlsRow: {
     flexDirection: "row",

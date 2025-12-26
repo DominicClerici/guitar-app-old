@@ -1,6 +1,7 @@
 import * as Haptics from "expo-haptics"
 import { Pressable, StyleSheet, Text, View } from "react-native"
 
+import { theme } from "@/utils/theme"
 import type { NoteName } from "./fretboardData"
 
 export interface FretMarkerProps {
@@ -10,11 +11,10 @@ export interface FretMarkerProps {
   showNote?: boolean
   isHighlighted?: boolean
   isHint?: boolean
-  isCorrect?: boolean
-  isIncorrect?: boolean
   onPress?: (stringIndex: number, fret: number, note: NoteName) => void
   width: number
   height: number
+  isRoot?: boolean
 }
 
 export function FretMarker({
@@ -24,11 +24,10 @@ export function FretMarker({
   showNote = false,
   isHighlighted = false,
   isHint = false,
-  isCorrect = false,
-  isIncorrect = false,
   onPress,
   width,
   height,
+  isRoot = false,
 }: FretMarkerProps) {
   const handlePress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
@@ -36,7 +35,7 @@ export function FretMarker({
   }
 
   // Responsive marker size based on available space
-  const markerSize = Math.min(width * 0.7, height * 0.7, 32)
+  const markerSize = Math.min(width * 0.8, height * 0.8, 32)
   const fontSize = Math.max(markerSize * 0.45, 10)
 
   const markerStyle = [
@@ -44,22 +43,21 @@ export function FretMarker({
     {
       width: markerSize,
       height: markerSize,
-      borderRadius: markerSize / 2,
+      borderRadius: markerSize / (isRoot ? 4 : 2),
     },
     isHighlighted && styles.highlighted,
     isHint && styles.hint,
-    isCorrect && styles.correct,
-    isIncorrect && styles.incorrect,
   ]
 
   return (
-    <Pressable
-      style={[styles.container, { width, height }]}
-      onPress={handlePress}
-    >
-      {(showNote || isHighlighted || isHint || isCorrect || isIncorrect) && (
+    <Pressable style={[styles.container, { width, height }]} onPress={handlePress}>
+      {(showNote || isHighlighted || isHint) && (
         <View style={markerStyle}>
-          <Text style={[styles.noteText, { fontSize }]}>{note}</Text>
+          <Text
+            style={[styles.noteText, isHighlighted && styles.highlightedNoteText, { fontSize }]}
+          >
+            {note}
+          </Text>
         </View>
       )}
     </Pressable>
@@ -72,25 +70,25 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   marker: {
-    backgroundColor: "#444",
+    backgroundColor: theme.colors.accent,
     justifyContent: "center",
     alignItems: "center",
   },
   highlighted: {
-    backgroundColor: "#007AFF",
+    backgroundColor: theme.colors.primaryMuted,
+    borderColor: theme.colors.primary,
+    borderWidth: 1,
   },
   hint: {
-    backgroundColor: "#555",
-    opacity: 0.6,
-  },
-  correct: {
-    backgroundColor: "#34C759",
-  },
-  incorrect: {
-    backgroundColor: "#FF3B30",
+    backgroundColor: theme.colors.muted,
+    borderColor: theme.colors.border,
+    borderWidth: 1,
   },
   noteText: {
-    color: "#fff",
+    color: theme.colors.mutedForeground,
     fontWeight: "bold",
+  },
+  highlightedNoteText: {
+    color: theme.colors.primary,
   },
 })
