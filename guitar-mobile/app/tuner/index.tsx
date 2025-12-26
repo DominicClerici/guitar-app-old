@@ -1,18 +1,13 @@
 import { Ionicons } from "@expo/vector-icons"
-import { requestRecordingPermissionsAsync } from "expo-audio"
 import { useFocusEffect, useRouter } from "expo-router"
 import { useCallback, useRef, useState } from "react"
 import { Dimensions, Pressable, StyleSheet, Text, View } from "react-native"
 import Svg, { Defs, Line, LinearGradient, Path, Rect, Stop } from "react-native-svg"
 
-import PitchDetection from "@techoptio/react-native-live-pitch-detection"
-
+import { usePitchDetection, type DetectedNote } from "@/hooks/usePitchDetection"
 import { theme } from "@/utils/theme"
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window")
-
-const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"] as const
-const A4_FREQUENCY = 440
 
 // Seismograph settings
 const GRAPH_WIDTH = SCREEN_WIDTH - 48 // Account for padding
@@ -25,57 +20,9 @@ const MAX_POINTS = Math.ceil((GRAPH_HEIGHT / SCROLL_SPEED) * POINTS_PER_SECOND) 
 
 type TuningStatus = "flat" | "sharp" | "in-tune" | "idle"
 
-interface NoteInfo {
-  note: string
-  octave: number
-  frequency: number
-  targetFrequency: number
-  cents: number
-}
-
 interface DataPoint {
   cents: number // -50 to +50, or null for no signal
   timestamp: number
-}
-
-function parseNoteFromLibrary(noteString: string): { noteName: string; octave: number } | null {
-  if (!noteString || noteString === "-") return null
-
-  // Library returns notes like "C4", "A#3", "Db5"
-  const match = noteString.match(/^([A-G][#b]?)(\d+)$/)
-  if (!match) return null
-
-  let noteName = match[1]
-  const octave = parseInt(match[2], 10)
-
-  // Convert flats to sharps for consistency
-  if (noteName.includes("b")) {
-    const flatToSharp: Record<string, string> = {
-      Db: "C#",
-      Eb: "D#",
-      Gb: "F#",
-      Ab: "G#",
-      Bb: "A#",
-    }
-    noteName = flatToSharp[noteName] || noteName
-  }
-
-  return { noteName, octave }
-}
-
-function getNoteFrequency(noteName: string, octave: number): number {
-  const noteIndex = NOTE_NAMES.indexOf(noteName as (typeof NOTE_NAMES)[number])
-  if (noteIndex === -1) return 0
-
-  // A4 is at index 9, octave 4
-  // Calculate semitones from A4
-  const semitonesFromA4 = (octave - 4) * 12 + (noteIndex - 9)
-  return A4_FREQUENCY * Math.pow(2, semitonesFromA4 / 12)
-}
-
-function calculateCents(detectedFreq: number, targetFreq: number): number {
-  if (targetFreq <= 0 || detectedFreq <= 0) return 0
-  return 1200 * Math.log2(detectedFreq / targetFreq)
 }
 
 function getTuningStatus(cents: number): TuningStatus {
@@ -105,15 +52,31 @@ function centsToXPosition(cents: number): number {
 
 export default function Tuner() {
   const router = useRouter()
-  const [hasPermission, setHasPermission] = useState<boolean | null>(null)
-  const [noteInfo, setNoteInfo] = useState<NoteInfo | null>(null)
   const [tuningStatus, setTuningStatus] = useState<TuningStatus>("idle")
   const [dataPoints, setDataPoints] = useState<DataPoint[]>([])
 
-  const subscriptionRef = useRef<{ remove: () => void } | null>(null)
   const animationFrameRef = useRef<number | null>(null)
   const lastUpdateRef = useRef<number>(Date.now())
   const currentCentsRef = useRef<number | null>(null)
+
+  const handleNoteDetected = useCallback((note: DetectedNote) => {
+    const status = getTuningStatus(note.cents)
+    setTuningStatus(status)
+    currentCentsRef.current = note.cents
+  }, [])
+
+  const handleNoNote = useCallback(() => {
+    setTuningStatus("idle")
+    currentCentsRef.current = 0
+  }, [])
+
+  const { hasPermission, currentNote, startListening, stopListening } = usePitchDetection({
+    bufferSize: 2048,
+    minVolume: -60,
+    updateIntervalMs: 8,
+    onNoteDetected: handleNoteDetected,
+    onNoNote: handleNoNote,
+  })
 
   // Build the SVG path from data points
   const buildPath = useCallback(() => {
@@ -186,84 +149,18 @@ export default function Tuner() {
 
   useFocusEffect(
     useCallback(() => {
-      let isMounted = true
-
       const setup = async () => {
-        try {
-          const { granted } = await requestRecordingPermissionsAsync()
-
-          if (!isMounted) return
-
-          setHasPermission(granted)
-          if (!granted) return
-
-          try {
-            await PitchDetection.stopListening()
-          } catch {
-            // Ignore - may not have been listening
-          }
-          await new Promise((resolve) => setTimeout(resolve, 200))
-          if (!isMounted) return
-          PitchDetection.setOptions({
-            bufferSize: 4096 * 0.5,
-            minVolume: -60,
-            updateIntervalMs: 8,
-            a4Frequency: A4_FREQUENCY,
-          })
-
-          await new Promise((resolve) => setTimeout(resolve, 200))
-          if (!isMounted) return
-          await PitchDetection.startListening()
-          if (!isMounted) {
-            PitchDetection.stopListening().catch(() => {})
-            return
-          }
-
-          // Start the animation loop
-          startAnimation()
-
-          subscriptionRef.current = PitchDetection.addListener((event) => {
-            if (!isMounted) return
-
-            const parsed = parseNoteFromLibrary(event.note)
-
-            if (parsed && event.frequency > 0) {
-              const targetFreq = getNoteFrequency(parsed.noteName, parsed.octave)
-              const cents = calculateCents(event.frequency, targetFreq)
-              const status = getTuningStatus(cents)
-
-              setNoteInfo({
-                note: parsed.noteName,
-                octave: parsed.octave,
-                frequency: event.frequency,
-                targetFrequency: targetFreq,
-                cents,
-              })
-              setTuningStatus(status)
-              currentCentsRef.current = cents
-            } else {
-              setNoteInfo(null)
-              setTuningStatus("idle")
-              currentCentsRef.current = 0
-            }
-          })
-        } catch (error) {
-          console.error("[Tuner] Setup failed:", error)
-        }
+        await startListening()
+        startAnimation()
       }
 
       setup()
 
       return () => {
-        isMounted = false
         stopAnimation()
-        if (subscriptionRef.current) {
-          subscriptionRef.current.remove()
-          subscriptionRef.current = null
-        }
-        PitchDetection.stopListening().catch(() => {})
+        stopListening()
       }
-    }, [startAnimation, stopAnimation]),
+    }, [startListening, stopListening, startAnimation, stopAnimation]),
   )
 
   const handleBack = () => {
@@ -327,10 +224,10 @@ export default function Tuner() {
       {/* Note display */}
       <View style={styles.noteDisplay}>
         <Text style={[styles.noteName, { color: getTuningStatusColor(tuningStatus) }]}>
-          {noteInfo ? `${noteInfo.note}${noteInfo.octave}` : "--"}
+          {currentNote ? `${currentNote.note}${currentNote.octave}` : "--"}
         </Text>
         <Text style={styles.frequency}>
-          {noteInfo ? `${noteInfo.frequency.toFixed(1)} Hz` : "-- Hz"}
+          {currentNote ? `${currentNote.frequency.toFixed(1)} Hz` : "-- Hz"}
         </Text>
       </View>
 
@@ -412,7 +309,9 @@ export default function Tuner() {
       {/* Cents display */}
       <View style={styles.centsDisplay}>
         <Text style={[styles.centsValue, { color: getTuningStatusColor(tuningStatus) }]}>
-          {noteInfo ? `${noteInfo.cents >= 0 ? "+" : ""}${noteInfo.cents.toFixed(0)}` : "--"}
+          {currentNote
+            ? `${currentNote.cents >= 0 ? "+" : ""}${currentNote.cents.toFixed(0)}`
+            : "--"}
         </Text>
         <Text style={styles.centsLabel}>cents</Text>
       </View>
