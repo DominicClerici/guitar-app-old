@@ -1,4 +1,5 @@
 import { theme } from "@/utils/theme"
+import { FontAwesome5, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons"
 import { Link } from "expo-router"
 import { Pressable, StyleSheet, Text, View } from "react-native"
 
@@ -6,21 +7,45 @@ export default function Index() {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Guitar Tools</Text>
-      <Link href="/note-trainer" asChild>
-        <Pressable style={styles.button}>
-          <Text style={styles.buttonText}>Note Trainer</Text>
-        </Pressable>
-      </Link>
-      <Link href="/tuner" asChild>
-        <Pressable style={styles.button}>
-          <Text style={styles.buttonText}>Tuner</Text>
-        </Pressable>
-      </Link>
-      <Link href="/scales" asChild>
-        <Pressable style={styles.button}>
-          <Text style={styles.buttonText}>Scales</Text>
-        </Pressable>
-      </Link>
+      <View style={styles.buttonsContainer}>
+        <Link href="/note-trainer" asChild>
+          <Pressable style={styles.button}>
+            <View style={styles.buttonIcon}>
+              <MaterialCommunityIcons
+                name="guitar-pick-outline"
+                size={24}
+                color={theme.colors.primary}
+              />
+            </View>
+            <View>
+              <Text style={styles.buttonText}>Note Trainer</Text>
+              <Text style={styles.buttonSubtext}>Practice your notes</Text>
+            </View>
+          </Pressable>
+        </Link>
+        <Link href="/scales" asChild>
+          <Pressable style={styles.button}>
+            <View style={styles.buttonIcon}>
+              <Ionicons name="musical-notes" size={24} color={theme.colors.primary} />
+            </View>
+            <View>
+              <Text style={styles.buttonText}>Scales</Text>
+              <Text style={styles.buttonSubtext}>Find and practice scales</Text>
+            </View>
+          </Pressable>
+        </Link>
+        <Link href="/tuner" asChild>
+          <Pressable style={styles.button}>
+            <View style={styles.buttonIcon}>
+              <FontAwesome5 name="wave-square" size={24} color={theme.colors.primary} />
+            </View>
+            <View>
+              <Text style={styles.buttonText}>Tuner</Text>
+              <Text style={styles.buttonSubtext}>Tune your guitar</Text>
+            </View>
+          </Pressable>
+        </Link>
+      </View>
     </View>
   )
 }
@@ -28,7 +53,9 @@ export default function Index() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: "center",
+    paddingInline: "5%",
+    paddingTop: "20%",
+    paddingBottom: "5%",
     alignItems: "center",
     backgroundColor: theme.colors.background,
   },
@@ -38,15 +65,35 @@ const styles = StyleSheet.create({
     marginBottom: 40,
     color: theme.colors.primary,
   },
+  buttonsContainer: {
+    gap: "5%",
+    marginTop: "20%",
+    width: "100%",
+  },
   button: {
+    flexDirection: "row",
+    borderWidth: 1,
+    borderColor: theme.colors.border,
     backgroundColor: theme.colors.muted,
-    paddingHorizontal: 32,
-    paddingVertical: 16,
+    paddingHorizontal: "2.5%",
+    paddingVertical: "2.5%",
+    gap: "2.5%",
     borderRadius: 8,
   },
+  buttonIcon: {
+    padding: "2%",
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 6,
+  },
   buttonText: {
-    color: theme.colors.primary,
+    color: theme.colors.foreground,
     fontSize: 18,
+    fontWeight: "600",
+  },
+  buttonSubtext: {
+    color: theme.colors.mutedForeground,
+    fontSize: 12,
     fontWeight: "600",
   },
 })
