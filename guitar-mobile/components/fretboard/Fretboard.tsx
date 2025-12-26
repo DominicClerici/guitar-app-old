@@ -18,6 +18,7 @@ export interface FretboardProps {
   fretCount?: number
   showAllNotes?: boolean
   highlightedPositions?: Array<{ stringIndex: number; fret: number }>
+  hintPositions?: Array<{ stringIndex: number; fret: number }>
   correctPositions?: Array<{ stringIndex: number; fret: number }>
   incorrectPositions?: Array<{ stringIndex: number; fret: number }>
   onFretPress?: (stringIndex: number, fret: number, note: NoteName) => void
@@ -28,6 +29,7 @@ export function Fretboard({
   fretCount = FRET_COUNT,
   showAllNotes = false,
   highlightedPositions = [],
+  hintPositions = [],
   correctPositions = [],
   incorrectPositions = [],
   onFretPress,
@@ -63,6 +65,9 @@ export function Fretboard({
 
   const isPositionHighlighted = (stringIndex: number, fret: number) =>
     highlightedPositions.some((p) => p.stringIndex === stringIndex && p.fret === fret)
+
+  const isPositionHint = (stringIndex: number, fret: number) =>
+    hintPositions.some((p) => p.stringIndex === stringIndex && p.fret === fret)
 
   const isPositionCorrect = (stringIndex: number, fret: number) =>
     correctPositions.some((p) => p.stringIndex === stringIndex && p.fret === fret)
@@ -257,6 +262,7 @@ export function Fretboard({
                         note={note}
                         showNote={showAllNotes}
                         isHighlighted={isPositionHighlighted(stringIndex, fret)}
+                        isHint={isPositionHint(stringIndex, fret)}
                         isCorrect={isPositionCorrect(stringIndex, fret)}
                         isIncorrect={isPositionIncorrect(stringIndex, fret)}
                         onPress={onFretPress}

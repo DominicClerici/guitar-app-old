@@ -316,9 +316,18 @@ export default function NoteTrainer() {
   const highlightedPositions =
     mode === "manual"
       ? getPositionsForNote(selectedNote)
-      : mode === "practice" && showNotes && practiceNote
-        ? getPositionsForNote(practiceNote)
-        : []
+      : []
+
+  // In practice mode with hints, show unplayed positions as grayed-out hints
+  const hintPositions =
+    mode === "practice" && showNotes && practiceNote
+      ? getPositionsForNote(practiceNote).filter(
+          (pos) =>
+            !playedPositions.some(
+              (p) => p.stringIndex === pos.stringIndex && p.fret === pos.fret
+            )
+        )
+      : []
 
   // Show fretboard view
   return (
@@ -429,6 +438,7 @@ export default function NoteTrainer() {
         <Fretboard
           onFretPress={handleFretPress}
           highlightedPositions={highlightedPositions}
+          hintPositions={hintPositions}
           correctPositions={mode === "practice" ? playedPositions : []}
         />
       </View>

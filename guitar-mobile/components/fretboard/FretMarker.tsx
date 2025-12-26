@@ -9,6 +9,7 @@ export interface FretMarkerProps {
   note: NoteName
   showNote?: boolean
   isHighlighted?: boolean
+  isHint?: boolean
   isCorrect?: boolean
   isIncorrect?: boolean
   onPress?: (stringIndex: number, fret: number, note: NoteName) => void
@@ -22,6 +23,7 @@ export function FretMarker({
   note,
   showNote = false,
   isHighlighted = false,
+  isHint = false,
   isCorrect = false,
   isIncorrect = false,
   onPress,
@@ -45,6 +47,7 @@ export function FretMarker({
       borderRadius: markerSize / 2,
     },
     isHighlighted && styles.highlighted,
+    isHint && styles.hint,
     isCorrect && styles.correct,
     isIncorrect && styles.incorrect,
   ]
@@ -54,7 +57,7 @@ export function FretMarker({
       style={[styles.container, { width, height }]}
       onPress={handlePress}
     >
-      {(showNote || isHighlighted || isCorrect || isIncorrect) && (
+      {(showNote || isHighlighted || isHint || isCorrect || isIncorrect) && (
         <View style={markerStyle}>
           <Text style={[styles.noteText, { fontSize }]}>{note}</Text>
         </View>
@@ -75,6 +78,10 @@ const styles = StyleSheet.create({
   },
   highlighted: {
     backgroundColor: "#007AFF",
+  },
+  hint: {
+    backgroundColor: "#555",
+    opacity: 0.6,
   },
   correct: {
     backgroundColor: "#34C759",

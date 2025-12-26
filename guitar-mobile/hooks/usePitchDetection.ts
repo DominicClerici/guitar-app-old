@@ -101,6 +101,7 @@ export function usePitchDetection(options: UsePitchDetectionOptions = {}): UsePi
   const [currentNote, setCurrentNote] = useState<DetectedNote | null>(null)
 
   const subscriptionRef = useRef<{ remove: () => void } | null>(null)
+  const isStartingRef = useRef(false)
   const onNoteDetectedRef = useRef(onNoteDetected)
   const onNoNoteRef = useRef(onNoNote)
 
@@ -121,21 +122,24 @@ export function usePitchDetection(options: UsePitchDetectionOptions = {}): UsePi
   }, [])
 
   const startListening = useCallback(async (): Promise<void> => {
+    // Prevent concurrent startListening calls
+    if (isStartingRef.current || subscriptionRef.current) {
+      return
+    }
+    isStartingRef.current = true
+
     try {
       // Request permission if not already granted
       if (hasPermission === null) {
         const granted = await requestPermission()
-        if (!granted) return
+        if (!granted) {
+          isStartingRef.current = false
+          return
+        }
       } else if (hasPermission === false) {
         console.warn("[usePitchDetection] Microphone permission not granted")
+        isStartingRef.current = false
         return
-      }
-
-      // Stop any existing listener
-      try {
-        await PitchDetection.stopListening()
-      } catch {
-        // Ignore - may not have been listening
       }
 
       await new Promise((resolve) => setTimeout(resolve, 200))
@@ -174,8 +178,11 @@ export function usePitchDetection(options: UsePitchDetectionOptions = {}): UsePi
           onNoNoteRef.current?.()
         }
       })
+
+      isStartingRef.current = false
     } catch (error) {
       console.error("[usePitchDetection] Start listening failed:", error)
+      isStartingRef.current = false
       setIsListening(false)
     }
   }, [hasPermission, requestPermission, bufferSize, minVolume, updateIntervalMs, a4Frequency])
@@ -185,8 +192,8 @@ export function usePitchDetection(options: UsePitchDetectionOptions = {}): UsePi
       if (subscriptionRef.current) {
         subscriptionRef.current.remove()
         subscriptionRef.current = null
+        await PitchDetection.stopListening()
       }
-      await PitchDetection.stopListening()
       setIsListening(false)
       setCurrentNote(null)
     } catch (error) {
