@@ -11,6 +11,11 @@ export default function Index() {
           <Text style={styles.buttonText}>Note Trainer</Text>
         </Pressable>
       </Link>
+      <Link href="/tuner" asChild>
+        <Pressable style={styles.button}>
+          <Text style={styles.buttonText}>Tuner</Text>
+        </Pressable>
+      </Link>
     </View>
   )
 }
