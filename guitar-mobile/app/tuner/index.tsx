@@ -2,14 +2,26 @@ import { Ionicons } from "@expo/vector-icons"
 import { requestRecordingPermissionsAsync } from "expo-audio"
 import { useFocusEffect, useRouter } from "expo-router"
 import { useCallback, useRef, useState } from "react"
-import { Animated, Pressable, StyleSheet, Text, View } from "react-native"
+import { Dimensions, Pressable, StyleSheet, Text, View } from "react-native"
+import Svg, { Defs, Line, LinearGradient, Path, Rect, Stop } from "react-native-svg"
 
 import PitchDetection from "@techoptio/react-native-live-pitch-detection"
 
 import { theme } from "@/utils/theme"
 
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window")
+
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"] as const
 const A4_FREQUENCY = 440
+
+// Seismograph settings
+const GRAPH_WIDTH = SCREEN_WIDTH - 48 // Account for padding
+const GRAPH_HEIGHT = SCREEN_HEIGHT * 0.45
+const CENTER_X = GRAPH_WIDTH / 2
+const MAX_DEFLECTION = GRAPH_WIDTH * 0.4 // Max horizontal deflection from center
+const POINTS_PER_SECOND = 60 // How many data points per second
+const SCROLL_SPEED = 80 // Pixels per second the line scrolls down
+const MAX_POINTS = Math.ceil((GRAPH_HEIGHT / SCROLL_SPEED) * POINTS_PER_SECOND) + 10
 
 type TuningStatus = "flat" | "sharp" | "in-tune" | "idle"
 
@@ -19,6 +31,11 @@ interface NoteInfo {
   frequency: number
   targetFrequency: number
   cents: number
+}
+
+interface DataPoint {
+  cents: number // -50 to +50, or null for no signal
+  timestamp: number
 }
 
 function parseNoteFromLibrary(noteString: string): { noteName: string; octave: number } | null {
@@ -79,42 +96,93 @@ function getTuningStatusColor(status: TuningStatus): string {
   }
 }
 
+function centsToXPosition(cents: number): number {
+  // Map cents (-50 to +50) to X position
+  // Flat (negative) = left of center, Sharp (positive) = right of center
+  const clampedCents = Math.max(-50, Math.min(50, cents))
+  return CENTER_X + (clampedCents / 50) * MAX_DEFLECTION
+}
+
 export default function Tuner() {
   const router = useRouter()
   const [hasPermission, setHasPermission] = useState<boolean | null>(null)
   const [noteInfo, setNoteInfo] = useState<NoteInfo | null>(null)
   const [tuningStatus, setTuningStatus] = useState<TuningStatus>("idle")
+  const [dataPoints, setDataPoints] = useState<DataPoint[]>([])
 
-  const needleRotation = useRef(new Animated.Value(0)).current
-  const glowOpacity = useRef(new Animated.Value(0)).current
   const subscriptionRef = useRef<{ remove: () => void } | null>(null)
+  const animationFrameRef = useRef<number | null>(null)
+  const lastUpdateRef = useRef<number>(Date.now())
+  const currentCentsRef = useRef<number | null>(null)
 
-  const animateNeedle = useCallback(
-    (cents: number) => {
-      // Clamp cents to ±50 range and map to rotation (-45 to +45 degrees)
-      const clampedCents = Math.max(-50, Math.min(50, cents))
-      const rotation = (clampedCents / 50) * 45
+  // Build the SVG path from data points
+  const buildPath = useCallback(() => {
+    if (dataPoints.length === 0) return ""
 
-      Animated.spring(needleRotation, {
-        toValue: rotation,
-        useNativeDriver: true,
-        tension: 100,
-        friction: 10,
-      }).start()
-    },
-    [needleRotation],
-  )
+    const now = Date.now()
+    let pathD = ""
 
-  const animateGlow = useCallback(
-    (isInTune: boolean) => {
-      Animated.timing(glowOpacity, {
-        toValue: isInTune ? 1 : 0,
-        duration: 200,
-        useNativeDriver: true,
-      }).start()
-    },
-    [glowOpacity],
-  )
+    for (let i = 0; i < dataPoints.length; i++) {
+      const point = dataPoints[i]
+      const age = (now - point.timestamp) / 1000 // Age in seconds
+      const y = age * SCROLL_SPEED // Y position based on age
+
+      if (y > GRAPH_HEIGHT) continue // Skip points that have scrolled off
+
+      const x = centsToXPosition(point.cents)
+
+      if (pathD === "") {
+        pathD = `M ${x} ${y}`
+      } else {
+        pathD += ` L ${x} ${y}`
+      }
+    }
+
+    return pathD
+  }, [dataPoints])
+
+  // Animation loop to update the graph
+  const startAnimation = useCallback(() => {
+    const animate = () => {
+      const now = Date.now()
+      const elapsed = now - lastUpdateRef.current
+
+      // Add new point at the configured rate
+      if (elapsed >= 1000 / POINTS_PER_SECOND) {
+        lastUpdateRef.current = now
+
+        setDataPoints((prev) => {
+          // Remove points that have scrolled off the bottom
+          const filtered = prev.filter((p) => {
+            const age = (now - p.timestamp) / 1000
+            return age * SCROLL_SPEED <= GRAPH_HEIGHT
+          })
+
+          // Add new point
+          const cents = currentCentsRef.current ?? 0
+          const newPoint: DataPoint = { cents, timestamp: now }
+
+          // Keep array size manageable
+          const updated = [newPoint, ...filtered]
+          if (updated.length > MAX_POINTS) {
+            return updated.slice(0, MAX_POINTS)
+          }
+          return updated
+        })
+      }
+
+      animationFrameRef.current = requestAnimationFrame(animate)
+    }
+
+    animationFrameRef.current = requestAnimationFrame(animate)
+  }, [])
+
+  const stopAnimation = useCallback(() => {
+    if (animationFrameRef.current !== null) {
+      cancelAnimationFrame(animationFrameRef.current)
+      animationFrameRef.current = null
+    }
+  }, [])
 
   useFocusEffect(
     useCallback(() => {
@@ -138,7 +206,7 @@ export default function Tuner() {
           if (!isMounted) return
           PitchDetection.setOptions({
             bufferSize: 4096 * 0.5,
-            minVolume: -70,
+            minVolume: -60,
             updateIntervalMs: 8,
             a4Frequency: A4_FREQUENCY,
           })
@@ -150,6 +218,9 @@ export default function Tuner() {
             PitchDetection.stopListening().catch(() => {})
             return
           }
+
+          // Start the animation loop
+          startAnimation()
 
           subscriptionRef.current = PitchDetection.addListener((event) => {
             if (!isMounted) return
@@ -169,13 +240,11 @@ export default function Tuner() {
                 cents,
               })
               setTuningStatus(status)
-              animateNeedle(cents)
-              animateGlow(status === "in-tune")
+              currentCentsRef.current = cents
             } else {
               setNoteInfo(null)
               setTuningStatus("idle")
-              animateNeedle(0)
-              animateGlow(false)
+              currentCentsRef.current = 0
             }
           })
         } catch (error) {
@@ -187,13 +256,14 @@ export default function Tuner() {
 
       return () => {
         isMounted = false
+        stopAnimation()
         if (subscriptionRef.current) {
           subscriptionRef.current.remove()
           subscriptionRef.current = null
         }
-        PitchDetection.stopListening().catch((e) => {})
+        PitchDetection.stopListening().catch(() => {})
       }
-    }, [animateGlow, animateNeedle]),
+    }, [startAnimation, stopAnimation]),
   )
 
   const handleBack = () => {
@@ -240,16 +310,8 @@ export default function Tuner() {
     )
   }
 
-  const needleRotationStyle = {
-    transform: [
-      {
-        rotate: needleRotation.interpolate({
-          inputRange: [-45, 45],
-          outputRange: ["-45deg", "45deg"],
-        }),
-      },
-    ],
-  }
+  const pathD = buildPath()
+  const lineColor = getTuningStatusColor(tuningStatus)
 
   return (
     <View style={styles.container}>
@@ -262,70 +324,106 @@ export default function Tuner() {
         <View style={styles.headerSpacer} />
       </View>
 
-      {/* Main tuner display */}
-      <View style={styles.tunerContainer}>
-        {/* Note display */}
-        <View style={styles.noteDisplay}>
-          <Text style={[styles.noteName, { color: getTuningStatusColor(tuningStatus) }]}>
-            {noteInfo ? `${noteInfo.note}${noteInfo.octave}` : "--"}
-          </Text>
-          <Text style={styles.frequency}>
-            {noteInfo ? `${noteInfo.frequency.toFixed(1)} Hz` : "-- Hz"}
-          </Text>
-        </View>
-
-        {/* Visual tuner gauge */}
-        <View style={styles.gaugeContainer}>
-          {/* Gauge background arc */}
-          <View style={styles.gaugeArc}>
-            {/* Scale markers */}
-            <View style={[styles.scaleMarker, styles.scaleMarkerLeft2]}>
-              <Text style={styles.scaleText}>-50</Text>
-            </View>
-            <View style={[styles.scaleMarker, styles.scaleMarkerLeft1]}>
-              <Text style={styles.scaleText}>-25</Text>
-            </View>
-            <View style={[styles.scaleMarker, styles.scaleMarkerCenter]}>
-              <View style={styles.centerMarker} />
-            </View>
-            <View style={[styles.scaleMarker, styles.scaleMarkerRight1]}>
-              <Text style={styles.scaleText}>+25</Text>
-            </View>
-            <View style={[styles.scaleMarker, styles.scaleMarkerRight2]}>
-              <Text style={styles.scaleText}>+50</Text>
-            </View>
-
-            {/* Flat/Sharp labels */}
-            <Text style={[styles.flatSharpLabel, styles.flatLabel]}>♭ FLAT</Text>
-            <Text style={[styles.flatSharpLabel, styles.sharpLabel]}>SHARP ♯</Text>
-          </View>
-
-          {/* In-tune glow effect */}
-          <Animated.View style={[styles.inTuneGlow, { opacity: glowOpacity }]} />
-
-          {/* Needle */}
-          <View style={styles.needleContainer}>
-            <Animated.View style={[styles.needle, needleRotationStyle]} />
-            <View style={styles.needlePivot} />
-          </View>
-        </View>
-
-        {/* Cents display */}
-        <View style={styles.centsDisplay}>
-          <Text style={[styles.centsValue, { color: getTuningStatusColor(tuningStatus) }]}>
-            {noteInfo ? `${noteInfo.cents >= 0 ? "+" : ""}${noteInfo.cents.toFixed(0)}` : "--"}
-          </Text>
-          <Text style={styles.centsLabel}>cents</Text>
-        </View>
-
-        {/* Status text */}
-        <Text style={[styles.statusText, { color: getTuningStatusColor(tuningStatus) }]}>
-          {tuningStatus === "in-tune" && "IN TUNE"}
-          {tuningStatus === "flat" && "TOO FLAT"}
-          {tuningStatus === "sharp" && "TOO SHARP"}
-          {tuningStatus === "idle" && "Play a note..."}
+      {/* Note display */}
+      <View style={styles.noteDisplay}>
+        <Text style={[styles.noteName, { color: getTuningStatusColor(tuningStatus) }]}>
+          {noteInfo ? `${noteInfo.note}${noteInfo.octave}` : "--"}
+        </Text>
+        <Text style={styles.frequency}>
+          {noteInfo ? `${noteInfo.frequency.toFixed(1)} Hz` : "-- Hz"}
         </Text>
       </View>
+
+      {/* Seismograph visualization */}
+      <View style={styles.graphContainer}>
+        <Svg width={GRAPH_WIDTH} height={GRAPH_HEIGHT}>
+          <Defs>
+            <LinearGradient id="fadeGradient" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor={lineColor} stopOpacity="1" />
+              <Stop offset="0.7" stopColor={lineColor} stopOpacity="0.5" />
+              <Stop offset="1" stopColor={lineColor} stopOpacity="0.1" />
+            </LinearGradient>
+          </Defs>
+
+          {/* Background grid lines */}
+          <Line
+            x1={CENTER_X}
+            y1={0}
+            x2={CENTER_X}
+            y2={GRAPH_HEIGHT}
+            stroke="#22c55e"
+            strokeWidth={2}
+            opacity={0.5}
+          />
+          {/* Left guide (flat zone) */}
+          <Line
+            x1={CENTER_X - MAX_DEFLECTION * 0.1}
+            y1={0}
+            x2={CENTER_X - MAX_DEFLECTION * 0.1}
+            y2={GRAPH_HEIGHT}
+            stroke={theme.colors.border}
+            strokeWidth={1}
+            strokeDasharray="4,4"
+            opacity={0.3}
+          />
+          {/* Right guide (sharp zone) */}
+          <Line
+            x1={CENTER_X + MAX_DEFLECTION * 0.1}
+            y1={0}
+            x2={CENTER_X + MAX_DEFLECTION * 0.1}
+            y2={GRAPH_HEIGHT}
+            stroke={theme.colors.border}
+            strokeWidth={1}
+            strokeDasharray="4,4"
+            opacity={0.3}
+          />
+
+          {/* In-tune zone highlight */}
+          <Rect
+            x={CENTER_X - MAX_DEFLECTION * 0.1}
+            y={0}
+            width={MAX_DEFLECTION * 0.2}
+            height={GRAPH_HEIGHT}
+            fill="#22c55e"
+            opacity={0.08}
+          />
+
+          {/* The seismograph line */}
+          {pathD && (
+            <Path
+              d={pathD}
+              stroke="url(#fadeGradient)"
+              strokeWidth={3}
+              fill="none"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          )}
+        </Svg>
+
+        {/* Scale labels */}
+        <View style={styles.scaleLabels}>
+          <Text style={styles.scaleLabel}>♭ FLAT</Text>
+          <Text style={[styles.scaleLabel, styles.scaleLabelCenter]}>IN TUNE</Text>
+          <Text style={styles.scaleLabel}>SHARP ♯</Text>
+        </View>
+      </View>
+
+      {/* Cents display */}
+      <View style={styles.centsDisplay}>
+        <Text style={[styles.centsValue, { color: getTuningStatusColor(tuningStatus) }]}>
+          {noteInfo ? `${noteInfo.cents >= 0 ? "+" : ""}${noteInfo.cents.toFixed(0)}` : "--"}
+        </Text>
+        <Text style={styles.centsLabel}>cents</Text>
+      </View>
+
+      {/* Status text */}
+      <Text style={[styles.statusText, { color: getTuningStatusColor(tuningStatus) }]}>
+        {tuningStatus === "in-tune" && "IN TUNE"}
+        {tuningStatus === "flat" && "TOO FLAT"}
+        {tuningStatus === "sharp" && "TOO SHARP"}
+        {tuningStatus === "idle" && "Play a note..."}
+      </Text>
     </View>
   )
 }
@@ -342,7 +440,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 32,
+    marginBottom: 16,
   },
   backButton: {
     padding: 8,
@@ -378,132 +476,47 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: theme.colors.mutedForeground,
   },
-  tunerContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   noteDisplay: {
     alignItems: "center",
-    marginBottom: 40,
+    marginBottom: 16,
   },
   noteName: {
-    fontSize: 72,
+    fontSize: 56,
     fontWeight: "bold",
   },
   frequency: {
-    fontSize: 18,
+    fontSize: 16,
     color: theme.colors.mutedForeground,
-    marginTop: 8,
+    marginTop: 4,
   },
-  gaugeContainer: {
-    width: 280,
-    height: 160,
-    position: "relative",
+  graphContainer: {
     alignItems: "center",
-    justifyContent: "flex-end",
-  },
-  gaugeArc: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderTopLeftRadius: 140,
-    borderTopRightRadius: 140,
-    borderWidth: 3,
-    borderBottomWidth: 0,
+    backgroundColor: theme.colors.card,
+    borderRadius: 16,
+    padding: 8,
+    borderWidth: 1,
     borderColor: theme.colors.border,
   },
-  scaleMarker: {
-    position: "absolute",
-    bottom: 0,
+  scaleLabels: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    width: "100%",
+    paddingHorizontal: 16,
+    marginTop: 8,
   },
-  scaleMarkerLeft2: {
-    left: 10,
-    bottom: 20,
-  },
-  scaleMarkerLeft1: {
-    left: 50,
-    bottom: 70,
-  },
-  scaleMarkerCenter: {
-    left: "50%",
-    marginLeft: -1,
-    bottom: 95,
-  },
-  scaleMarkerRight1: {
-    right: 50,
-    bottom: 70,
-  },
-  scaleMarkerRight2: {
-    right: 10,
-    bottom: 20,
-  },
-  scaleText: {
-    fontSize: 12,
-    color: theme.colors.mutedForeground,
-  },
-  centerMarker: {
-    width: 2,
-    height: 20,
-    backgroundColor: "#22c55e",
-  },
-  flatSharpLabel: {
-    position: "absolute",
-    bottom: -5,
+  scaleLabel: {
     fontSize: 12,
     color: theme.colors.mutedForeground,
     fontWeight: "600",
   },
-  flatLabel: {
-    left: 20,
-  },
-  sharpLabel: {
-    right: 20,
-  },
-  inTuneGlow: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderTopLeftRadius: 140,
-    borderTopRightRadius: 140,
-    backgroundColor: "rgba(34, 197, 94, 0.15)",
-    borderWidth: 3,
-    borderBottomWidth: 0,
-    borderColor: "#22c55e",
-  },
-  needleContainer: {
-    position: "absolute",
-    bottom: 0,
-    width: 280,
-    height: 140,
-    alignItems: "center",
-    justifyContent: "flex-end",
-  },
-  needle: {
-    width: 3,
-    height: 120,
-    backgroundColor: theme.colors.primary,
-    borderRadius: 2,
-    position: "absolute",
-    bottom: 10,
-    transformOrigin: "bottom",
-  },
-  needlePivot: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: theme.colors.primary,
-    position: "absolute",
-    bottom: 2,
+  scaleLabelCenter: {
+    color: "#22c55e",
   },
   centsDisplay: {
     flexDirection: "row",
     alignItems: "baseline",
-    marginTop: 32,
+    justifyContent: "center",
+    marginTop: 24,
   },
   centsValue: {
     fontSize: 36,
@@ -517,7 +530,8 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 18,
     fontWeight: "600",
-    marginTop: 16,
+    marginTop: 12,
     letterSpacing: 1,
+    textAlign: "center",
   },
 })
