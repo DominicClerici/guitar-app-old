@@ -16,6 +16,11 @@ export default function Index() {
           <Text style={styles.buttonText}>Tuner</Text>
         </Pressable>
       </Link>
+      <Link href="/scales" asChild>
+        <Pressable style={styles.button}>
+          <Text style={styles.buttonText}>Scales</Text>
+        </Pressable>
+      </Link>
     </View>
   )
 }

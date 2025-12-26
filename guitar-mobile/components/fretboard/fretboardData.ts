@@ -1,20 +1,7 @@
 // Standard guitar tuning (low to high): E2, A2, D3, G3, B3, E4
 // We represent strings from bottom (high E) to top (low E) for visual display
 
-export const NOTES = [
-  "C",
-  "C#",
-  "D",
-  "D#",
-  "E",
-  "F",
-  "F#",
-  "G",
-  "G#",
-  "A",
-  "A#",
-  "B",
-] as const
+export const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"] as const
 
 export type NoteName = (typeof NOTES)[number]
 
@@ -44,7 +31,7 @@ export const DOUBLE_DOT_FRETS = [12]
 export function getNoteAtPosition(
   stringIndex: number,
   fret: number,
-  tuning: NoteName[] = STANDARD_TUNING
+  tuning: NoteName[] = STANDARD_TUNING,
 ): NoteName {
   const openNote = tuning[stringIndex]
   const openNoteIndex = NOTES.indexOf(openNote)
@@ -58,7 +45,7 @@ export function getNoteAtPosition(
 export function getPositionsForNote(
   note: NoteName,
   tuning: NoteName[] = STANDARD_TUNING,
-  maxFret: number = FRET_COUNT
+  maxFret: number = FRET_COUNT,
 ): Array<{ stringIndex: number; fret: number }> {
   const positions: Array<{ stringIndex: number; fret: number }> = []
 
@@ -84,7 +71,7 @@ export interface FretPosition {
  */
 export function generateFretboardPositions(
   tuning: NoteName[] = STANDARD_TUNING,
-  fretCount: number = FRET_COUNT
+  fretCount: number = FRET_COUNT,
 ): FretPosition[] {
   const positions: FretPosition[] = []
 
@@ -112,7 +99,7 @@ export function getOctaveAtPosition(
   stringIndex: number,
   fret: number,
   tuning: NoteName[] = STANDARD_TUNING,
-  tuningOctaves: number[] = STANDARD_TUNING_OCTAVES
+  tuningOctaves: number[] = STANDARD_TUNING_OCTAVES,
 ): number {
   const openNote = tuning[stringIndex]
   const openNoteIndex = NOTES.indexOf(openNote)
@@ -140,7 +127,7 @@ export function getPositionsForNoteWithOctave(
   octave: number,
   tuning: NoteName[] = STANDARD_TUNING,
   tuningOctaves: number[] = STANDARD_TUNING_OCTAVES,
-  maxFret: number = FRET_COUNT
+  maxFret: number = FRET_COUNT,
 ): Array<{ stringIndex: number; fret: number }> {
   const positions: Array<{ stringIndex: number; fret: number }> = []
 
@@ -164,7 +151,7 @@ export function getPositionsForNoteWithOctave(
 export function generateFretboardPositionsWithOctave(
   tuning: NoteName[] = STANDARD_TUNING,
   tuningOctaves: number[] = STANDARD_TUNING_OCTAVES,
-  fretCount: number = FRET_COUNT
+  fretCount: number = FRET_COUNT,
 ): FretPositionWithOctave[] {
   const positions: FretPositionWithOctave[] = []
 
@@ -180,4 +167,447 @@ export function generateFretboardPositionsWithOctave(
   }
 
   return positions
+}
+
+// Scale definitions - intervals in semitones from root
+export const SCALE_INTERVALS = {
+  major: [0, 2, 4, 5, 7, 9, 11], // W W H W W W H
+} as const
+
+export type ScaleType = keyof typeof SCALE_INTERVALS
+
+// Scale degree names (1-indexed for display)
+export const SCALE_DEGREE_NAMES = ["1", "2", "3", "4", "5", "6", "7"] as const
+
+/**
+ * Get all notes in a scale given a root note
+ */
+export function getScaleNotes(root: NoteName, scaleType: ScaleType = "major"): NoteName[] {
+  const rootIndex = NOTES.indexOf(root)
+  const intervals = SCALE_INTERVALS[scaleType]
+
+  return intervals.map((interval) => {
+    const noteIndex = (rootIndex + interval) % 12
+    return NOTES[noteIndex]
+  })
+}
+
+/**
+ * Get the scale degree (1-7) for a note in a scale, or null if not in scale
+ */
+export function getScaleDegree(
+  note: NoteName,
+  root: NoteName,
+  scaleType: ScaleType = "major",
+): number | null {
+  const scaleNotes = getScaleNotes(root, scaleType)
+  const index = scaleNotes.indexOf(note)
+  return index === -1 ? null : index + 1 // 1-indexed
+}
+
+export interface ScalePosition {
+  stringIndex: number
+  fret: number
+  note: NoteName
+  degree: number // 1-7
+  isRoot: boolean
+}
+
+/**
+ * Get all positions on the fretboard for a scale
+ */
+export function getScalePositions(
+  root: NoteName,
+  scaleType: ScaleType = "major",
+  tuning: NoteName[] = STANDARD_TUNING,
+  maxFret: number = FRET_COUNT,
+): ScalePosition[] {
+  const positions: ScalePosition[] = []
+  const scaleNotes = getScaleNotes(root, scaleType)
+
+  for (let stringIndex = 0; stringIndex < tuning.length; stringIndex++) {
+    for (let fret = 0; fret <= maxFret; fret++) {
+      const note = getNoteAtPosition(stringIndex, fret, tuning)
+      const degreeIndex = scaleNotes.indexOf(note)
+
+      if (degreeIndex !== -1) {
+        const degree = degreeIndex + 1 // 1-indexed
+        positions.push({
+          stringIndex,
+          fret,
+          note,
+          degree,
+          isRoot: degree === 1,
+        })
+      }
+    }
+  }
+
+  return positions
+}
+
+export interface ScaleBoxPosition {
+  startFret: number
+  endFret: number // May exceed FRET_COUNT if wrapping is needed
+  rootFret: number // The fret where a root note is located (on bass strings)
+  rootStringIndex: number // Which string has the primary root (0 = low E, 1 = A)
+  label: string // e.g., "Position 1", "Position 2"
+  wraps: boolean // True if this box wraps around from high frets to low frets
+}
+
+/**
+ * Find all scale box positions for a given root note.
+ * Each position is a 4-5 fret span where you can play the scale across all strings.
+ * Positions are determined by root note locations on the 6th and 5th strings.
+ * Boxes that extend past fret 12 will wrap around to the beginning (fret 1).
+ */
+export function getScaleBoxPositions(
+  root: NoteName,
+  tuning: NoteName[] = STANDARD_TUNING,
+  maxFret: number = FRET_COUNT,
+): ScaleBoxPosition[] {
+  const positions: ScaleBoxPosition[] = []
+
+  // Find root notes on the 6th string (low E) and 5th string (A)
+  // These are the anchor points for scale positions
+  const rootPositionsString6: number[] = []
+  const rootPositionsString5: number[] = []
+
+  for (let fret = 0; fret <= maxFret; fret++) {
+    if (getNoteAtPosition(0, fret, tuning) === root) {
+      rootPositionsString6.push(fret)
+    }
+    if (getNoteAtPosition(1, fret, tuning) === root) {
+      rootPositionsString5.push(fret)
+    }
+  }
+
+  // Combine and sort all root positions with their string info
+  const allRoots: Array<{ fret: number; stringIndex: number }> = [
+    ...rootPositionsString6.map((fret) => ({ fret, stringIndex: 0 })),
+    ...rootPositionsString5.map((fret) => ({ fret, stringIndex: 1 })),
+  ].sort((a, b) => a.fret - b.fret)
+
+  // Create box positions - each box spans 4 frets (root fret to root fret + 3)
+  // This covers all scale notes within that position
+  const seenStartFrets = new Set<number>()
+  let positionNumber = 1
+
+  for (const rootPos of allRoots) {
+    // Skip open position (fret 0) as a starting position - it's awkward to play
+    // But we can reference it for the box calculation
+    let startFret: number
+    let endFret: number
+
+    if (rootPos.stringIndex === 0) {
+      // Root on 6th string: box starts 1 fret before root (for the 7th degree)
+      startFret = Math.max(1, rootPos.fret)
+      endFret = startFret + 3
+    } else {
+      // Root on 5th string: box starts 2 frets before root
+      startFret = Math.max(1, rootPos.fret - 2)
+      endFret = startFret + 3
+    }
+
+    // Skip if we've already created a position at this start fret
+    if (seenStartFrets.has(startFret)) continue
+
+    seenStartFrets.add(startFret)
+
+    // Check if this box wraps around past fret 12
+    const wraps = endFret > maxFret
+
+    positions.push({
+      startFret,
+      endFret,
+      rootFret: rootPos.fret,
+      rootStringIndex: rootPos.stringIndex,
+      label: `Position ${positionNumber}`,
+      wraps,
+    })
+
+    positionNumber++
+  }
+
+  return positions
+}
+
+/**
+ * Get scale positions filtered to a specific fret range (for box/position view)
+ */
+export function getScalePositionsInRange(
+  root: NoteName,
+  scaleType: ScaleType = "major",
+  startFret: number,
+  endFret: number,
+  tuning: NoteName[] = STANDARD_TUNING,
+): ScalePosition[] {
+  const positions: ScalePosition[] = []
+  const scaleNotes = getScaleNotes(root, scaleType)
+
+  for (let stringIndex = 0; stringIndex < tuning.length; stringIndex++) {
+    for (let fret = startFret; fret <= endFret; fret++) {
+      const note = getNoteAtPosition(stringIndex, fret, tuning)
+      const degreeIndex = scaleNotes.indexOf(note)
+
+      if (degreeIndex !== -1) {
+        const degree = degreeIndex + 1 // 1-indexed
+        positions.push({
+          stringIndex,
+          fret,
+          note,
+          degree,
+          isRoot: degree === 1,
+        })
+      }
+    }
+  }
+
+  return positions
+}
+
+/**
+ * Get scale positions for a box that may wrap around the fretboard.
+ * If endFret > maxFret, notes beyond maxFret wrap to frets 1, 2, etc.
+ * This allows showing complete scale shapes even when starting near the end of the fretboard.
+ *
+ * IMPORTANT: This function builds a proper scale box where each scale degree (1-7)
+ * appears exactly once per octave, creating an ascending path from low to high strings.
+ * It picks positions within comfortable finger reach of the box center.
+ */
+export function getScalePositionsWithWrap(
+  root: NoteName,
+  scaleType: ScaleType = "major",
+  startFret: number,
+  endFret: number,
+  tuning: NoteName[] = STANDARD_TUNING,
+  maxFret: number = FRET_COUNT,
+): ScalePosition[] {
+  const scaleNotes = getScaleNotes(root, scaleType)
+  const boxCenter = (startFret + endFret) / 2
+
+  // Maximum reach from the box center
+  const maxReach = 4
+
+  // Collect all candidate positions across all strings
+  type Candidate = {
+    stringIndex: number
+    fret: number
+    displayFret: number
+    degree: number
+    note: NoteName
+    distance: number
+    octave: number
+  }
+
+  const allCandidates: Candidate[] = []
+
+  for (let stringIndex = 0; stringIndex < tuning.length; stringIndex++) {
+    for (let fret = 0; fret <= maxFret + maxReach; fret++) {
+      const note = getNoteAtPosition(stringIndex, fret, tuning)
+      const degreeIndex = scaleNotes.indexOf(note)
+
+      if (degreeIndex !== -1) {
+        let displayFret: number
+        let distance: number
+
+        if (fret > maxFret) {
+          displayFret = fret - maxFret
+          distance = Math.min(
+            Math.abs(fret - boxCenter),
+            Math.abs(displayFret - boxCenter)
+          )
+        } else {
+          displayFret = fret
+          distance = Math.abs(fret - boxCenter)
+        }
+
+        if (distance <= maxReach) {
+          const octave = getOctaveAtPosition(stringIndex, fret, tuning)
+          allCandidates.push({
+            stringIndex,
+            fret,
+            displayFret,
+            degree: degreeIndex + 1,
+            note,
+            distance,
+            octave,
+          })
+        }
+      }
+    }
+  }
+
+  // Group candidates by (degree, octave) - each combination should appear once
+  const degreeOctaveKey = (degree: number, octave: number) => `${degree}-${octave}`
+  const selectedPositions = new Map<string, Candidate>()
+
+  // Sort candidates by distance from center (prefer closer positions)
+  // Tiebreaker: prefer higher fret numbers when distances are equal
+  allCandidates.sort((a, b) => {
+    if (a.distance !== b.distance) {
+      return a.distance - b.distance
+    }
+    // Equal distance: prefer higher fret number
+    return b.displayFret - a.displayFret
+  })
+
+  // For each candidate, only keep it if we haven't already selected this degree+octave
+  for (const candidate of allCandidates) {
+    const key = degreeOctaveKey(candidate.degree, candidate.octave)
+    if (!selectedPositions.has(key)) {
+      selectedPositions.set(key, candidate)
+    }
+  }
+
+  // Convert to ScalePosition array
+  const positions: ScalePosition[] = []
+  for (const pos of selectedPositions.values()) {
+    positions.push({
+      stringIndex: pos.stringIndex,
+      fret: pos.displayFret,
+      note: pos.note,
+      degree: pos.degree,
+      isRoot: pos.degree === 1,
+    })
+  }
+
+  return positions
+}
+
+/**
+ * Find which box position contains a tapped fret location.
+ * Returns the index of the box position, or -1 if no box contains this fret.
+ * Handles wrapped boxes: if a box wraps (e.g., frets 10-14), frets 1-2 are also valid.
+ */
+export function getBoxIndexForFret(
+  fret: number,
+  boxPositions: ScaleBoxPosition[],
+  maxFret: number = FRET_COUNT,
+): number {
+  for (let i = 0; i < boxPositions.length; i++) {
+    const box = boxPositions[i]
+    // Check if fret is in the main range
+    if (fret >= box.startFret && fret <= Math.min(box.endFret, maxFret)) {
+      return i
+    }
+    // For wrapped boxes, also check if fret is in the wrapped portion (1, 2, etc.)
+    if (box.wraps && fret >= 1 && fret <= box.endFret - maxFret) {
+      return i
+    }
+  }
+  return -1
+}
+
+/**
+ * Find or create a valid scale box that contains the given fret.
+ * This ensures we can always show a position view for any tapped fret.
+ *
+ * Strategy:
+ * 1. First, try to find an existing box from getScaleBoxPositions that contains the fret
+ * 2. If no existing box contains it, create a new box centered around the fret
+ *    that aligns with scale fingering patterns
+ *
+ * @returns An object with the box and its index (index is -1 if it's a newly created box)
+ */
+export function findOrCreateBoxForFret(
+  fret: number,
+  root: NoteName,
+  tuning: NoteName[] = STANDARD_TUNING,
+  maxFret: number = FRET_COUNT,
+): { box: ScaleBoxPosition; existingIndex: number } {
+  const existingBoxes = getScaleBoxPositions(root, tuning, maxFret)
+
+  // First, check if any existing box contains this fret
+  const existingIndex = getBoxIndexForFret(fret, existingBoxes, maxFret)
+  if (existingIndex !== -1) {
+    return { box: existingBoxes[existingIndex], existingIndex }
+  }
+
+  // No existing box contains this fret - create a new one
+  // Find the nearest root note positions to anchor the box properly
+  const rootPositions: Array<{ fret: number; stringIndex: number }> = []
+
+  // Check all strings for root positions
+  for (let stringIndex = 0; stringIndex < tuning.length; stringIndex++) {
+    for (let f = 1; f <= maxFret; f++) {
+      if (getNoteAtPosition(stringIndex, f, tuning) === root) {
+        rootPositions.push({ fret: f, stringIndex })
+      }
+    }
+  }
+
+  // Find the best root position to anchor the box
+  // Prefer roots on bass strings (0, 1) as they define standard CAGED positions
+  // The box should contain the tapped fret
+
+  let bestBox: ScaleBoxPosition | null = null
+  let bestDistance = Infinity
+
+  for (const rootPos of rootPositions) {
+    // Calculate potential box boundaries based on root string
+    let startFret: number
+    let endFret: number
+
+    if (rootPos.stringIndex === 0) {
+      // Root on 6th string: box typically starts at or just before the root
+      startFret = Math.max(1, rootPos.fret)
+      endFret = startFret + 3
+    } else if (rootPos.stringIndex === 1) {
+      // Root on 5th string: box starts 2 frets before root
+      startFret = Math.max(1, rootPos.fret - 2)
+      endFret = startFret + 3
+    } else {
+      // For other strings, create a box that spans 4 frets including the root
+      startFret = Math.max(1, rootPos.fret - 1)
+      endFret = startFret + 3
+    }
+
+    // Check if this box would contain the tapped fret
+    const wraps = endFret > maxFret
+    const containsFret =
+      (fret >= startFret && fret <= Math.min(endFret, maxFret)) ||
+      (wraps && fret >= 1 && fret <= endFret - maxFret)
+
+    if (containsFret) {
+      // Calculate how "central" the tapped fret is to this box (prefer centered positions)
+      const boxCenter = startFret + 1.5
+      const distance = Math.abs(fret - boxCenter)
+
+      if (distance < bestDistance) {
+        bestDistance = distance
+        bestBox = {
+          startFret,
+          endFret,
+          rootFret: rootPos.fret,
+          rootStringIndex: rootPos.stringIndex,
+          label: `Position`,
+          wraps,
+        }
+      }
+    }
+  }
+
+  // If we found a valid box anchored to a root, use it
+  if (bestBox) {
+    return { box: bestBox, existingIndex: -1 }
+  }
+
+  // Fallback: create a box centered on the tapped fret
+  // This handles edge cases where no root-anchored box works
+  const startFret = Math.max(1, fret - 1)
+  const endFret = startFret + 3
+  const wraps = endFret > maxFret
+
+  return {
+    box: {
+      startFret,
+      endFret,
+      rootFret: fret,
+      rootStringIndex: 0,
+      label: `Position`,
+      wraps,
+    },
+    existingIndex: -1,
+  }
 }

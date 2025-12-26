@@ -1,38 +1,55 @@
-import * as Haptics from "expo-haptics"
-import { Pressable, StyleSheet, Text, View } from "react-native"
+import { useEffect, useRef } from "react"
+import { Animated, StyleSheet, Text, View } from "react-native"
 
 import { theme } from "@/utils/theme"
 import type { NoteName } from "./fretboardData"
 
 export interface FretMarkerProps {
-  stringIndex: number
-  fret: number
   note: NoteName
-  showNote?: boolean
   isHighlighted?: boolean
   isHint?: boolean
-  onPress?: (stringIndex: number, fret: number, note: NoteName) => void
   width: number
   height: number
   isRoot?: boolean
+  isSuccess?: boolean
+  displayText?: string // Optional override for what to display (e.g., interval "1", "2", etc.)
+  animateTransition?: boolean // Whether to animate in/out (for view mode changes)
 }
 
 export function FretMarker({
-  stringIndex,
-  fret,
   note,
-  showNote = false,
   isHighlighted = false,
   isHint = false,
-  onPress,
   width,
   height,
   isRoot = false,
+  isSuccess = false,
+  displayText,
+  animateTransition = false,
 }: FretMarkerProps) {
-  const handlePress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
-    onPress?.(stringIndex, fret, note)
-  }
+  // Animation values for scale and opacity
+  const scaleAnim = useRef(new Animated.Value(1)).current
+  const opacityAnim = useRef(new Animated.Value(1)).current
+
+  useEffect(() => {
+    // Animate in when mounting with animateTransition
+    if (animateTransition) {
+      scaleAnim.setValue(0.8)
+      opacityAnim.setValue(0)
+      Animated.parallel([
+        Animated.timing(scaleAnim, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacityAnim, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+      ]).start()
+    }
+  }, [animateTransition, scaleAnim, opacityAnim])
 
   // Responsive marker size based on available space
   const markerSize = Math.min(width * 0.8, height * 0.8, 32)
@@ -46,21 +63,35 @@ export function FretMarker({
       borderRadius: markerSize / (isRoot ? 4 : 2),
     },
     isHighlighted && styles.highlighted,
+    isRoot && styles.root,
     isHint && styles.hint,
+    isSuccess && styles.success,
   ]
 
   return (
-    <Pressable style={[styles.container, { width, height }]} onPress={handlePress}>
-      {(showNote || isHighlighted || isHint) && (
-        <View style={markerStyle}>
-          <Text
-            style={[styles.noteText, isHighlighted && styles.highlightedNoteText, { fontSize }]}
-          >
-            {note}
-          </Text>
-        </View>
-      )}
-    </Pressable>
+    <View style={[styles.container, { width, height }]}>
+      <Animated.View
+        style={[
+          markerStyle,
+          {
+            opacity: opacityAnim,
+            transform: [{ scale: scaleAnim }],
+          },
+        ]}
+      >
+        <Text
+          style={[
+            styles.noteText,
+            isHighlighted && styles.highlightedNoteText,
+            isRoot && styles.rootNoteText,
+            isSuccess && styles.successNoteText,
+            { fontSize },
+          ]}
+        >
+          {displayText ?? note}
+        </Text>
+      </Animated.View>
+    </View>
   )
 }
 
@@ -75,9 +106,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   highlighted: {
+    backgroundColor: theme.colors.muted,
+    borderColor: theme.colors.mutedForeground,
+    borderWidth: 1,
+  },
+  root: {
     backgroundColor: theme.colors.primaryMuted,
     borderColor: theme.colors.primary,
-    borderWidth: 1,
+    borderWidth: 2,
   },
   hint: {
     backgroundColor: theme.colors.muted,
@@ -89,6 +125,17 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   highlightedNoteText: {
+    color: theme.colors.mutedForeground,
+  },
+  rootNoteText: {
     color: theme.colors.primary,
+  },
+  success: {
+    backgroundColor: "#22c55e22",
+    borderColor: "#22c55e",
+    borderWidth: 2,
+  },
+  successNoteText: {
+    color: "#22c55e",
   },
 })

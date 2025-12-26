@@ -88,9 +88,9 @@ function calculateCents(detectedFreq: number, targetFreq: number): number {
 
 export function usePitchDetection(options: UsePitchDetectionOptions = {}): UsePitchDetectionReturn {
   const {
-    bufferSize = 2048,
-    minVolume = -60,
-    updateIntervalMs = 8,
+    bufferSize = 4096,
+    minVolume = -70,
+    updateIntervalMs = 16.67,
     a4Frequency = A4_FREQUENCY,
     onNoteDetected,
     onNoNote,

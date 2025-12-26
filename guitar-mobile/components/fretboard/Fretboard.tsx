@@ -10,28 +10,52 @@ import {
   FRET_COUNT,
   getNoteAtPosition,
   type NoteName,
+  type ScalePosition,
   SINGLE_DOT_FRETS,
   STANDARD_TUNING,
 } from "./fretboardData"
 
+interface VisibleMarker {
+  stringIndex: number
+  fret: number
+  note: NoteName
+  isHighlighted: boolean
+  isHint: boolean
+  isRoot: boolean
+  isSuccess: boolean
+  displayText?: string
+}
+
 export interface FretboardProps {
   tuning?: NoteName[]
   fretCount?: number
+  startFret?: number // For position view - show frets starting from this fret (default: 1)
   showAllNotes?: boolean
   highlightedPositions?: Array<{ stringIndex: number; fret: number }>
   hintPositions?: Array<{ stringIndex: number; fret: number }>
   correctPositions?: Array<{ stringIndex: number; fret: number }>
+  rootPositions?: Array<{ stringIndex: number; fret: number }> // Positions to show as root notes
+  scalePositions?: ScalePosition[] // For scale mode - shows intervals instead of notes
+  successPositions?: Array<{ stringIndex: number; fret: number }> // Positions that have been successfully played
+  scalePracticeMode?: boolean // When true, unhit scale positions show as hints instead of highlighted
   onFretPress?: (stringIndex: number, fret: number, note: NoteName) => void
+  animateTransition?: boolean // Whether to animate marker visibility changes
 }
 
 export function Fretboard({
   tuning = STANDARD_TUNING,
   fretCount = FRET_COUNT,
+  startFret = 1,
   showAllNotes = false,
   highlightedPositions = [],
   hintPositions = [],
   correctPositions = [],
+  rootPositions = [],
+  scalePositions = [],
+  successPositions = [],
+  scalePracticeMode = false,
   onFretPress,
+  animateTransition = false,
 }: FretboardProps) {
   const [containerSize, setContainerSize] = useState<{ width: number; height: number } | null>(null)
   const lastPositionRef = useRef<{ stringIndex: number; fret: number } | null>(null)
@@ -43,18 +67,24 @@ export function Fretboard({
 
   const stringCount = tuning.length
 
+  // Calculate visible fret range
+  const visibleFretCount = fretCount - startFret + 1
+  const showNut = startFret === 1
+
   // Use container size for dimensions
   const availableWidth = containerSize?.width ?? 0
   const availableHeight = containerSize?.height ?? 0
 
-  // Nut width scales with screen size
-  const nutWidth = Math.min(40, availableWidth * 0.05)
-  const fretboardWidth = availableWidth - nutWidth
+  // Nut width scales with screen size (only show if starting from fret 1)
+  const nutWidth = showNut ? Math.min(40, availableWidth * 0.05) : 0
+  // When not showing nut, show fret number label area instead
+  const fretLabelWidth = showNut ? 0 : Math.min(40, availableWidth * 0.05)
+  const fretboardWidth = availableWidth - nutWidth - fretLabelWidth
 
   // Calculate fret width and string spacing
   // String spacing is the gap between strings. With half spacing at top/bottom,
   // we have (stringCount - 1) full gaps + 2 half gaps = stringCount total gaps worth of space
-  const fretWidth = fretboardWidth / fretCount
+  const fretWidth = fretboardWidth / visibleFretCount
   const stringSpacing = availableHeight / stringCount
 
   // Responsive element sizes based on available space
@@ -64,26 +94,105 @@ export function Fretboard({
   const fontSize = Math.min(stringSpacing * 0.5, 14)
   const fretNumberFontSize = Math.min(12, availableHeight * 0.05)
 
-  const isPositionHighlighted = (stringIndex: number, fret: number) =>
-    highlightedPositions.some((p) => p.stringIndex === stringIndex && p.fret === fret) ||
-    isPositionCorrect(stringIndex, fret)
+  // Build a list of only the markers that need to be rendered
+  // This avoids rendering 72 FretMarker components when only ~20 are visible
+  const visibleMarkers: VisibleMarker[] = []
+  const seenPositions = new Set<string>()
 
-  const isPositionHint = (stringIndex: number, fret: number) =>
-    hintPositions.some((p) => p.stringIndex === stringIndex && p.fret === fret)
+  const addMarker = (
+    stringIndex: number,
+    fret: number,
+    flags: { isHighlighted?: boolean; isHint?: boolean; isRoot?: boolean; isSuccess?: boolean; displayText?: string }
+  ) => {
+    // Only include markers within the visible fret range
+    if (fret < startFret || fret > fretCount) return
 
-  const isPositionCorrect = (stringIndex: number, fret: number) =>
-    correctPositions.some((p) => p.stringIndex === stringIndex && p.fret === fret)
+    const key = `${stringIndex}-${fret}`
+    if (seenPositions.has(key)) return
+    seenPositions.add(key)
+
+    visibleMarkers.push({
+      stringIndex,
+      fret,
+      note: getNoteAtPosition(stringIndex, fret, tuning),
+      isHighlighted: flags.isHighlighted ?? false,
+      isHint: flags.isHint ?? false,
+      isRoot: flags.isRoot ?? false,
+      isSuccess: flags.isSuccess ?? false,
+      displayText: flags.displayText,
+    })
+  }
+
+  // Create a Set for quick success position lookups
+  const successPositionSet = new Set(
+    successPositions.map((p) => `${p.stringIndex}-${p.fret}`)
+  )
+
+  // Add scale positions (with degree display text)
+  // When scalePracticeMode is true:
+  // - Unhit positions show as hints (grayed out)
+  // - Hit positions show as success (green)
+  for (const pos of scalePositions) {
+    const isSuccess = successPositionSet.has(`${pos.stringIndex}-${pos.fret}`)
+
+    // In practice mode, show unhit positions as hints (except roots which stay visible)
+    const showAsHint = scalePracticeMode && !isSuccess && !pos.isRoot
+
+    addMarker(pos.stringIndex, pos.fret, {
+      isHighlighted: !showAsHint,
+      isHint: showAsHint,
+      isRoot: pos.isRoot && !showAsHint,
+      isSuccess,
+      displayText: String(pos.degree),
+    })
+  }
+
+  // Add highlighted positions (includes correct positions)
+  for (const pos of highlightedPositions) {
+    addMarker(pos.stringIndex, pos.fret, { isHighlighted: true })
+  }
+  for (const pos of correctPositions) {
+    addMarker(pos.stringIndex, pos.fret, { isHighlighted: true })
+  }
+
+  // Add hint positions
+  for (const pos of hintPositions) {
+    addMarker(pos.stringIndex, pos.fret, { isHint: true })
+  }
+
+  // Add root positions
+  for (const pos of rootPositions) {
+    addMarker(pos.stringIndex, pos.fret, { isRoot: true })
+  }
+
+  // If showAllNotes is true, add all positions
+  if (showAllNotes) {
+    for (let stringIndex = 0; stringIndex < stringCount; stringIndex++) {
+      for (let fret = startFret; fret <= fretCount; fret++) {
+        addMarker(stringIndex, fret, { isHighlighted: true })
+      }
+    }
+  }
+
+  // Convert stringIndex to visual Y position (reversed: high e at top, low E at bottom)
+  const getVisualStringPosition = (stringIndex: number) => stringCount - 1 - stringIndex
+
+  // Format open string note for display (lowercase 'e' for high E string)
+  const formatOpenStringNote = (note: NoteName, stringIndex: number) =>
+    stringIndex === stringCount - 1 ? note.toLowerCase() : note
 
   // Calculate string and fret from touch coordinates (relative to fretboard surface)
   const getPositionFromCoordinates = (x: number, y: number) => {
     if (!containerSize) return null
 
-    // x is relative to fretboard surface (after nut)
-    const fret = Math.floor(x / fretWidth) + 1
-    const stringIndex = Math.floor(y / stringSpacing)
+    // x is relative to fretboard surface (after nut/label area)
+    const fret = Math.floor(x / fretWidth) + startFret
+    // Visual position from Y coordinate, then convert to stringIndex (reversed)
+    const visualPosition = Math.floor(y / stringSpacing)
+    const stringIndex = stringCount - 1 - visualPosition
 
     // Clamp values to valid range
-    const clampedFret = Math.max(1, Math.min(fret, fretCount))
+    const clampedFret = Math.max(startFret, Math.min(fret, fretCount))
     const clampedStringIndex = Math.max(0, Math.min(stringIndex, stringCount - 1))
 
     return { stringIndex: clampedStringIndex, fret: clampedFret }
@@ -95,11 +204,14 @@ export function Fretboard({
     onFretPress?.(stringIndex, fret, note)
   }
 
+  // Calculate left offset for touch handling (nut or fret label area)
+  const leftOffset = nutWidth + fretLabelWidth
+
   const panGesture = Gesture.Pan()
     .runOnJS(true)
     .onStart((event) => {
-      // Adjust x to account for nut width
-      const x = event.x - nutWidth
+      // Adjust x to account for nut/label width
+      const x = event.x - leftOffset
       const position = getPositionFromCoordinates(x, event.y)
       if (position) {
         lastPositionRef.current = position
@@ -107,8 +219,8 @@ export function Fretboard({
       }
     })
     .onUpdate((event) => {
-      // Adjust x to account for nut width
-      const x = event.x - nutWidth
+      // Adjust x to account for nut/label width
+      const x = event.x - leftOffset
       const position = getPositionFromCoordinates(x, event.y)
       if (position) {
         const last = lastPositionRef.current
@@ -130,33 +242,44 @@ export function Fretboard({
           <View
             style={[
               styles.fretboard,
-              { width: fretboardWidth + nutWidth, height: availableHeight },
+              { width: fretboardWidth + nutWidth + fretLabelWidth, height: availableHeight },
             ]}
           >
+            {/* Fret label area (when not showing nut) */}
+            {!showNut && (
+              <View style={[styles.fretLabelArea, { width: fretLabelWidth, height: availableHeight }]}>
+                <Text style={[styles.fretLabelText, { fontSize }]}>{startFret}</Text>
+              </View>
+            )}
+
             {/* Nut (the bar at the end of the fretboard near the headstock) */}
-            <View
-              style={[
-                styles.nut,
-                { width: nutWidth, height: availableHeight, borderRightWidth: nutBorderWidth },
-              ]}
-            >
-              {tuning.map((note, index) => (
-                <View
-                  key={`open-${index}`}
-                  style={[
-                    styles.openStringContainer,
-                    {
-                      position: "absolute",
-                      top: index * stringSpacing,
-                      height: stringSpacing,
-                      width: nutWidth,
-                    },
-                  ]}
-                >
-                  <Text style={[styles.openStringText, { fontSize }]}>{note}</Text>
-                </View>
-              ))}
-            </View>
+            {showNut && (
+              <View
+                style={[
+                  styles.nut,
+                  { width: nutWidth, height: availableHeight, borderRightWidth: nutBorderWidth },
+                ]}
+              >
+                {tuning.map((note, stringIndex) => (
+                  <View
+                    key={`open-${stringIndex}`}
+                    style={[
+                      styles.openStringContainer,
+                      {
+                        position: "absolute",
+                        top: getVisualStringPosition(stringIndex) * stringSpacing,
+                        height: stringSpacing,
+                        width: nutWidth,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.openStringText, { fontSize }]}>
+                      {formatOpenStringNote(note, stringIndex)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
 
             {/* Fretboard surface */}
             <View
@@ -164,11 +287,12 @@ export function Fretboard({
             >
               {/* Fret markers (dots) */}
               <View style={styles.fretMarkersContainer}>
-                {Array.from({ length: fretCount }, (_, i) => i + 1).map((fret) => {
+                {Array.from({ length: visibleFretCount }, (_, i) => i + startFret).map((fret) => {
                   const isSingleDot = SINGLE_DOT_FRETS.includes(fret)
                   const isDoubleDot = DOUBLE_DOT_FRETS.includes(fret)
                   // Center dot in the middle of the fret (between fret-1 wire and fret wire)
-                  const left = (fret - 0.5) * fretWidth - dotSize / 2
+                  // Adjust position relative to startFret
+                  const left = (fret - startFret + 0.5) * fretWidth - dotSize / 2
 
                   const dotStyle = {
                     width: dotSize,
@@ -201,13 +325,13 @@ export function Fretboard({
               </View>
 
               {/* Fret wires */}
-              {Array.from({ length: fretCount }, (_, i) => i + 1).map((fret) => (
+              {Array.from({ length: visibleFretCount }, (_, i) => i + startFret).map((fret) => (
                 <View
                   key={`fret-${fret}`}
                   style={[
                     styles.fretWire,
                     {
-                      left: fret * fretWidth - fretWireWidth / 2,
+                      left: (fret - startFret + 1) * fretWidth - fretWireWidth / 2,
                       height: availableHeight,
                       width: fretWireWidth,
                     },
@@ -217,15 +341,16 @@ export function Fretboard({
 
               {/* Strings */}
               {tuning.map((_, stringIndex) => {
-                // String thickness - thicker strings at top (low E), thinner at bottom (high E)
+                // String thickness - thicker strings at bottom (low E), thinner at top (high e)
                 const thickness = 1 + (stringCount - 1 - stringIndex) * 0.5
+                const visualPosition = getVisualStringPosition(stringIndex)
                 return (
                   <View
                     key={`string-${stringIndex}`}
                     style={[
                       styles.string,
                       {
-                        top: stringSpacing / 2 + stringIndex * stringSpacing - thickness / 2,
+                        top: stringSpacing / 2 + visualPosition * stringSpacing - thickness / 2,
                         width: fretboardWidth,
                         height: thickness,
                       },
@@ -234,52 +359,52 @@ export function Fretboard({
                 )
               })}
 
-              {/* Interactive fret positions */}
-              {tuning.map((_, stringIndex) =>
-                Array.from({ length: fretCount }, (_, i) => i + 1).map((fret) => {
-                  const note = getNoteAtPosition(stringIndex, fret, tuning)
-                  // Center the marker in the middle of the fret (between fret-1 wire and fret wire)
-                  const left = (fret - 1) * fretWidth
-                  const top = stringIndex * stringSpacing
+              {/* Visible fret markers - only render markers that should be displayed */}
+              {visibleMarkers.map((marker) => {
+                const left = (marker.fret - startFret) * fretWidth
+                const top = getVisualStringPosition(marker.stringIndex) * stringSpacing
 
-                  return (
-                    <View
-                      key={`pos-${stringIndex}-${fret}`}
-                      style={[
-                        styles.fretPosition,
-                        {
-                          left,
-                          top,
-                          width: fretWidth,
-                          height: stringSpacing,
-                        },
-                      ]}
-                    >
-                      <FretMarker
-                        stringIndex={stringIndex}
-                        fret={fret}
-                        note={note}
-                        showNote={showAllNotes}
-                        isHighlighted={isPositionHighlighted(stringIndex, fret)}
-                        isHint={isPositionHint(stringIndex, fret)}
-                        onPress={onFretPress}
-                        width={fretWidth}
-                        height={stringSpacing}
-                      />
-                    </View>
-                  )
-                }),
-              )}
+                return (
+                  <View
+                    key={`pos-${marker.stringIndex}-${marker.fret}`}
+                    style={[
+                      styles.fretPosition,
+                      {
+                        left,
+                        top,
+                        width: fretWidth,
+                        height: stringSpacing,
+                      },
+                    ]}
+                  >
+                    <FretMarker
+                      note={marker.note}
+                      isHighlighted={marker.isHighlighted}
+                      isHint={marker.isHint}
+                      isRoot={marker.isRoot}
+                      isSuccess={marker.isSuccess}
+                      displayText={marker.displayText}
+                      width={fretWidth}
+                      height={stringSpacing}
+                      animateTransition={animateTransition}
+                    />
+                  </View>
+                )
+              })}
             </View>
 
             {/* Fret numbers */}
             <View
               style={[
                 styles.fretNumbers,
-                { width: fretboardWidth, left: nutWidth, bottom: -fretNumberFontSize * 1.5 },
+                {
+                  width: fretboardWidth,
+                  left: nutWidth + fretLabelWidth,
+                  bottom: -fretNumberFontSize * 1.5,
+                },
               ]}
             >
-              {Array.from({ length: fretCount }, (_, i) => i + 1).map((fret) => (
+              {Array.from({ length: visibleFretCount }, (_, i) => i + startFret).map((fret) => (
                 <View
                   key={`num-${fret}`}
                   style={[styles.fretNumberContainer, { width: fretWidth }]}
@@ -311,10 +436,18 @@ const styles = StyleSheet.create({
   },
   nut: {
     borderRightColor: theme.colors.muted,
-    borderRightWidth: 2,
     justifyContent: "space-around",
     alignItems: "center",
     zIndex: 10,
+  },
+  fretLabelArea: {
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 10,
+  },
+  fretLabelText: {
+    color: theme.colors.muted,
+    fontWeight: "bold",
   },
   openStringContainer: {
     justifyContent: "center",

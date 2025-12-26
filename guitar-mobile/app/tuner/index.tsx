@@ -1,11 +1,10 @@
+import { usePitchDetection, type DetectedNote } from "@/hooks/usePitchDetection"
+import { theme } from "@/utils/theme"
 import { Ionicons } from "@expo/vector-icons"
 import { useFocusEffect, useRouter } from "expo-router"
 import { useCallback, useRef, useState } from "react"
 import { Dimensions, Pressable, StyleSheet, Text, View } from "react-native"
 import Svg, { Defs, Line, LinearGradient, Path, Rect, Stop } from "react-native-svg"
-
-import { usePitchDetection, type DetectedNote } from "@/hooks/usePitchDetection"
-import { theme } from "@/utils/theme"
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window")
 
@@ -15,7 +14,7 @@ const GRAPH_HEIGHT = SCREEN_HEIGHT * 0.45
 const CENTER_X = GRAPH_WIDTH / 2
 const MAX_DEFLECTION = GRAPH_WIDTH * 0.4 // Max horizontal deflection from center
 const POINTS_PER_SECOND = 60 // How many data points per second
-const SCROLL_SPEED = 80 // Pixels per second the line scrolls down
+const SCROLL_SPEED = 60 // Pixels per second the line scrolls down
 const MAX_POINTS = Math.ceil((GRAPH_HEIGHT / SCROLL_SPEED) * POINTS_PER_SECOND) + 10
 
 type TuningStatus = "flat" | "sharp" | "in-tune" | "idle"
@@ -26,7 +25,7 @@ interface DataPoint {
 }
 
 function getTuningStatus(cents: number): TuningStatus {
-  if (Math.abs(cents) <= 5) return "in-tune"
+  if (Math.abs(cents) <= 8) return "in-tune"
   return cents < 0 ? "flat" : "sharp"
 }
 
@@ -71,9 +70,9 @@ export default function Tuner() {
   }, [])
 
   const { hasPermission, currentNote, startListening, stopListening } = usePitchDetection({
-    bufferSize: 2048,
-    minVolume: -60,
-    updateIntervalMs: 8,
+    bufferSize: 4096,
+    minVolume: -70,
+    updateIntervalMs: 16.67,
     onNoteDetected: handleNoteDetected,
     onNoNote: handleNoNote,
   })

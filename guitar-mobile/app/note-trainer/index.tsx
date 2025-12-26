@@ -23,7 +23,7 @@ const ALL_NOTES = NOTES
 // Frequency tolerance for note detection (±5%)
 const FREQUENCY_TOLERANCE = 0.05
 // How long a note must be held to register (ms)
-const HOLD_DURATION_MS = 150
+const HOLD_DURATION_MS = 50
 // Delay after completing all positions before next note (ms)
 const NEXT_NOTE_DELAY_MS = 2000
 
@@ -193,9 +193,9 @@ export default function NoteTrainer() {
   )
 
   const { startListening, stopListening } = usePitchDetection({
-    bufferSize: 2048,
-    minVolume: -60,
-    updateIntervalMs: 16,
+    bufferSize: 4096,
+    minVolume: -70,
+    updateIntervalMs: 25,
     onNoteDetected: handleNoteDetected,
   })
 
@@ -433,9 +433,8 @@ export default function NoteTrainer() {
       <View style={styles.fretboardContainer}>
         <Fretboard
           onFretPress={handleFretPress}
-          highlightedPositions={highlightedPositions}
           hintPositions={hintPositions}
-          correctPositions={mode === "practice" ? playedPositions : []}
+          rootPositions={mode === "manual" ? highlightedPositions : playedPositions}
         />
       </View>
     </View>
