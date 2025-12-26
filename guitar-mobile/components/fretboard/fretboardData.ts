@@ -11,9 +11,6 @@ export const STANDARD_TUNING: NoteName[] = ["E", "A", "D", "G", "B", "E"]
 // Open string octaves for standard tuning (E2, A2, D3, G3, B3, E4)
 export const STANDARD_TUNING_OCTAVES: number[] = [2, 2, 3, 3, 3, 4]
 
-// String names for display
-export const STRING_NAMES = ["6th (E)", "5th (A)", "4th (D)", "3rd (G)", "2nd (B)", "1st (E)"]
-
 // Number of frets to display (0 = open string, then frets 1-12)
 export const FRET_COUNT = 12
 
@@ -64,28 +61,6 @@ export interface FretPosition {
   stringIndex: number
   fret: number
   note: NoteName
-}
-
-/**
- * Generate all fret positions for the fretboard
- */
-export function generateFretboardPositions(
-  tuning: NoteName[] = STANDARD_TUNING,
-  fretCount: number = FRET_COUNT,
-): FretPosition[] {
-  const positions: FretPosition[] = []
-
-  for (let stringIndex = 0; stringIndex < tuning.length; stringIndex++) {
-    for (let fret = 0; fret <= fretCount; fret++) {
-      positions.push({
-        stringIndex,
-        fret,
-        note: getNoteAtPosition(stringIndex, fret, tuning),
-      })
-    }
-  }
-
-  return positions
 }
 
 /**
@@ -145,39 +120,12 @@ export function getPositionsForNoteWithOctave(
   return positions
 }
 
-/**
- * Generate all fret positions with octave information
- */
-export function generateFretboardPositionsWithOctave(
-  tuning: NoteName[] = STANDARD_TUNING,
-  tuningOctaves: number[] = STANDARD_TUNING_OCTAVES,
-  fretCount: number = FRET_COUNT,
-): FretPositionWithOctave[] {
-  const positions: FretPositionWithOctave[] = []
-
-  for (let stringIndex = 0; stringIndex < tuning.length; stringIndex++) {
-    for (let fret = 0; fret <= fretCount; fret++) {
-      positions.push({
-        stringIndex,
-        fret,
-        note: getNoteAtPosition(stringIndex, fret, tuning),
-        octave: getOctaveAtPosition(stringIndex, fret, tuning, tuningOctaves),
-      })
-    }
-  }
-
-  return positions
-}
-
 // Scale definitions - intervals in semitones from root
-export const SCALE_INTERVALS = {
+const SCALE_INTERVALS = {
   major: [0, 2, 4, 5, 7, 9, 11], // W W H W W W H
 } as const
 
 export type ScaleType = keyof typeof SCALE_INTERVALS
-
-// Scale degree names (1-indexed for display)
-export const SCALE_DEGREE_NAMES = ["1", "2", "3", "4", "5", "6", "7"] as const
 
 /**
  * Get all notes in a scale given a root note
@@ -190,19 +138,6 @@ export function getScaleNotes(root: NoteName, scaleType: ScaleType = "major"): N
     const noteIndex = (rootIndex + interval) % 12
     return NOTES[noteIndex]
   })
-}
-
-/**
- * Get the scale degree (1-7) for a note in a scale, or null if not in scale
- */
-export function getScaleDegree(
-  note: NoteName,
-  root: NoteName,
-  scaleType: ScaleType = "major",
-): number | null {
-  const scaleNotes = getScaleNotes(root, scaleType)
-  const index = scaleNotes.indexOf(note)
-  return index === -1 ? null : index + 1 // 1-indexed
 }
 
 export interface ScalePosition {
@@ -333,40 +268,6 @@ export function getScaleBoxPositions(
 }
 
 /**
- * Get scale positions filtered to a specific fret range (for box/position view)
- */
-export function getScalePositionsInRange(
-  root: NoteName,
-  scaleType: ScaleType = "major",
-  startFret: number,
-  endFret: number,
-  tuning: NoteName[] = STANDARD_TUNING,
-): ScalePosition[] {
-  const positions: ScalePosition[] = []
-  const scaleNotes = getScaleNotes(root, scaleType)
-
-  for (let stringIndex = 0; stringIndex < tuning.length; stringIndex++) {
-    for (let fret = startFret; fret <= endFret; fret++) {
-      const note = getNoteAtPosition(stringIndex, fret, tuning)
-      const degreeIndex = scaleNotes.indexOf(note)
-
-      if (degreeIndex !== -1) {
-        const degree = degreeIndex + 1 // 1-indexed
-        positions.push({
-          stringIndex,
-          fret,
-          note,
-          degree,
-          isRoot: degree === 1,
-        })
-      }
-    }
-  }
-
-  return positions
-}
-
-/**
  * Get scale positions for a box that may wrap around the fretboard.
  * If endFret > maxFret, notes beyond maxFret wrap to frets 1, 2, etc.
  * This allows showing complete scale shapes even when starting near the end of the fretboard.
@@ -476,30 +377,6 @@ export function getScalePositionsWithWrap(
 }
 
 /**
- * Find which box position contains a tapped fret location.
- * Returns the index of the box position, or -1 if no box contains this fret.
- * Handles wrapped boxes: if a box wraps (e.g., frets 10-14), frets 1-2 are also valid.
- */
-export function getBoxIndexForFret(
-  fret: number,
-  boxPositions: ScaleBoxPosition[],
-  maxFret: number = FRET_COUNT,
-): number {
-  for (let i = 0; i < boxPositions.length; i++) {
-    const box = boxPositions[i]
-    // Check if fret is in the main range
-    if (fret >= box.startFret && fret <= Math.min(box.endFret, maxFret)) {
-      return i
-    }
-    // For wrapped boxes, also check if fret is in the wrapped portion (1, 2, etc.)
-    if (box.wraps && fret >= 1 && fret <= box.endFret - maxFret) {
-      return i
-    }
-  }
-  return -1
-}
-
-/**
  * Find or create a valid scale box that contains the given fret.
  * This ensures we can always show a position view for any tapped fret.
  *
@@ -518,8 +395,11 @@ export function findOrCreateBoxForFret(
 ): { box: ScaleBoxPosition; existingIndex: number } {
   const existingBoxes = getScaleBoxPositions(root, tuning, maxFret)
 
-  // First, check if any existing box contains this fret
-  const existingIndex = getBoxIndexForFret(fret, existingBoxes, maxFret)
+  // Check if any existing box contains this fret
+  const existingIndex = existingBoxes.findIndex((box) =>
+    (fret >= box.startFret && fret <= Math.min(box.endFret, maxFret)) ||
+    (box.wraps && fret >= 1 && fret <= box.endFret - maxFret)
+  )
   if (existingIndex !== -1) {
     return { box: existingBoxes[existingIndex], existingIndex }
   }

@@ -30,16 +30,9 @@ function getTuningStatus(cents: number): TuningStatus {
 }
 
 function getTuningStatusColor(status: TuningStatus): string {
-  switch (status) {
-    case "in-tune":
-      return "#22c55e" // green
-    case "flat":
-      return "#f97316" // orange
-    case "sharp":
-      return "#f97316" // orange
-    default:
-      return theme.colors.mutedForeground
-  }
+  if (status === "in-tune") return "#22c55e"
+  if (status === "flat" || status === "sharp") return "#f97316"
+  return theme.colors.mutedForeground
 }
 
 function centsToXPosition(cents: number): number {
