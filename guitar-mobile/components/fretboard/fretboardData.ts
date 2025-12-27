@@ -127,6 +127,47 @@ const SCALE_INTERVALS = {
 
 export type ScaleType = keyof typeof SCALE_INTERVALS
 
+// Arpeggio definitions - intervals in semitones from root (chord tones: 1, 3, 5, 7)
+const ARPEGGIO_INTERVALS = {
+  major7: [0, 4, 7, 11], // 1, 3, 5, 7 (major 7th)
+  dominant7: [0, 4, 7, 10], // 1, 3, 5, b7 (dominant 7th)
+  minor7: [0, 3, 7, 10], // 1, b3, 5, b7 (minor 7th)
+  minorMajor7: [0, 3, 7, 11], // 1, b3, 5, 7 (minor major 7th)
+  diminished7: [0, 3, 6, 9], // 1, b3, b5, bb7 (diminished 7th)
+  halfDiminished7: [0, 3, 6, 10], // 1, b3, b5, b7 (half-diminished/m7b5)
+  augmented7: [0, 4, 8, 10], // 1, 3, #5, b7 (augmented 7th)
+  augmentedMajor7: [0, 4, 8, 11], // 1, 3, #5, 7 (augmented major 7th)
+} as const
+
+export type ArpeggioType = keyof typeof ARPEGGIO_INTERVALS
+
+// Human-readable labels for arpeggio types
+export const ARPEGGIO_LABELS: Record<ArpeggioType, string> = {
+  major7: "Major 7",
+  dominant7: "Dominant 7",
+  minor7: "Minor 7",
+  minorMajor7: "Minor Major 7",
+  diminished7: "Diminished 7",
+  halfDiminished7: "Half-Dim 7",
+  augmented7: "Augmented 7",
+  augmentedMajor7: "Aug Major 7",
+}
+
+// Short labels for compact display
+export const ARPEGGIO_SHORT_LABELS: Record<ArpeggioType, string> = {
+  major7: "Δ7",
+  dominant7: "7",
+  minor7: "m7",
+  minorMajor7: "mΔ7",
+  diminished7: "°7",
+  halfDiminished7: "ø7",
+  augmented7: "+7",
+  augmentedMajor7: "+Δ7",
+}
+
+// All arpeggio types for iteration
+export const ARPEGGIO_TYPES: ArpeggioType[] = Object.keys(ARPEGGIO_INTERVALS) as ArpeggioType[]
+
 /**
  * Get all notes in a scale given a root note
  */
@@ -483,6 +524,343 @@ export function findOrCreateBoxForFret(
     box: {
       startFret,
       endFret,
+      rootFret: fret,
+      rootStringIndex: 0,
+      label: `Position`,
+      wraps,
+    },
+    existingIndex: -1,
+  }
+}
+
+// ============================================================================
+// ARPEGGIO FUNCTIONS
+// ============================================================================
+
+/**
+ * Get all notes in an arpeggio given a root note
+ */
+export function getArpeggioNotes(root: NoteName, arpeggioType: ArpeggioType = "major7"): NoteName[] {
+  const rootIndex = NOTES.indexOf(root)
+  const intervals = ARPEGGIO_INTERVALS[arpeggioType]
+
+  return intervals.map((interval) => {
+    const noteIndex = (rootIndex + interval) % 12
+    return NOTES[noteIndex]
+  })
+}
+
+export interface ArpeggioPosition {
+  stringIndex: number
+  fret: number
+  note: NoteName
+  degree: number // 1, 3, 5, or 7
+  isRoot: boolean
+}
+
+/**
+ * Get all positions on the fretboard for an arpeggio
+ */
+export function getArpeggioPositions(
+  root: NoteName,
+  arpeggioType: ArpeggioType = "major7",
+  tuning: NoteName[] = STANDARD_TUNING,
+  maxFret: number = FRET_COUNT,
+): ArpeggioPosition[] {
+  const positions: ArpeggioPosition[] = []
+  const arpeggioNotes = getArpeggioNotes(root, arpeggioType)
+
+  // Map index to scale degree (1, 3, 5, 7)
+  const degreeMap = [1, 3, 5, 7]
+
+  for (let stringIndex = 0; stringIndex < tuning.length; stringIndex++) {
+    for (let fret = 0; fret <= maxFret; fret++) {
+      const note = getNoteAtPosition(stringIndex, fret, tuning)
+      const noteIndex = arpeggioNotes.indexOf(note)
+
+      if (noteIndex !== -1) {
+        const degree = degreeMap[noteIndex]
+        positions.push({
+          stringIndex,
+          fret,
+          note,
+          degree,
+          isRoot: degree === 1,
+        })
+      }
+    }
+  }
+
+  return positions
+}
+
+export interface ArpeggioBoxPosition {
+  startFret: number
+  endFret: number
+  rootFret: number
+  rootStringIndex: number
+  label: string
+  wraps: boolean
+}
+
+/**
+ * Find all arpeggio box positions for a given root note.
+ * Each position is a 4-5 fret span where you can play the arpeggio across all strings.
+ * Positions are determined by root note locations on the 6th and 5th strings.
+ */
+export function getArpeggioBoxPositions(
+  root: NoteName,
+  tuning: NoteName[] = STANDARD_TUNING,
+  maxFret: number = FRET_COUNT,
+): ArpeggioBoxPosition[] {
+  const positions: ArpeggioBoxPosition[] = []
+
+  // Find root notes on the 6th string (low E) and 5th string (A)
+  const rootPositionsString6: number[] = []
+  const rootPositionsString5: number[] = []
+
+  for (let fret = 0; fret <= maxFret; fret++) {
+    if (getNoteAtPosition(0, fret, tuning) === root) {
+      rootPositionsString6.push(fret)
+    }
+    if (getNoteAtPosition(1, fret, tuning) === root) {
+      rootPositionsString5.push(fret)
+    }
+  }
+
+  // Combine and sort all root positions with their string info
+  const allRoots: Array<{ fret: number; stringIndex: number }> = [
+    ...rootPositionsString6.map((fret) => ({ fret, stringIndex: 0 })),
+    ...rootPositionsString5.map((fret) => ({ fret, stringIndex: 1 })),
+  ].sort((a, b) => a.fret - b.fret)
+
+  // Create box positions
+  const seenStartFrets = new Set<number>()
+  let positionNumber = 1
+
+  for (const rootPos of allRoots) {
+    let startFret: number
+    let endFret: number
+
+    if (rootPos.stringIndex === 0) {
+      startFret = Math.max(1, rootPos.fret)
+      endFret = startFret + 3
+    } else {
+      startFret = Math.max(1, rootPos.fret - 2)
+      endFret = startFret + 3
+    }
+
+    if (seenStartFrets.has(startFret)) continue
+
+    seenStartFrets.add(startFret)
+
+    const wraps = endFret > maxFret
+
+    positions.push({
+      startFret,
+      endFret,
+      rootFret: rootPos.fret,
+      rootStringIndex: rootPos.stringIndex,
+      label: `Position ${positionNumber}`,
+      wraps,
+    })
+
+    positionNumber++
+  }
+
+  return positions
+}
+
+/**
+ * Get arpeggio positions for a box that may wrap around the fretboard.
+ * Similar to getScalePositionsWithWrap but for arpeggios.
+ *
+ * When rootFret and rootStringIndex are provided, positions are selected
+ * based on proximity to the root note, creating more playable fingerings.
+ */
+export function getArpeggioPositionsWithWrap(
+  root: NoteName,
+  arpeggioType: ArpeggioType = "major7",
+  startFret: number,
+  endFret: number,
+  tuning: NoteName[] = STANDARD_TUNING,
+  maxFret: number = FRET_COUNT,
+  rootFret?: number,
+  rootStringIndex?: number,
+): ArpeggioPosition[] {
+  const arpeggioNotes = getArpeggioNotes(root, arpeggioType)
+  // Use root position if provided, otherwise fall back to box center
+  const anchorFret = rootFret ?? (startFret + endFret) / 2
+  const maxReach = 4
+
+  // Map index to scale degree (1, 3, 5, 7)
+  const degreeMap = [1, 3, 5, 7]
+
+  type Candidate = {
+    stringIndex: number
+    fret: number
+    displayFret: number
+    degree: number
+    note: NoteName
+    distance: number
+    octave: number
+  }
+
+  const allCandidates: Candidate[] = []
+
+  for (let stringIndex = 0; stringIndex < tuning.length; stringIndex++) {
+    for (let fret = 0; fret <= maxFret + maxReach; fret++) {
+      const note = getNoteAtPosition(stringIndex, fret, tuning)
+      const noteIndex = arpeggioNotes.indexOf(note)
+
+      if (noteIndex !== -1) {
+        let displayFret: number
+        let distance: number
+
+        if (fret > maxFret) {
+          displayFret = fret - maxFret
+          distance = Math.min(
+            Math.abs(fret - anchorFret),
+            Math.abs(displayFret - anchorFret)
+          )
+        } else {
+          displayFret = fret
+          distance = Math.abs(fret - anchorFret)
+        }
+
+        if (distance <= maxReach) {
+          const octave = getOctaveAtPosition(stringIndex, fret, tuning)
+          allCandidates.push({
+            stringIndex,
+            fret,
+            displayFret,
+            degree: degreeMap[noteIndex],
+            note,
+            distance,
+            octave,
+          })
+        }
+      }
+    }
+  }
+
+  // Group candidates by (degree, octave)
+  const degreeOctaveKey = (degree: number, octave: number) => `${degree}-${octave}`
+  const selectedPositions = new Map<string, Candidate>()
+
+  // Sort by distance, prefer higher frets when equal
+  allCandidates.sort((a, b) => {
+    if (a.distance !== b.distance) {
+      return a.distance - b.distance
+    }
+    return b.displayFret - a.displayFret
+  })
+
+  for (const candidate of allCandidates) {
+    const key = degreeOctaveKey(candidate.degree, candidate.octave)
+    if (!selectedPositions.has(key)) {
+      selectedPositions.set(key, candidate)
+    }
+  }
+
+  const positions: ArpeggioPosition[] = []
+  for (const pos of selectedPositions.values()) {
+    positions.push({
+      stringIndex: pos.stringIndex,
+      fret: pos.displayFret,
+      note: pos.note,
+      degree: pos.degree,
+      isRoot: pos.degree === 1,
+    })
+  }
+
+  return positions
+}
+
+/**
+ * Find or create a valid arpeggio box that contains the given fret.
+ */
+export function findOrCreateArpeggioBoxForFret(
+  fret: number,
+  root: NoteName,
+  tuning: NoteName[] = STANDARD_TUNING,
+  maxFret: number = FRET_COUNT,
+): { box: ArpeggioBoxPosition; existingIndex: number } {
+  const existingBoxes = getArpeggioBoxPositions(root, tuning, maxFret)
+
+  const existingIndex = existingBoxes.findIndex((box) =>
+    (fret >= box.startFret && fret <= Math.min(box.endFret, maxFret)) ||
+    (box.wraps && fret >= 1 && fret <= box.endFret - maxFret)
+  )
+  if (existingIndex !== -1) {
+    return { box: existingBoxes[existingIndex], existingIndex }
+  }
+
+  // Create a new box
+  const rootPositions: Array<{ fret: number; stringIndex: number }> = []
+
+  for (let stringIndex = 0; stringIndex < tuning.length; stringIndex++) {
+    for (let f = 1; f <= maxFret; f++) {
+      if (getNoteAtPosition(stringIndex, f, tuning) === root) {
+        rootPositions.push({ fret: f, stringIndex })
+      }
+    }
+  }
+
+  let bestBox: ArpeggioBoxPosition | null = null
+  let bestDistance = Infinity
+
+  for (const rootPos of rootPositions) {
+    let startFret: number
+    let endFret: number
+
+    if (rootPos.stringIndex === 0) {
+      startFret = Math.max(1, rootPos.fret)
+      endFret = startFret + 3
+    } else if (rootPos.stringIndex === 1) {
+      startFret = Math.max(1, rootPos.fret - 2)
+      endFret = startFret + 3
+    } else {
+      startFret = Math.max(1, rootPos.fret - 1)
+      endFret = startFret + 3
+    }
+
+    const wraps = endFret > maxFret
+    const containsFret =
+      (fret >= startFret && fret <= Math.min(endFret, maxFret)) ||
+      (wraps && fret >= 1 && fret <= endFret - maxFret)
+
+    if (containsFret) {
+      const boxCenter = startFret + 1.5
+      const distance = Math.abs(fret - boxCenter)
+
+      if (distance < bestDistance) {
+        bestDistance = distance
+        bestBox = {
+          startFret,
+          endFret,
+          rootFret: rootPos.fret,
+          rootStringIndex: rootPos.stringIndex,
+          label: `Position`,
+          wraps,
+        }
+      }
+    }
+  }
+
+  if (bestBox) {
+    return { box: bestBox, existingIndex: -1 }
+  }
+
+  // Fallback
+  const startFret = Math.max(1, fret - 1)
+  const newEndFret = startFret + 3
+  const wraps = newEndFret > maxFret
+
+  return {
+    box: {
+      startFret,
+      endFret: newEndFret,
       rootFret: fret,
       rootStringIndex: 0,
       label: `Position`,

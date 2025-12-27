@@ -34,6 +34,17 @@ export default function Index() {
             </View>
           </Pressable>
         </Link>
+        <Link href="/arpeggio" asChild>
+          <Pressable style={styles.button}>
+            <View style={styles.buttonIcon}>
+              <FontAwesome5 name="guitar" size={24} color={theme.colors.primary} />
+            </View>
+            <View>
+              <Text style={styles.buttonText}>Arpeggio</Text>
+              <Text style={styles.buttonSubtext}>Practice your arpeggios</Text>
+            </View>
+          </Pressable>
+        </Link>
         <Link href="/tuner" asChild>
           <Pressable style={styles.button}>
             <View style={styles.buttonIcon}>
