@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-export const loginSchema = z.object({
+export const loginZod = z.object({
   email: z.email().min(1, "Email is required").max(255, "Email must not exceed 255 characters"),
   password: z
     .string()
@@ -8,7 +8,7 @@ export const loginSchema = z.object({
     .max(128, "Password must not exceed 128 characters"),
 })
 
-export const passwordSchema = z
+export const passwordZod = z
   .string()
   .min(8, { message: "Password must be at least 8 characters long" })
   .max(128, { message: "Password must not exceed 64 characters" })
@@ -22,11 +22,8 @@ export const passwordSchema = z
     message: "Password must contain at least one special character",
   })
 
-export const signUpSchema = z.object({
-  fullName: z
-    .string()
-    .min(1, "Full name is required")
-    .max(100, "Full name must not exceed 100 characters"),
+export const signUpZod = z.object({
+  name: z.string().min(1, "Name is required").max(100, "Name must not exceed 100 characters"),
   email: z.email().min(1, "Email is required").max(255, "Email must not exceed 255 characters"),
-  password: passwordSchema,
+  password: passwordZod,
 })

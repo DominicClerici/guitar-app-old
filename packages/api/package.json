@@ -1,0 +1,45 @@
+{
+  "name": "@guitar/api",
+  "version": "1.0.0",
+  "description": "Guitar API package with tRPC router",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc --build",
+    "dev": "tsc-watch --build",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint src --ext .ts,.tsx",
+    "format": "prettier --write ."
+  },
+  "dependencies": {
+    "@guitar/db": "workspace:*",
+    "@guitar/schemas": "workspace:*",
+    "@supabase/supabase-js": "^2.89.0",
+    "@trpc/server": "^11.1.4",
+    "superjson": "^2.2.2",
+    "zod": "catalog:"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "development": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "development": "./src/client.ts",
+      "default": "./dist/client.js"
+    }
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.1",
+    "@eslint/js": "^9.35.0",
+    "@types/node": "^20.19.2",
+    "@typescript-eslint/eslint-plugin": "^8.43.0",
+    "@typescript-eslint/parser": "^8.43.0",
+    "eslint": "^9.35.0",
+    "prettier": "^3.6.2",
+    "tsc-watch": "^7.2.0",
+    "typescript": "^5.9.2"
+  }
+}
