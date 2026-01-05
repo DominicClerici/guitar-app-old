@@ -1,7 +1,11 @@
 import { useColors } from "@/lib/theme/ThemeContext"
 import { ReactNode } from "react"
 import { StyleProp, View, ViewStyle } from "react-native"
-import { useSafeAreaInsets } from "react-native-safe-area-context"
+import { useSafeAreaInsets, EdgeInsets } from "react-native-safe-area-context"
+
+export function useSafeInsets(): EdgeInsets {
+  return useSafeAreaInsets()
+}
 
 interface ScreenContainerProps {
   children: ReactNode

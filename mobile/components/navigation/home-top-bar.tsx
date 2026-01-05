@@ -1,5 +1,7 @@
-import { addOpacity, ThemeColors, useColors } from "@/lib/theme/ThemeContext"
+import { useSafeInsets } from "@/components/ScreenContainer"
+import { ThemeColors, useColors } from "@/lib/theme/ThemeContext"
 import { BlurView } from "expo-blur"
+import { Link } from "expo-router"
 import { useRef, useState } from "react"
 import { LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native"
 import Animated, {
@@ -11,6 +13,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated"
 
+const TRIGGER_HEIGHT = 50
 const EXPAND_DURATION = 250
 const COLLAPSE_DURATION = 200
 const CONTENT_FADE_IN_DELAY = 200
@@ -28,6 +31,7 @@ export function HomeTopBar() {
   const containerHeight = useSharedValue(BORDER_WIDTH)
   const contentOpacity = useSharedValue(0)
   const overlayOpacity = useSharedValue(0)
+  const insets = useSafeInsets()
 
   const handleContentLayout = (event: LayoutChangeEvent) => {
     const { height } = event.nativeEvent.layout
@@ -118,23 +122,35 @@ export function HomeTopBar() {
           <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
         </Pressable>
       </Animated.View>
-      <View style={styles.wrapper}>
-        <Pressable onPress={handleExpand} style={styles.header}>
+      <View style={[styles.wrapper, { marginTop: -1 * insets.top, paddingTop: insets.top }]}>
+        <Pressable
+          onPress={handleExpand}
+          style={[
+            styles.header,
+            { height: TRIGGER_HEIGHT },
+            expanded && { backgroundColor: colors.background },
+          ]}
+        >
           <Text style={styles.title}>TOP BAR</Text>
         </Pressable>
-        <Animated.View style={[styles.contentContainer, containerAnimatedStyle]}>
+        <Animated.View
+          style={[
+            styles.contentContainer,
+            containerAnimatedStyle,
+            { top: insets.top + TRIGGER_HEIGHT },
+          ]}
+        >
           {shouldRenderContent && (
             <Animated.View
               style={[styles.contentInner, contentAnimatedStyle]}
               onLayout={handleContentLayout}
             >
-              <Text style={styles.contentText}>Content</Text>
-              <Text style={styles.contentText}>Content</Text>
-              <Text style={styles.contentText}>Content</Text>
-              <Text style={styles.contentText}>Content</Text>
-              <Text style={styles.contentText}>Content</Text>
-              <Text style={styles.contentText}>Content</Text>
-              <Text style={styles.contentText}>Content</Text>
+              <Link href="/account">
+                <Text style={styles.contentText}>Account</Text>
+              </Link>
+              <Link href="/settings">
+                <Text style={styles.contentText}>Settings</Text>
+              </Link>
             </Animated.View>
           )}
         </Animated.View>
@@ -146,9 +162,8 @@ export function HomeTopBar() {
 const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     wrapper: {
-      marginBottom: 16,
       position: "relative",
-      backgroundColor: "transparent",
+      backgroundColor: colors.background,
       zIndex: 20,
     },
     overlay: {
@@ -158,7 +173,7 @@ const createStyles = (colors: ThemeColors) =>
       right: 0,
       bottom: 0,
       zIndex: 10,
-      backgroundColor: addOpacity(colors.background, 0.75),
+      // backgroundColor: addOpacity(colors.background, 0.75), maybe add back if we need it
     },
     header: {
       flexDirection: "row",
@@ -174,16 +189,13 @@ const createStyles = (colors: ThemeColors) =>
     },
     contentContainer: {
       position: "absolute",
-      top: "100%",
       left: 0,
       right: 0,
-      backgroundColor: colors.accent,
-      borderBottomLeftRadius: 8,
-      borderBottomRightRadius: 8,
       overflow: "hidden",
       zIndex: 1,
       borderBottomWidth: 1,
-      borderColor: "red",
+      backgroundColor: colors.background,
+      borderColor: colors.border,
     },
     contentInner: {
       position: "absolute",
