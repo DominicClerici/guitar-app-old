@@ -13,7 +13,7 @@
   "scripts": {
     "start": "expo start --clear",
     "android": "expo run:android",
-    "ios": "expo run:ios",
+    "ios": "expo run:ios --device",
     "web": "expo start --web",
     "lint": "expo lint",
     "type-check": "tsc --noEmit",

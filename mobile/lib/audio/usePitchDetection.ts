@@ -19,8 +19,8 @@ interface UsePitchDetectionResult {
 
 // YIN algorithm parameters
 const BUF_SIZE = 9000
-const MIN_FREQ = 30
-const MAX_FREQ = 500
+const MIN_FREQ = 60
+const MAX_FREQ = 1200
 const THRESHOLD = 0.15
 
 export function usePitchDetection(): UsePitchDetectionResult {
