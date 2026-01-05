@@ -1,5 +1,5 @@
-import { useState, useCallback, useRef, useEffect } from "react"
 import { useFocusEffect } from "expo-router"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { PermissionsAndroid, Platform } from "react-native"
 import MicrophoneStreamModule, { AudioBuffer } from "../../modules/microphone-stream"
 import DSPModule from "../../specs/NativeDSPModule"
@@ -43,7 +43,7 @@ export function usePitchDetection(): UsePitchDetectionResult {
           buttonNeutral: "Ask Me Later",
           buttonNegative: "Cancel",
           buttonPositive: "OK",
-        }
+        },
       )
       return granted === PermissionsAndroid.RESULTS.GRANTED
     }
@@ -103,29 +103,26 @@ export function usePitchDetection(): UsePitchDetectionResult {
         const len = samples.length
 
         // Append new samples to the rolling buffer
-        audioBufferRef.current = [
-          ...audioBufferRef.current.slice(len),
-          ...samples,
-        ]
+        audioBufferRef.current = [...audioBufferRef.current.slice(len), ...samples]
 
         // Calculate RMS of the new samples
         const rms = DSPModule.rms(samples)
         setRmsLevel(rms)
 
         // Only run pitch detection if we have enough signal
-        if (rms > 0.01) {
+        if (rms > 0.0005) {
           const detectedPitch = DSPModule.pitch(
             audioBufferRef.current,
             sampleRate,
             MIN_FREQ,
             MAX_FREQ,
-            THRESHOLD
+            THRESHOLD,
           )
           setPitch(detectedPitch)
         } else {
           setPitch(-1)
         }
-      }
+      },
     )
 
     return () => {
@@ -141,7 +138,7 @@ export function usePitchDetection(): UsePitchDetectionResult {
       return () => {
         stopRecording()
       }
-    }, [startRecording, stopRecording])
+    }, [startRecording, stopRecording]),
   )
 
   return {

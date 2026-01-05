@@ -16,13 +16,18 @@ Pod::Spec.new do |s|
   s.dependency 'ReactCommon/turbomodule/core'
   s.dependency 'ReactCodegen'
 
-  s.source_files = "../shared/**/*.{h,hpp,cpp}"
+  s.source_files = [
+    "**/*.{h,m,mm,cpp,hpp}"
+  ]
 
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
     'CLANG_CXX_LANGUAGE_STANDARD' => 'c++20',
-    'GCC_PREPROCESSOR_DEFINITIONS' => '$(inherited) FOLLY_NO_CONFIG=1',
+    'OTHER_CPLUSPLUSFLAGS' => '$(inherited) -DFOLLY_NO_CONFIG=1 -DFOLLY_CFG_NO_COROUTINES=1',
+    'GCC_PREPROCESSOR_DEFINITIONS' => '$(inherited) FOLLY_NO_CONFIG=1 FOLLY_CFG_NO_COROUTINES=1',
     'HEADER_SEARCH_PATHS' => [
+      '"$(PODS_TARGET_SRCROOT)"',
+      '"$(PODS_TARGET_SRCROOT)/yin"',
       '"$(PODS_ROOT)/Headers/Public/ReactCodegen"',
       '"$(PODS_ROOT)/Headers/Private/ReactCodegen"',
       '"$(PODS_ROOT)/Headers/Public/React-Core"',
