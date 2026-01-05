@@ -8,20 +8,6 @@
       "when": 1765809865688,
       "tag": "0000_illegal_meltdown",
       "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1765811967893,
-      "tag": "0001_mushy_loa",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1765830279867,
-      "tag": "0002_special_stingray",
-      "breakpoints": true
     }
   ]
 }

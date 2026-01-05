@@ -1,12 +1,8 @@
-import { config } from "dotenv"
-import type { NextConfig } from "next"
+import type { NextConfig } from "next";
 
-// Load environment variables from root .env file
-if (process.env.NODE_ENV !== "production") {
-  config({ path: "../.env" })
-}
 const nextConfig: NextConfig = {
-  transpilePackages: ["@guitar/db", "@guitar/schemas", "@guitar/chord-detection"],
-}
+  /* config options here */
+  reactCompiler: true,
+};
 
-export default nextConfig
+export default nextConfig;

@@ -1,8 +1,0 @@
-{
-  "buildCommand": "pnpm -w run build:packages && pnpm build",
-  "installCommand": "pnpm install",
-  "framework": "nextjs",
-  "git": {
-    "lfs": true
-  }
-}

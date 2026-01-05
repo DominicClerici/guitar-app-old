@@ -19,6 +19,7 @@
   },
   "workspaces": [
     "frontend",
+    "mobile",
     "packages/*"
   ],
   "dependencies": {
