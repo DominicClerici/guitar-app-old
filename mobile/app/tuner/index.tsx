@@ -74,7 +74,8 @@ interface DataPoint {
 // Circular buffer for efficient data point management
 class CircularBuffer {
   private buffer: DataPoint[]
-  private head: number = 0 // Points to the oldest element (next to be overwritten)
+  private _head: number = 0 // Points to the oldest element (next to be overwritten)
+  private _version: number = 0 // Incremented on each push to trigger re-renders
   readonly capacity: number
 
   constructor(capacity: number) {
@@ -84,31 +85,30 @@ class CircularBuffer {
       .map(() => ({ cents: 0, isActive: false }))
   }
 
+  get head(): number {
+    return this._head
+  }
+
+  get version(): number {
+    return this._version
+  }
+
   push(point: DataPoint): void {
-    this.buffer[this.head] = point
-    this.head = (this.head + 1) % this.capacity
+    this.buffer[this._head] = point
+    this._head = (this._head + 1) % this.capacity
+    this._version++
   }
 
-  // Get points in order from oldest to newest
-  toArray(): DataPoint[] {
-    const result: DataPoint[] = []
-    for (let i = 0; i < this.capacity; i++) {
-      const index = (this.head + i) % this.capacity
-      result.push(this.buffer[index])
-    }
-    return result
-  }
-
-  // Get the most recent point
-  getLatest(): DataPoint {
-    const index = (this.head - 1 + this.capacity) % this.capacity
-    return this.buffer[index]
+  // Get point at logical index (0 = oldest, capacity-1 = newest)
+  getAt(logicalIndex: number): DataPoint {
+    const physicalIndex = (this._head + logicalIndex) % this.capacity
+    return this.buffer[physicalIndex]
   }
 
   // Find the last active point's cents value
   getLastActiveCents(): number {
     for (let i = 0; i < this.capacity; i++) {
-      const index = (this.head - 1 - i + this.capacity * 2) % this.capacity
+      const index = (this._head - 1 - i + this.capacity * 2) % this.capacity
       if (this.buffer[index].isActive) {
         return this.buffer[index].cents
       }
@@ -148,12 +148,14 @@ function centsToX(cents: number, chartWidth: number): number {
 }
 
 function SeismographChart({
-  dataPoints,
+  buffer,
+  bufferVersion,
   currentCents,
   chartWidth,
   chartHeight,
 }: {
-  dataPoints: DataPoint[]
+  buffer: CircularBuffer
+  bufferVersion: number
   currentCents: number | null
   chartWidth: number
   chartHeight: number
@@ -176,6 +178,7 @@ function SeismographChart({
 
   // Generate SVG path data - memoized for performance
   // Groups consecutive active points into path segments by color
+  // Uses bufferVersion as dependency to trigger recalculation without array allocation
   const pathSegments = useMemo(() => {
     const segments: Array<{ d: string; color: string }> = []
     const segmentHeight = chartHeight / MAX_POINTS
@@ -185,9 +188,9 @@ function SeismographChart({
     let lastX = 0
     let lastY = 0
 
-    for (let i = 1; i < dataPoints.length; i++) {
-      const point = dataPoints[i]
-      const prevPoint = dataPoints[i - 1]
+    for (let i = 1; i < buffer.capacity; i++) {
+      const point = buffer.getAt(i)
+      const prevPoint = buffer.getAt(i - 1)
 
       // Only draw if both points are active
       if (!point.isActive || !prevPoint.isActive) {
@@ -235,7 +238,8 @@ function SeismographChart({
     }
 
     return segments
-  }, [dataPoints, chartWidth, chartHeight])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bufferVersion, chartWidth, chartHeight])
 
   return (
     <View style={styles.chartContainer}>
@@ -290,15 +294,19 @@ export default function TunerScreen() {
 
   // Circular buffer for efficient data point management (avoids array spreading)
   const bufferRef = useRef<CircularBuffer>(new CircularBuffer(MAX_POINTS))
-  const [dataPoints, setDataPoints] = useState<DataPoint[]>(() => bufferRef.current.toArray())
+  const [bufferVersion, setBufferVersion] = useState(0)
   const lastUpdateRef = useRef<number>(0)
+  const centsRef = useRef<number | null>(null)
+
+  // Keep centsRef in sync with current cents value
+  centsRef.current = cents
 
   // Calculate chart dimensions based on screen size
   // Container has paddingHorizontal: 20, chart is 90% of container width
   const chartWidth = (windowWidth - 40) * (CHART_WIDTH_PERCENT / 100)
   const chartHeight = windowHeight * (CHART_HEIGHT_PERCENT / 100)
 
-  // Update data points when pitch changes - uses primitives for stable dependencies
+  // Update data points when pitch changes - reads from ref for stable callback
   const updateDataPoints = useCallback(() => {
     const now = Date.now()
     if (now - lastUpdateRef.current < UPDATE_INTERVAL_MS) {
@@ -307,28 +315,25 @@ export default function TunerScreen() {
     lastUpdateRef.current = now
 
     const buffer = bufferRef.current
-    if (cents !== null) {
-      buffer.push({ cents, isActive: true })
+    const currentCents = centsRef.current
+    if (currentCents !== null) {
+      buffer.push({ cents: currentCents, isActive: true })
     } else {
       // Keep the last cents value but mark as inactive (stops drawing)
       buffer.push({ cents: buffer.getLastActiveCents(), isActive: false })
     }
-    setDataPoints(buffer.toArray())
-  }, [cents])
+    // Trigger re-render with the buffer's version (no array allocation)
+    setBufferVersion(buffer.version)
+  }, [])
 
-  // Effect to continuously update the chart when pitch is detected
+  // Effect to continuously update the chart - interval persists while recording
   useEffect(() => {
     if (status !== "recording") return
 
-    // Update immediately when pitch changes
-    updateDataPoints()
-
-    // Also set up interval for continuous updates when pitch is active
-    if (cents !== null) {
-      const interval = setInterval(updateDataPoints, UPDATE_INTERVAL_MS)
-      return () => clearInterval(interval)
-    }
-  }, [status, cents, updateDataPoints])
+    // Set up interval for continuous updates (reads current cents from ref)
+    const interval = setInterval(updateDataPoints, UPDATE_INTERVAL_MS)
+    return () => clearInterval(interval)
+  }, [status, updateDataPoints])
 
   return (
     <ScreenContainer>
@@ -355,7 +360,8 @@ export default function TunerScreen() {
 
             {/* Seismograph chart */}
             <SeismographChart
-              dataPoints={dataPoints}
+              buffer={bufferRef.current}
+              bufferVersion={bufferVersion}
               currentCents={cents}
               chartWidth={chartWidth}
               chartHeight={chartHeight}
