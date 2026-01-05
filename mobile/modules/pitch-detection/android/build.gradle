@@ -1,0 +1,39 @@
+apply plugin: 'com.android.library'
+apply plugin: 'org.jetbrains.kotlin.android'
+
+group = 'expo.modules.pitchdetection'
+
+android {
+    namespace "expo.modules.pitchdetection"
+    compileSdk 35
+
+    defaultConfig {
+        minSdk 24
+
+        externalNativeBuild {
+            cmake {
+                cppFlags "-std=c++14"
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path "src/main/jni/CMakeLists.txt"
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+}
+
+dependencies {
+    implementation project(':expo-modules-core')
+    implementation "org.jetbrains.kotlin:kotlin-stdlib"
+}

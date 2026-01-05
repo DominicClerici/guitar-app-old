@@ -2,6 +2,7 @@ import { useSafeInsets } from "@/components/ScreenContainer"
 import { ThemeColors, useColors } from "@/lib/theme/ThemeContext"
 import { BlurView } from "expo-blur"
 import { Link } from "expo-router"
+import { SettingsIcon, UserIcon } from "lucide-react-native"
 import { useRef, useState } from "react"
 import { LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native"
 import Animated, {
@@ -145,10 +146,12 @@ export function HomeTopBar() {
               style={[styles.contentInner, contentAnimatedStyle]}
               onLayout={handleContentLayout}
             >
-              <Link href="/account">
+              <Link href="/account" style={styles.contentLink}>
+                <UserIcon size={24} color={colors.foreground} />
                 <Text style={styles.contentText}>Account</Text>
               </Link>
-              <Link href="/settings">
+              <Link href="/settings" style={styles.contentLink}>
+                <SettingsIcon size={24} color={colors.foreground} />
                 <Text style={styles.contentText}>Settings</Text>
               </Link>
             </Animated.View>
@@ -208,5 +211,15 @@ const createStyles = (colors: ThemeColors) =>
     },
     contentText: {
       color: colors.foreground,
+      fontSize: 14,
+      lineHeight: 14,
+    },
+    contentLink: {
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      backgroundColor: colors.background,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
     },
   })

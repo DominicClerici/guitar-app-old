@@ -1,5 +1,5 @@
 import { ScreenContainer } from "@/components/ScreenContainer"
-import { usePitchDetection } from "@/lib/audio/usePitchDetection"
+import { useFastPitchDetection } from "@/lib/audio/useFastPitchDetection"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { StyleSheet, Text, useWindowDimensions, View } from "react-native"
 import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated"
@@ -20,8 +20,8 @@ const MAX_MIDI = 88 // E6
 // Seismograph configuration
 const CHART_HEIGHT_PERCENT = 65
 const CHART_WIDTH_PERCENT = 90
-const MAX_POINTS = 50 // Number of data points to display
-const UPDATE_INTERVAL_MS = 16.67 // How often to add new points when playing (faster scroll)
+const MAX_POINTS = 100 // Number of data points to display
+const UPDATE_INTERVAL_MS = 46.5 // How often to add new points when playing (faster scroll)
 const CENTS_RANGE = 50 // +/- 50 cents displayed
 
 // Convert frequency to MIDI note number (can be fractional)
@@ -285,7 +285,9 @@ function SeismographChart({
 }
 
 export default function TunerScreen() {
-  const { status, error, pitch } = usePitchDetection()
+  // const { status, error, pitch } = usePitchDetection()
+  const { status, error, pitch } = useFastPitchDetection()
+
   const { width: windowWidth, height: windowHeight } = useWindowDimensions()
 
   // Use primitive values instead of noteInfo object to stabilize dependencies
