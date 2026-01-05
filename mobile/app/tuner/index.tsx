@@ -1,70 +1,16 @@
 import { ScreenContainer } from "@/components/ScreenContainer"
 import { useFastPitchDetection } from "@/lib/audio/useFastPitchDetection"
+import { getCentsDeviation, getClosestNoteName } from "@/lib/audio/utils"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { StyleSheet, Text, useWindowDimensions, View } from "react-native"
-import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated"
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated"
 import Svg, { Path } from "react-native-svg"
 
-// Note names using sharps (prefer sharps over flats)
-const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
-
-// A4 = 440 Hz is the reference pitch (MIDI note 69)
-const A4_FREQ = 440
-const A4_MIDI = 69
-
-// Frequency range: E1 (~41.2 Hz) to E6 (~1318.5 Hz)
-// E1 is MIDI note 28, E6 is MIDI note 88
-const MIN_MIDI = 28 // E1
-const MAX_MIDI = 88 // E6
-
-// Seismograph configuration
 const CHART_HEIGHT_PERCENT = 65
 const CHART_WIDTH_PERCENT = 90
 const MAX_POINTS = 100 // Number of data points to display
 const UPDATE_INTERVAL_MS = 46.5 // How often to add new points when playing (faster scroll)
 const CENTS_RANGE = 50 // +/- 50 cents displayed
-
-// Convert frequency to MIDI note number (can be fractional)
-function freqToMidi(freq: number): number {
-  return 12 * Math.log2(freq / A4_FREQ) + A4_MIDI
-}
-
-// Convert MIDI note number to frequency
-function midiToFreq(midi: number): number {
-  return A4_FREQ * Math.pow(2, (midi - A4_MIDI) / 12)
-}
-
-// Get note name and octave from MIDI note number
-function midiToNoteName(midi: number): string {
-  const noteIndex = midi % 12
-  const octave = Math.floor(midi / 12) - 1
-  return `${NOTE_NAMES[noteIndex]}${octave}`
-}
-
-// Get the closest note name to a given frequency
-function getClosestNoteName(freq: number): string | null {
-  if (freq <= 0) return null
-
-  const midiNote = freqToMidi(freq)
-  if (midiNote < MIN_MIDI - 0.5 || midiNote > MAX_MIDI + 0.5) return null
-
-  const nearestMidi = Math.round(midiNote)
-  const clampedMidi = Math.max(MIN_MIDI, Math.min(MAX_MIDI, nearestMidi))
-  return midiToNoteName(clampedMidi)
-}
-
-// Get cents deviation from the closest note
-function getCentsDeviation(freq: number): number | null {
-  if (freq <= 0) return null
-
-  const midiNote = freqToMidi(freq)
-  if (midiNote < MIN_MIDI - 0.5 || midiNote > MAX_MIDI + 0.5) return null
-
-  const nearestMidi = Math.round(midiNote)
-  const clampedMidi = Math.max(MIN_MIDI, Math.min(MAX_MIDI, nearestMidi))
-  const targetFreq = midiToFreq(clampedMidi)
-  return 1200 * Math.log2(freq / targetFreq)
-}
 
 interface DataPoint {
   cents: number // -50 to +50 (clamped)
@@ -168,7 +114,7 @@ function SeismographChart({
       // Map cents (-50 to +50) to percentage (0 to 100)
       const clamped = Math.max(-CENTS_RANGE, Math.min(CENTS_RANGE, currentCents))
       const percent = ((clamped + CENTS_RANGE) / (CENTS_RANGE * 2)) * 100
-      indicatorX.value = percent
+      indicatorX.value = withTiming(percent, { duration: 50 })
     }
   }, [currentCents, indicatorX])
 
@@ -176,9 +122,6 @@ function SeismographChart({
     left: `${indicatorX.value}%`,
   }))
 
-  // Generate SVG path data - memoized for performance
-  // Groups consecutive active points into path segments by color
-  // Uses bufferVersion as dependency to trigger recalculation without array allocation
   const pathSegments = useMemo(() => {
     const segments: Array<{ d: string; color: string }> = []
     const segmentHeight = chartHeight / MAX_POINTS
@@ -192,9 +135,7 @@ function SeismographChart({
       const point = buffer.getAt(i)
       const prevPoint = buffer.getAt(i - 1)
 
-      // Only draw if both points are active
       if (!point.isActive || !prevPoint.isActive) {
-        // End current path segment if we have one
         if (currentPath) {
           segments.push({ d: currentPath, color: currentColor })
           currentPath = ""
@@ -268,6 +209,7 @@ function SeismographChart({
               stroke={seg.color}
               strokeWidth={2}
               strokeLinecap="round"
+              strokeLinejoin="round"
               fill="none"
             />
           ))}

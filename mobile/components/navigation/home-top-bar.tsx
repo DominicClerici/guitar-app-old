@@ -1,9 +1,10 @@
 import { useSafeInsets } from "@/components/ScreenContainer"
+import { useAuth } from "@/lib/auth/AuthContext"
 import { ThemeColors, useColors } from "@/lib/theme/ThemeContext"
 import { BlurView } from "expo-blur"
-import { Link } from "expo-router"
-import { SettingsIcon, UserIcon } from "lucide-react-native"
-import { useRef, useState } from "react"
+import { useRouter } from "expo-router"
+import { CreditCardIcon, LogInIcon, LogOutIcon, SettingsIcon, UserIcon } from "lucide-react-native"
+import { useEffect, useRef, useState } from "react"
 import { LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native"
 import Animated, {
   Easing,
@@ -24,6 +25,7 @@ const CONTENT_FADE_OUT_DURATION = 100
 const BORDER_WIDTH = 1
 
 export function HomeTopBar() {
+  const { user, isLoading: authLoading, signOut } = useAuth()
   const [expanded, setExpanded] = useState(false)
   const [shouldRenderContent, setShouldRenderContent] = useState(false)
   const measuredHeight = useRef(0)
@@ -33,6 +35,12 @@ export function HomeTopBar() {
   const contentOpacity = useSharedValue(0)
   const overlayOpacity = useSharedValue(0)
   const insets = useSafeInsets()
+  const router = useRouter()
+
+  // Reset measured height when user changes so we recalculate on next expand
+  useEffect(() => {
+    measuredHeight.current = 0
+  }, [user])
 
   const handleContentLayout = (event: LayoutChangeEvent) => {
     const { height } = event.nativeEvent.layout
@@ -146,14 +154,47 @@ export function HomeTopBar() {
               style={[styles.contentInner, contentAnimatedStyle]}
               onLayout={handleContentLayout}
             >
-              <Link href="/account" style={styles.contentLink}>
-                <UserIcon size={24} color={colors.foreground} />
-                <Text style={styles.contentText}>Account</Text>
-              </Link>
-              <Link href="/settings" style={styles.contentLink}>
-                <SettingsIcon size={24} color={colors.foreground} />
+              {user ? (
+                <Pressable
+                  onPress={() => router.push("/account")}
+                  style={({ pressed }) => [styles.linkContent, pressed && { opacity: 0.5 }]}
+                >
+                  <UserIcon size={22} color={colors.foreground} />
+                  <Text style={styles.contentText}>Account</Text>
+                </Pressable>
+              ) : (
+                <Pressable
+                  onPress={() => router.push("/login")}
+                  style={({ pressed }) => [styles.linkContent, pressed && { opacity: 0.5 }]}
+                >
+                  <LogInIcon size={22} color={colors.foreground} />
+                  <Text style={styles.contentText}>Sign In</Text>
+                </Pressable>
+              )}
+
+              <Pressable
+                onPress={() => router.push("/settings")}
+                style={({ pressed }) => [styles.linkContent, pressed && { opacity: 0.5 }]}
+              >
+                <SettingsIcon size={22} color={colors.foreground} />
                 <Text style={styles.contentText}>Settings</Text>
-              </Link>
+              </Pressable>
+              <Pressable
+                onPress={() => router.push("/premium")}
+                style={({ pressed }) => [styles.linkContent, pressed && { opacity: 0.5 }]}
+              >
+                <CreditCardIcon size={22} color={colors.foreground} />
+                <Text style={styles.contentText}>Get Premium</Text>
+              </Pressable>
+              {user && (
+                <Pressable
+                  onPress={() => signOut()}
+                  style={({ pressed }) => [styles.linkContent, pressed && { opacity: 0.5 }]}
+                >
+                  <LogOutIcon size={22} color={colors.foreground} />
+                  <Text style={styles.contentText}>Sign Out</Text>
+                </Pressable>
+              )}
             </Animated.View>
           )}
         </Animated.View>
@@ -207,19 +248,17 @@ const createStyles = (colors: ThemeColors) =>
       right: 0,
       padding: 16,
       flexDirection: "column",
-      gap: 16,
     },
     contentText: {
       color: colors.foreground,
-      fontSize: 14,
-      lineHeight: 14,
+      fontSize: 18,
+      fontWeight: "500",
     },
-    contentLink: {
-      paddingVertical: 12,
-      paddingHorizontal: 16,
-      backgroundColor: colors.background,
-      borderRadius: 8,
-      borderWidth: 1,
-      borderColor: colors.border,
+    linkContent: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      paddingVertical: 16,
+      width: "100%",
     },
   })
