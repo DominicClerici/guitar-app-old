@@ -1,6 +1,9 @@
 import { ScreenContainer } from "@/components/ScreenContainer"
 import { usePitchDetection } from "@/lib/audio/usePitchDetection"
-import { StyleSheet, Text, View } from "react-native"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { StyleSheet, Text, useWindowDimensions, View } from "react-native"
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated"
+import Svg, { Path } from "react-native-svg"
 
 // Note names using sharps (prefer sharps over flats)
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
@@ -13,6 +16,13 @@ const A4_MIDI = 69
 // E1 is MIDI note 28, E6 is MIDI note 88
 const MIN_MIDI = 28 // E1
 const MAX_MIDI = 88 // E6
+
+// Seismograph configuration
+const CHART_HEIGHT_PERCENT = 65
+const CHART_WIDTH_PERCENT = 90
+const MAX_POINTS = 100 // Number of data points to display
+const UPDATE_INTERVAL_MS = 8.33 // How often to add new points when playing (faster scroll)
+const CENTS_RANGE = 50 // +/- 50 cents displayed
 
 // Convert frequency to MIDI note number (can be fractional)
 function freqToMidi(freq: number): number {
@@ -31,30 +41,294 @@ function midiToNoteName(midi: number): string {
   return `${NOTE_NAMES[noteIndex]}${octave}`
 }
 
-// Get the closest note to a given frequency
-function getClosestNote(freq: number): { note: string; cents: number } | null {
+// Get the closest note name to a given frequency
+function getClosestNoteName(freq: number): string | null {
   if (freq <= 0) return null
 
   const midiNote = freqToMidi(freq)
-
-  // Check if within range
   if (midiNote < MIN_MIDI - 0.5 || midiNote > MAX_MIDI + 0.5) return null
 
-  // Round to nearest MIDI note
   const nearestMidi = Math.round(midiNote)
   const clampedMidi = Math.max(MIN_MIDI, Math.min(MAX_MIDI, nearestMidi))
+  return midiToNoteName(clampedMidi)
+}
 
-  // Calculate cents deviation
+// Get cents deviation from the closest note
+function getCentsDeviation(freq: number): number | null {
+  if (freq <= 0) return null
+
+  const midiNote = freqToMidi(freq)
+  if (midiNote < MIN_MIDI - 0.5 || midiNote > MAX_MIDI + 0.5) return null
+
+  const nearestMidi = Math.round(midiNote)
+  const clampedMidi = Math.max(MIN_MIDI, Math.min(MAX_MIDI, nearestMidi))
   const targetFreq = midiToFreq(clampedMidi)
-  const cents = 1200 * Math.log2(freq / targetFreq)
+  return 1200 * Math.log2(freq / targetFreq)
+}
 
-  return { note: midiToNoteName(clampedMidi), cents }
+interface DataPoint {
+  cents: number // -50 to +50 (clamped)
+  isActive: boolean // Whether pitch was detected at this point
+}
+
+// Circular buffer for efficient data point management
+class CircularBuffer {
+  private buffer: DataPoint[]
+  private head: number = 0 // Points to the oldest element (next to be overwritten)
+  readonly capacity: number
+
+  constructor(capacity: number) {
+    this.capacity = capacity
+    this.buffer = Array(capacity)
+      .fill(null)
+      .map(() => ({ cents: 0, isActive: false }))
+  }
+
+  push(point: DataPoint): void {
+    this.buffer[this.head] = point
+    this.head = (this.head + 1) % this.capacity
+  }
+
+  // Get points in order from oldest to newest
+  toArray(): DataPoint[] {
+    const result: DataPoint[] = []
+    for (let i = 0; i < this.capacity; i++) {
+      const index = (this.head + i) % this.capacity
+      result.push(this.buffer[index])
+    }
+    return result
+  }
+
+  // Get the most recent point
+  getLatest(): DataPoint {
+    const index = (this.head - 1 + this.capacity) % this.capacity
+    return this.buffer[index]
+  }
+
+  // Find the last active point's cents value
+  getLastActiveCents(): number {
+    for (let i = 0; i < this.capacity; i++) {
+      const index = (this.head - 1 - i + this.capacity * 2) % this.capacity
+      if (this.buffer[index].isActive) {
+        return this.buffer[index].cents
+      }
+    }
+    return 0
+  }
+}
+
+// Get color based on cents deviation
+function getColorForCents(cents: number): string {
+  const absCents = Math.abs(cents)
+  if (absCents > 15) return "#f87171" // Red (way off)
+  if (absCents > 5) return "#fbbf24" // Yellow (slightly off)
+  return "#4ade80" // Green (in tune)
+}
+
+// Pre-computed indicator styles to avoid array creation on every render
+type IndicatorState = "inTune" | "sharp" | "flat"
+function getIndicatorState(cents: number): IndicatorState {
+  if (Math.abs(cents) <= 5) return "inTune"
+  if (cents > 5) return "sharp"
+  return "flat"
+}
+
+// Pre-computed cents text styles
+type CentsState = "inTune" | "sharp" | "flat"
+function getCentsState(cents: number): CentsState {
+  if (Math.abs(cents) <= 5) return "inTune"
+  if (cents > 5) return "sharp"
+  return "flat"
+}
+
+// Convert cents to X position (0 to chartWidth)
+function centsToX(cents: number, chartWidth: number): number {
+  const clamped = Math.max(-CENTS_RANGE, Math.min(CENTS_RANGE, cents))
+  return ((clamped + CENTS_RANGE) / (CENTS_RANGE * 2)) * chartWidth
+}
+
+function SeismographChart({
+  dataPoints,
+  currentCents,
+  chartWidth,
+  chartHeight,
+}: {
+  dataPoints: DataPoint[]
+  currentCents: number | null
+  chartWidth: number
+  chartHeight: number
+}) {
+  // Animated value for the current indicator position
+  const indicatorX = useSharedValue(50) // percentage (50 = center)
+
+  useEffect(() => {
+    if (currentCents !== null) {
+      // Map cents (-50 to +50) to percentage (0 to 100)
+      const clamped = Math.max(-CENTS_RANGE, Math.min(CENTS_RANGE, currentCents))
+      const percent = ((clamped + CENTS_RANGE) / (CENTS_RANGE * 2)) * 100
+      indicatorX.value = withTiming(percent, { duration: 50 })
+    }
+  }, [currentCents, indicatorX])
+
+  const indicatorStyle = useAnimatedStyle(() => ({
+    left: `${indicatorX.value}%`,
+  }))
+
+  // Generate SVG path data - memoized for performance
+  // Groups consecutive active points into path segments by color
+  const pathSegments = useMemo(() => {
+    const segments: Array<{ d: string; color: string }> = []
+    const segmentHeight = chartHeight / MAX_POINTS
+
+    let currentPath = ""
+    let currentColor = ""
+    let lastX = 0
+    let lastY = 0
+
+    for (let i = 1; i < dataPoints.length; i++) {
+      const point = dataPoints[i]
+      const prevPoint = dataPoints[i - 1]
+
+      // Only draw if both points are active
+      if (!point.isActive || !prevPoint.isActive) {
+        // End current path segment if we have one
+        if (currentPath) {
+          segments.push({ d: currentPath, color: currentColor })
+          currentPath = ""
+          currentColor = ""
+        }
+        continue
+      }
+
+      const x1 = centsToX(prevPoint.cents, chartWidth)
+      const y1 = (MAX_POINTS - i + 1) * segmentHeight
+      const x2 = centsToX(point.cents, chartWidth)
+      const y2 = (MAX_POINTS - i) * segmentHeight
+
+      // Use the average cents for color
+      const avgCents = (point.cents + prevPoint.cents) / 2
+      const color = getColorForCents(avgCents)
+
+      // If color changes or this is a new segment, start a new path
+      if (color !== currentColor) {
+        if (currentPath) {
+          segments.push({ d: currentPath, color: currentColor })
+        }
+        currentPath = `M${x1.toFixed(1)},${y1.toFixed(1)}L${x2.toFixed(1)},${y2.toFixed(1)}`
+        currentColor = color
+      } else {
+        // Continue the path - if we're at the same position, just lineto
+        if (Math.abs(lastX - x1) < 0.1 && Math.abs(lastY - y1) < 0.1) {
+          currentPath += `L${x2.toFixed(1)},${y2.toFixed(1)}`
+        } else {
+          // Need to move to new position
+          currentPath += `M${x1.toFixed(1)},${y1.toFixed(1)}L${x2.toFixed(1)},${y2.toFixed(1)}`
+        }
+      }
+      lastX = x2
+      lastY = y2
+    }
+
+    // Don't forget the last segment
+    if (currentPath) {
+      segments.push({ d: currentPath, color: currentColor })
+    }
+
+    return segments
+  }, [dataPoints, chartWidth, chartHeight])
+
+  return (
+    <View style={styles.chartContainer}>
+      {/* Chart labels */}
+      <View style={styles.chartLabels}>
+        <Text style={styles.chartLabel}>♭ Flat</Text>
+        <Text style={[styles.chartLabel, styles.chartLabelCenter]}>In Tune</Text>
+        <Text style={styles.chartLabel}>Sharp ♯</Text>
+      </View>
+
+      {/* Main chart area */}
+      <View style={[styles.chartArea, { height: chartHeight }]}>
+        {/* Center line (in-tune reference) */}
+        <View style={styles.centerLine} />
+
+        {/* Guide lines at -25 and +25 cents */}
+        <View style={[styles.guideLine, { left: "25%" }]} />
+        <View style={[styles.guideLine, { left: "75%" }]} />
+
+        {/* SVG Seismograph line - using Path elements for better performance */}
+        <Svg width={chartWidth} height={chartHeight} style={styles.svgContainer}>
+          {pathSegments.map((seg, idx) => (
+            <Path
+              key={idx}
+              d={seg.d}
+              stroke={seg.color}
+              strokeWidth={2}
+              strokeLinecap="round"
+              fill="none"
+            />
+          ))}
+        </Svg>
+
+        {/* Current position indicator at the top */}
+        {currentCents !== null && (
+          <Animated.View style={[styles.currentIndicator, indicatorStyle]}>
+            <View style={indicatorDotStyles[getIndicatorState(currentCents)]} />
+          </Animated.View>
+        )}
+      </View>
+    </View>
+  )
 }
 
 export default function TunerScreen() {
   const { status, error, pitch } = usePitchDetection()
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions()
 
-  const noteInfo = getClosestNote(pitch)
+  // Use primitive values instead of noteInfo object to stabilize dependencies
+  const noteName = getClosestNoteName(pitch)
+  const cents = getCentsDeviation(pitch)
+
+  // Circular buffer for efficient data point management (avoids array spreading)
+  const bufferRef = useRef<CircularBuffer>(new CircularBuffer(MAX_POINTS))
+  const [dataPoints, setDataPoints] = useState<DataPoint[]>(() => bufferRef.current.toArray())
+  const lastUpdateRef = useRef<number>(0)
+
+  // Calculate chart dimensions based on screen size
+  // Container has paddingHorizontal: 20, chart is 90% of container width
+  const chartWidth = (windowWidth - 40) * (CHART_WIDTH_PERCENT / 100)
+  const chartHeight = windowHeight * (CHART_HEIGHT_PERCENT / 100)
+
+  // Update data points when pitch changes - uses primitives for stable dependencies
+  const updateDataPoints = useCallback(() => {
+    const now = Date.now()
+    if (now - lastUpdateRef.current < UPDATE_INTERVAL_MS) {
+      return
+    }
+    lastUpdateRef.current = now
+
+    const buffer = bufferRef.current
+    if (cents !== null) {
+      buffer.push({ cents, isActive: true })
+    } else {
+      // Keep the last cents value but mark as inactive (stops drawing)
+      buffer.push({ cents: buffer.getLastActiveCents(), isActive: false })
+    }
+    setDataPoints(buffer.toArray())
+  }, [cents])
+
+  // Effect to continuously update the chart when pitch is detected
+  useEffect(() => {
+    if (status !== "recording") return
+
+    // Update immediately when pitch changes
+    updateDataPoints()
+
+    // Also set up interval for continuous updates when pitch is active
+    if (cents !== null) {
+      const interval = setInterval(updateDataPoints, UPDATE_INTERVAL_MS)
+      return () => clearInterval(interval)
+    }
+  }, [status, cents, updateDataPoints])
 
   return (
     <ScreenContainer>
@@ -63,49 +337,29 @@ export default function TunerScreen() {
 
         {status === "recording" && (
           <>
-            {/* Pitch display */}
+            {/* Pitch display above chart */}
             <View style={styles.pitchContainer}>
-              <Text style={styles.noteText}>{noteInfo?.note ?? "--"}</Text>
-              <Text style={styles.frequencyText}>
-                {pitch > 0 ? `${pitch.toFixed(1)} Hz` : "-- Hz"}
-              </Text>
-              {noteInfo && (
-                <Text
-                  style={[
-                    styles.centsText,
-                    noteInfo.cents > 5 && styles.centsSharp,
-                    noteInfo.cents < -5 && styles.centsFlat,
-                    Math.abs(noteInfo.cents) <= 5 && styles.centsInTune,
-                  ]}
-                >
-                  {noteInfo.cents > 0 ? "+" : ""}
-                  {noteInfo.cents.toFixed(0)} cents
+              <Text style={styles.noteText}>{noteName ?? "--"}</Text>
+              <View style={styles.pitchDetails}>
+                <Text style={styles.frequencyText}>
+                  {pitch > 0 ? `${pitch.toFixed(1)} Hz` : "-- Hz"}
                 </Text>
-              )}
-            </View>
-
-            {/* Tuning indicator bar */}
-            <View style={styles.tuningBarContainer}>
-              <View style={styles.tuningBarBackground}>
-                <View style={styles.tuningBarCenter} />
-                {noteInfo && (
-                  <View
-                    style={[
-                      styles.tuningBarIndicator,
-                      {
-                        left: `${50 + Math.max(-50, Math.min(50, noteInfo.cents))}%`,
-                      },
-                      Math.abs(noteInfo.cents) <= 5 && styles.tuningBarInTune,
-                    ]}
-                  />
+                {cents !== null && (
+                  <Text style={centsTextStyles[getCentsState(cents)]}>
+                    {cents > 0 ? "+" : ""}
+                    {cents.toFixed(0)} cents
+                  </Text>
                 )}
               </View>
-              <View style={styles.tuningLabels}>
-                <Text style={styles.tuningLabel}>♭ Flat</Text>
-                <Text style={styles.tuningLabel}>In Tune</Text>
-                <Text style={styles.tuningLabel}>Sharp ♯</Text>
-              </View>
             </View>
+
+            {/* Seismograph chart */}
+            <SeismographChart
+              dataPoints={dataPoints}
+              currentCents={cents}
+              chartWidth={chartWidth}
+              chartHeight={chartHeight}
+            />
           </>
         )}
       </View>
@@ -117,8 +371,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     alignItems: "center",
-    justifyContent: "center",
-    padding: 20,
+    justifyContent: "flex-start",
+    paddingTop: 40,
+    paddingHorizontal: 20,
   },
   error: {
     color: "#f87171",
@@ -128,75 +383,120 @@ const styles = StyleSheet.create({
   },
   pitchContainer: {
     alignItems: "center",
-    marginBottom: 30,
+    marginBottom: 20,
   },
   noteText: {
     fontSize: 72,
     fontWeight: "bold",
     color: "#fff",
   },
+  pitchDetails: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 16,
+    marginTop: 8,
+  },
   frequencyText: {
-    fontSize: 24,
-    color: "#888",
-    marginTop: 8,
-    fontVariant: ["tabular-nums"],
-  },
-  centsText: {
     fontSize: 20,
-    marginTop: 8,
+    color: "#888",
     fontVariant: ["tabular-nums"],
   },
-  centsInTune: {
+  // Chart styles
+  chartContainer: {
+    width: `${CHART_WIDTH_PERCENT}%`,
+    alignItems: "center",
+  },
+  chartLabels: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    width: "100%",
+    marginBottom: 8,
+  },
+  chartLabel: {
+    fontSize: 12,
+    color: "#666",
+  },
+  chartLabelCenter: {
     color: "#4ade80",
   },
-  centsSharp: {
-    color: "#fbbf24",
-  },
-  centsFlat: {
-    color: "#f87171",
-  },
-  tuningBarContainer: {
+  chartArea: {
     width: "100%",
-    alignItems: "center",
-    marginBottom: 30,
-  },
-  tuningBarBackground: {
-    width: "90%",
-    height: 30,
-    backgroundColor: "#333",
-    borderRadius: 15,
-    position: "relative",
+    backgroundColor: "#1a1a1a",
+    borderRadius: 12,
     overflow: "hidden",
+    position: "relative",
   },
-  tuningBarCenter: {
+  centerLine: {
     position: "absolute",
     left: "50%",
     top: 0,
     bottom: 0,
-    width: 4,
-    marginLeft: -2,
-    backgroundColor: "#4ade80",
+    width: 2,
+    marginLeft: -1,
+    backgroundColor: "#4ade8040",
   },
-  tuningBarIndicator: {
+  guideLine: {
     position: "absolute",
-    top: 4,
-    bottom: 4,
-    width: 8,
-    marginLeft: -4,
-    backgroundColor: "#fff",
-    borderRadius: 4,
+    top: 0,
+    bottom: 0,
+    width: 1,
+    backgroundColor: "#ffffff10",
   },
-  tuningBarInTune: {
-    backgroundColor: "#4ade80",
+  svgContainer: {
+    position: "absolute",
+    top: 0,
+    left: 0,
   },
-  tuningLabels: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    width: "90%",
-    marginTop: 8,
-  },
-  tuningLabel: {
-    fontSize: 12,
-    color: "#666",
+  currentIndicator: {
+    position: "absolute",
+    top: 0,
+    marginLeft: -8,
+    zIndex: 10,
   },
 })
+
+// Pre-computed combined styles to avoid array spreading on every render
+const indicatorDotStyles: Record<IndicatorState, object> = {
+  inTune: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: "#4ade80",
+    borderWidth: 2,
+    borderColor: "#4ade80",
+  },
+  sharp: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: "#fbbf24",
+    borderWidth: 2,
+    borderColor: "#fbbf24",
+  },
+  flat: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: "#f87171",
+    borderWidth: 2,
+    borderColor: "#f87171",
+  },
+}
+
+const centsTextStyles: Record<CentsState, object> = {
+  inTune: {
+    fontSize: 20,
+    fontVariant: ["tabular-nums"] as const,
+    color: "#4ade80",
+  },
+  sharp: {
+    fontSize: 20,
+    fontVariant: ["tabular-nums"] as const,
+    color: "#fbbf24",
+  },
+  flat: {
+    fontSize: 20,
+    fontVariant: ["tabular-nums"] as const,
+    color: "#f87171",
+  },
+}

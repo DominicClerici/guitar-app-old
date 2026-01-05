@@ -16,6 +16,7 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
+        "CADisableMinimumFrameDurationOnPhone": true,
         "NSMicrophoneUsageDescription": "This app needs access to the microphone to detect pitch for guitar tuning."
       },
       "bundleIdentifier": "com.dclerici.mobile"

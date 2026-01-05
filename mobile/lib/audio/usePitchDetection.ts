@@ -23,6 +23,43 @@ const MIN_FREQ = 60
 const MAX_FREQ = 1200
 const THRESHOLD = 0.15
 
+// Circular buffer for audio samples - avoids array spreading on every callback
+class AudioCircularBuffer {
+  private buffer: Float32Array
+  private writeHead: number = 0
+  readonly capacity: number
+
+  constructor(capacity: number) {
+    this.capacity = capacity
+    this.buffer = new Float32Array(capacity)
+  }
+
+  // Append new samples to the buffer
+  push(samples: number[]): void {
+    const len = samples.length
+    for (let i = 0; i < len; i++) {
+      this.buffer[this.writeHead] = samples[i]
+      this.writeHead = (this.writeHead + 1) % this.capacity
+    }
+  }
+
+  // Get samples in order from oldest to newest as a regular array
+  // (required for DSPModule.pitch which expects number[])
+  toArray(): number[] {
+    const result = new Array<number>(this.capacity)
+    for (let i = 0; i < this.capacity; i++) {
+      result[i] = this.buffer[(this.writeHead + i) % this.capacity]
+    }
+    return result
+  }
+
+  // Reset the buffer to zeros
+  reset(): void {
+    this.buffer.fill(0)
+    this.writeHead = 0
+  }
+}
+
 export function usePitchDetection(): UsePitchDetectionResult {
   const [status, setStatus] = useState<PitchDetectionStatus>("idle")
   const [error, setError] = useState<string | null>(null)
@@ -30,8 +67,8 @@ export function usePitchDetection(): UsePitchDetectionResult {
   const [rmsLevel, setRmsLevel] = useState<number>(0)
   const [sampleRate, setSampleRate] = useState<number>(44100)
 
-  // Audio buffer accumulator - we need ~9000 samples for good pitch detection
-  const audioBufferRef = useRef<number[]>(new Array(BUF_SIZE).fill(0))
+  // Audio buffer accumulator - uses circular buffer to avoid array allocation on each callback
+  const audioBufferRef = useRef<AudioCircularBuffer>(new AudioCircularBuffer(BUF_SIZE))
 
   const requestPermissions = useCallback(async (): Promise<boolean> => {
     if (Platform.OS === "android") {
@@ -86,7 +123,7 @@ export function usePitchDetection(): UsePitchDetectionResult {
       setStatus("idle")
       setPitch(-1)
       setRmsLevel(0)
-      audioBufferRef.current = new Array(BUF_SIZE).fill(0)
+      audioBufferRef.current.reset()
     } catch (err) {
       console.error("Failed to stop recording:", err)
     }
@@ -100,19 +137,18 @@ export function usePitchDetection(): UsePitchDetectionResult {
       "onAudioBuffer",
       (buffer: AudioBuffer) => {
         const samples = buffer.samples
-        const len = samples.length
 
-        // Append new samples to the rolling buffer
-        audioBufferRef.current = [...audioBufferRef.current.slice(len), ...samples]
+        // Append new samples to the circular buffer (no array allocation)
+        audioBufferRef.current.push(samples)
 
         // Calculate RMS of the new samples
         const rms = DSPModule.rms(samples)
         setRmsLevel(rms)
 
         // Only run pitch detection if we have enough signal
-        if (rms > 0.0005) {
+        if (rms > 0.0004) {
           const detectedPitch = DSPModule.pitch(
-            audioBufferRef.current,
+            audioBufferRef.current.toArray(),
             sampleRate,
             MIN_FREQ,
             MAX_FREQ,
