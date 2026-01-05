@@ -71,6 +71,12 @@ export default function HomeScreen() {
             </Link>
           </>
         )}
+        <Link
+          style={buttonVariants(colors, { variant: "outline", size: "lg" }).button}
+          href="/tuner"
+        >
+          <Text style={buttonVariants(colors, { variant: "outline", size: "lg" }).text}>Tuner</Text>
+        </Link>
       </View>
     </ScreenContainer>
   )
