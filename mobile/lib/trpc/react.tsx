@@ -1,11 +1,10 @@
+import { sessionRef } from "@/lib/auth/sessionRef"
+import type { AppRouter } from "@guitar/api/client"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { httpBatchLink } from "@trpc/client"
 import { createTRPCReact } from "@trpc/react-query"
-import type { AppRouter } from "@guitar/api/client"
 import { useState } from "react"
 import superjson from "superjson"
-import { supabase } from "../supabase/client"
-
 // Create the tRPC React hooks
 export const trpc = createTRPCReact<AppRouter>()
 
@@ -21,7 +20,7 @@ export function TRPCProvider({ children }: { children: React.ReactNode }) {
             refetchOnWindowFocus: false,
           },
         },
-      })
+      }),
   )
 
   const [trpcClient] = useState(() =>
@@ -30,22 +29,16 @@ export function TRPCProvider({ children }: { children: React.ReactNode }) {
         httpBatchLink({
           url: `${API_URL}/api/trpc`,
           transformer: superjson,
-          async headers() {
-            const {
-              data: { session },
-            } = await supabase.auth.getSession()
-
-            if (session?.access_token) {
-              return {
-                Authorization: `Bearer ${session.access_token}`,
-              }
+          headers() {
+            const token = sessionRef.current?.access_token
+            if (token) {
+              return { Authorization: `Bearer ${token}` }
             }
-
             return {}
           },
         }),
       ],
-    })
+    }),
   )
 
   return (

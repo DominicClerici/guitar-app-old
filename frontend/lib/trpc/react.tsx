@@ -1,12 +1,12 @@
 "use client"
 
+import { createClient } from "@/lib/supabase/client"
+import type { AppRouter } from "@guitar/api"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { httpBatchLink } from "@trpc/client"
 import { createTRPCReact } from "@trpc/react-query"
-import type { AppRouter } from "@guitar/api"
 import { useState } from "react"
 import superjson from "superjson"
-import { createClient } from "@/lib/supabase/client"
 
 // Create the tRPC React hooks
 export const trpc = createTRPCReact<AppRouter>()
@@ -31,7 +31,7 @@ export function TRPCProvider({ children }: { children: React.ReactNode }) {
             refetchOnWindowFocus: false,
           },
         },
-      })
+      }),
   )
 
   const [trpcClient] = useState(() =>
@@ -57,7 +57,7 @@ export function TRPCProvider({ children }: { children: React.ReactNode }) {
           },
         }),
       ],
-    })
+    }),
   )
 
   return (

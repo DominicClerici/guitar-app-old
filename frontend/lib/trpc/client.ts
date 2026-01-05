@@ -1,5 +1,5 @@
-import { createTRPCClient, httpBatchLink } from "@trpc/client"
 import type { AppRouter } from "@guitar/api"
+import { createTRPCClient, httpBatchLink } from "@trpc/client"
 import superjson from "superjson"
 
 function getBaseUrl() {

@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "type-check": "tsc --noEmit",
-    "lint": "eslint"
+    "lint": "eslint",
+    "clean": "rm -rf node_modules tsconfig.tsbuildinfo next-env.d.ts .next"
   },
   "dependencies": {
     "@guitar/api": "workspace:*",

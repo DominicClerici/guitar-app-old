@@ -1,7 +1,7 @@
-import { createTRPCClient, httpBatchLink } from "@trpc/client"
+import { supabase } from "@/lib/supabase"
 import type { AppRouter } from "@guitar/api/client"
+import { createTRPCClient, httpBatchLink } from "@trpc/client"
 import superjson from "superjson"
-import { supabase } from "../supabase/client"
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000"
 

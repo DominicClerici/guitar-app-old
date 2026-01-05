@@ -9,7 +9,8 @@
     "dev": "tsc-watch --build",
     "type-check": "tsc --noEmit",
     "lint": "eslint src --ext .ts,.tsx",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "clean": "rm -rf dist node_modules tsconfig.tsbuildinfo"
   },
   "dependencies": {
     "@guitar/db": "workspace:*",

@@ -1,9 +1,9 @@
 import "server-only"
 
-import { appRouter, createTRPCContext, createCallerFactory } from "@guitar/api"
+import { createClient } from "@/lib/supabase/server"
+import { appRouter, createCallerFactory, createTRPCContext } from "@guitar/api"
 import { headers } from "next/headers"
 import { cache } from "react"
-import { createClient } from "@/lib/supabase/server"
 
 // Create a caller factory for server-side calls
 const createCaller = createCallerFactory(appRouter)
@@ -14,7 +14,9 @@ const createContext = cache(async () => {
 
   // Get the Supabase session from cookies
   const supabase = await createClient()
-  const { data: { session } } = await supabase.auth.getSession()
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
 
   // Create new headers with the auth token if we have a session
   const newHeaders = new Headers(heads)

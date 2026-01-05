@@ -1,5 +1,5 @@
-import { fetchRequestHandler } from "@trpc/server/adapters/fetch"
 import { appRouter, createTRPCContext } from "@guitar/api"
+import { fetchRequestHandler } from "@trpc/server/adapters/fetch"
 
 const handler = (req: Request) =>
   fetchRequestHandler({
@@ -10,9 +10,7 @@ const handler = (req: Request) =>
     onError:
       process.env.NODE_ENV === "development"
         ? ({ path, error }) => {
-            console.error(
-              `❌ tRPC failed on ${path ?? "<no-path>"}: ${error.message}`
-            )
+            console.error(`❌ tRPC failed on ${path ?? "<no-path>"}: ${error.message}`)
           }
         : undefined,
   })

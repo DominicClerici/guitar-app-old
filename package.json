@@ -3,9 +3,7 @@
   "private": true,
   "packageManager": "pnpm@10.11.0",
   "scripts": {
-    "dev:web": "concurrently --kill-others --names \"frontend,db,schemas,api\" \"pnpm --filter=frontend run dev\" \"pnpm --filter=@guitar/db run dev\" \"pnpm --filter=@guitar/schemas run dev\" \"pnpm --filter=@guitar/api run dev\"",
-    "dev:mobile": "concurrently --kill-others --names \"mobile,db,schemas,api\" \"pnpm --filter=mobile run dev\" \"pnpm --filter=@guitar/db run dev\" \"pnpm --filter=@guitar/schemas run dev\" \"pnpm --filter=@guitar/api run dev\"",
-    "dev:all": "concurrently --kill-others --names \"frontend,mobile,db,schemas,api\" \"pnpm --filter=frontend run dev\" \"pnpm --filter=mobile run dev\" \"pnpm --filter=@guitar/db run dev\" \"pnpm --filter=@guitar/schemas run dev\" \"pnpm --filter=@guitar/api run dev\"",
+    "dev": "concurrently --kill-others --names \"frontend,db,schemas,api\" \"pnpm --filter=frontend run dev\" \"pnpm --filter=@guitar/db run dev\" \"pnpm --filter=@guitar/schemas run dev\" \"pnpm --filter=@guitar/api run dev\"",
     "build": "pnpm run build:packages && pnpm --filter=frontend run build",
     "build:vercel": "cd frontend && pnpm run build",
     "build:packages": "pnpm --filter=@guitar/schemas run build && pnpm --filter=@guitar/db run build && pnpm --filter=@guitar/api run build",
@@ -13,7 +11,8 @@
     "format:check": "prettier --check .",
     "format-staged": "git diff --cached --name-only --diff-filter=ACMR | xargs prettier --write --ignore-unknown && git diff --cached --name-only --diff-filter=ACMR | xargs git add",
     "type-check": "pnpm recursive run type-check",
-    "lint": "pnpm recursive run lint"
+    "lint": "pnpm recursive run lint",
+    "clean": "pnpm recursive run clean && rm -rf node_modules pnpm-lock.yaml"
   },
   "engines": {
     "node": ">=20.0.0",
