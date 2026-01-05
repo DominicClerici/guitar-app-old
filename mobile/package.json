@@ -2,14 +2,6 @@
   "name": "mobile",
   "version": "1.0.0",
   "main": "expo-router/entry",
-  "codegenConfig": {
-    "name": "AppSpecs",
-    "type": "modules",
-    "jsSrcsDir": "specs",
-    "android": {
-      "javaPackageName": "com.mobile.specs"
-    }
-  },
   "scripts": {
     "start": "expo start --clear",
     "android": "expo run:android",
