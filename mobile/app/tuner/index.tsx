@@ -2,7 +2,7 @@ import { ScreenContainer } from "@/components/ScreenContainer"
 import { usePitchDetection } from "@/lib/audio/usePitchDetection"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { StyleSheet, Text, useWindowDimensions, View } from "react-native"
-import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated"
+import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated"
 import Svg, { Path } from "react-native-svg"
 
 // Note names using sharps (prefer sharps over flats)
@@ -20,8 +20,8 @@ const MAX_MIDI = 88 // E6
 // Seismograph configuration
 const CHART_HEIGHT_PERCENT = 65
 const CHART_WIDTH_PERCENT = 90
-const MAX_POINTS = 100 // Number of data points to display
-const UPDATE_INTERVAL_MS = 8.33 // How often to add new points when playing (faster scroll)
+const MAX_POINTS = 50 // Number of data points to display
+const UPDATE_INTERVAL_MS = 16.67 // How often to add new points when playing (faster scroll)
 const CENTS_RANGE = 50 // +/- 50 cents displayed
 
 // Convert frequency to MIDI note number (can be fractional)
@@ -168,7 +168,7 @@ function SeismographChart({
       // Map cents (-50 to +50) to percentage (0 to 100)
       const clamped = Math.max(-CENTS_RANGE, Math.min(CENTS_RANGE, currentCents))
       const percent = ((clamped + CENTS_RANGE) / (CENTS_RANGE * 2)) * 100
-      indicatorX.value = withTiming(percent, { duration: 50 })
+      indicatorX.value = percent
     }
   }, [currentCents, indicatorX])
 
