@@ -1,4 +1,5 @@
 import { HomeTopBar } from "@/components/navigation/home-top-bar"
+import { ScreenContainer } from "@/components/ScreenContainer"
 import { buttonVariants } from "@/components/ui/button"
 import DarkSelector from "@/components/ui/dark-selector"
 import { useAuth } from "@/lib/auth/AuthContext"
@@ -29,7 +30,7 @@ export default function HomeScreen() {
   }
 
   return (
-    <>
+    <ScreenContainer>
       <HomeTopBar />
       <View style={styles.container}>
         <Text style={styles.title}>Hello World</Text>
@@ -71,7 +72,7 @@ export default function HomeScreen() {
           </>
         )}
       </View>
-    </>
+    </ScreenContainer>
   )
 }
 

@@ -1,4 +1,5 @@
-import { ThemeColors, useColors } from "@/lib/theme/ThemeContext"
+import { addOpacity, ThemeColors, useColors } from "@/lib/theme/ThemeContext"
+import { BlurView } from "expo-blur"
 import { useRef, useState } from "react"
 import { LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native"
 import Animated, {
@@ -16,22 +17,24 @@ const CONTENT_FADE_IN_DELAY = 200
 const CONTENT_FADE_IN_DURATION = 150
 const CONTENT_FADE_OUT_DURATION = 100
 
+const BORDER_WIDTH = 1
+
 export function HomeTopBar() {
   const [expanded, setExpanded] = useState(false)
-  const [shouldRender, setShouldRender] = useState(false)
+  const [shouldRenderContent, setShouldRenderContent] = useState(false)
   const measuredHeight = useRef(0)
   const colors = useColors()
   const styles = createStyles(colors)
-
-  const containerHeight = useSharedValue(0)
+  const containerHeight = useSharedValue(BORDER_WIDTH)
   const contentOpacity = useSharedValue(0)
+  const overlayOpacity = useSharedValue(0)
 
   const handleContentLayout = (event: LayoutChangeEvent) => {
     const { height } = event.nativeEvent.layout
     if (height > 0 && measuredHeight.current === 0) {
       measuredHeight.current = height
       // Now that we have the height, start the animation
-      containerHeight.value = withTiming(height, {
+      containerHeight.value = withTiming(height + BORDER_WIDTH, {
         duration: EXPAND_DURATION,
         easing: Easing.out(Easing.cubic),
       })
@@ -40,11 +43,11 @@ export function HomeTopBar() {
 
   const handleExpand = () => {
     if (!expanded) {
-      setShouldRender(true)
+      setShouldRenderContent(true)
       setExpanded(true)
       // If we already know the height (from previous open), animate immediately
       if (measuredHeight.current > 0) {
-        containerHeight.value = withTiming(measuredHeight.current, {
+        containerHeight.value = withTiming(measuredHeight.current + BORDER_WIDTH, {
           duration: EXPAND_DURATION,
           easing: Easing.out(Easing.cubic),
         })
@@ -57,27 +60,35 @@ export function HomeTopBar() {
           easing: Easing.out(Easing.cubic),
         }),
       )
-    } else {
-      setExpanded(false)
-      contentOpacity.value = withTiming(0, {
-        duration: CONTENT_FADE_OUT_DURATION,
+      overlayOpacity.value = withTiming(1, {
+        duration: EXPAND_DURATION,
         easing: Easing.out(Easing.cubic),
       })
+    } else {
+      setExpanded(false)
       containerHeight.value = withDelay(
         CONTENT_FADE_OUT_DURATION,
         withTiming(
-          0,
+          BORDER_WIDTH,
           {
             duration: COLLAPSE_DURATION,
-            easing: Easing.in(Easing.cubic),
+            easing: Easing.out(Easing.cubic),
           },
           (finished) => {
             if (finished) {
-              runOnJS(setShouldRender)(false)
+              runOnJS(setShouldRenderContent)(false)
             }
           },
         ),
       )
+      contentOpacity.value = withTiming(0, {
+        duration: CONTENT_FADE_OUT_DURATION,
+        easing: Easing.out(Easing.cubic),
+      })
+      overlayOpacity.value = withTiming(0, {
+        duration: EXPAND_DURATION,
+        easing: Easing.out(Easing.cubic),
+      })
     }
   }
 
@@ -89,46 +100,72 @@ export function HomeTopBar() {
     opacity: contentOpacity.value,
   }))
 
+  const overlayAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: overlayOpacity.value,
+  }))
+
   return (
-    <View style={styles.wrapper}>
-      <Pressable onPress={handleExpand} style={styles.header}>
-        <Text style={styles.title}>TOP BAR</Text>
-      </Pressable>
-      {shouldRender && (
+    <>
+      <Animated.View style={[styles.overlay, overlayAnimatedStyle]}>
+        <Pressable
+          onPress={() => {
+            if (expanded) {
+              handleExpand()
+            }
+          }}
+          style={StyleSheet.absoluteFill}
+        >
+          <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+        </Pressable>
+      </Animated.View>
+      <View style={styles.wrapper}>
+        <Pressable onPress={handleExpand} style={styles.header}>
+          <Text style={styles.title}>TOP BAR</Text>
+        </Pressable>
         <Animated.View style={[styles.contentContainer, containerAnimatedStyle]}>
-          <Animated.View
-            style={[styles.contentInner, contentAnimatedStyle]}
-            onLayout={handleContentLayout}
-          >
-            <Text style={styles.contentText}>Content</Text>
-            <Text style={styles.contentText}>Content</Text>
-            <Text style={styles.contentText}>Content</Text>
-            <Text style={styles.contentText}>Content</Text>
-            <Text style={styles.contentText}>Content</Text>
-            <Text style={styles.contentText}>Content</Text>
-            <Text style={styles.contentText}>Content</Text>
-          </Animated.View>
+          {shouldRenderContent && (
+            <Animated.View
+              style={[styles.contentInner, contentAnimatedStyle]}
+              onLayout={handleContentLayout}
+            >
+              <Text style={styles.contentText}>Content</Text>
+              <Text style={styles.contentText}>Content</Text>
+              <Text style={styles.contentText}>Content</Text>
+              <Text style={styles.contentText}>Content</Text>
+              <Text style={styles.contentText}>Content</Text>
+              <Text style={styles.contentText}>Content</Text>
+              <Text style={styles.contentText}>Content</Text>
+            </Animated.View>
+          )}
         </Animated.View>
-      )}
-    </View>
+      </View>
+    </>
   )
 }
 
 const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     wrapper: {
-      paddingTop: 64,
       marginBottom: 16,
       position: "relative",
+      backgroundColor: "transparent",
+      zIndex: 20,
+    },
+    overlay: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      zIndex: 10,
+      backgroundColor: addOpacity(colors.background, 0.75),
     },
     header: {
       flexDirection: "row",
       justifyContent: "space-between",
       alignItems: "center",
       padding: 16,
-      backgroundColor: colors.accent,
-      borderRadius: 8,
-      zIndex: 2,
+      zIndex: 20,
     },
     title: {
       fontSize: 16,
@@ -145,6 +182,8 @@ const createStyles = (colors: ThemeColors) =>
       borderBottomRightRadius: 8,
       overflow: "hidden",
       zIndex: 1,
+      borderBottomWidth: 1,
+      borderColor: "red",
     },
     contentInner: {
       position: "absolute",
