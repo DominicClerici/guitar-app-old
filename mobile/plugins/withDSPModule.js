@@ -1,10 +1,9 @@
-const {
-  withDangerousMod,
-  withXcodeProject,
-} = require("expo/config-plugins");
+const { withDangerousMod } = require("expo/config-plugins");
 const fs = require("fs");
 const path = require("path");
 
+// Android-only plugin for DSP module
+// iOS uses the DSP pod via expo-modules-autolinking
 function withDSPModuleAndroid(config) {
   return withDangerousMod(config, [
     "android",
@@ -120,84 +119,8 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
   ]);
 }
 
-function withDSPModuleiOS(config) {
-  return withXcodeProject(config, async (config) => {
-    const projectRoot = config.modRequest.projectRoot;
-    const iosPath = path.join(projectRoot, "ios");
-    const projectName = config.modRequest.projectName;
-    const project = config.modResults;
-
-    // Paths to DSP source files (relative to iOS project)
-    const dspSourceDir = "../modules/dsp/shared";
-    const sourceFiles = [
-      `${dspSourceDir}/NativeDSPModule.cpp`,
-      `${dspSourceDir}/util.cpp`,
-      `${dspSourceDir}/yin/yin.cpp`,
-    ];
-
-    // Get the main group
-    const mainGroupKey = project.getFirstProject().firstProject.mainGroup;
-
-    // Find or create DSP group
-    let dspGroupKey = null;
-    const groups = project.hash.project.objects["PBXGroup"];
-    for (const key in groups) {
-      if (groups[key].name === "DSP") {
-        dspGroupKey = key;
-        break;
-      }
-    }
-
-    if (!dspGroupKey) {
-      dspGroupKey = project.pbxCreateGroup("DSP", "../modules/dsp/shared");
-      project.addToPbxGroup(dspGroupKey, mainGroupKey);
-    }
-
-    // Add source files to project
-    for (const sourceFile of sourceFiles) {
-      const fileName = path.basename(sourceFile);
-      project.addSourceFile(
-        sourceFile,
-        { target: project.getFirstTarget().uuid },
-        dspGroupKey
-      );
-    }
-
-    // Add header search paths
-    const buildConfigurations = project.pbxXCBuildConfigurationSection();
-    for (const key in buildConfigurations) {
-      const buildConfig = buildConfigurations[key];
-      if (typeof buildConfig === "object" && buildConfig.buildSettings) {
-        const headerSearchPaths =
-          buildConfig.buildSettings.HEADER_SEARCH_PATHS || [];
-        const newPaths = [
-          '"$(SRCROOT)/../modules/dsp/shared"',
-          '"$(SRCROOT)/../modules/dsp/shared/yin"',
-        ];
-
-        if (Array.isArray(headerSearchPaths)) {
-          for (const newPath of newPaths) {
-            if (!headerSearchPaths.includes(newPath)) {
-              headerSearchPaths.push(newPath);
-            }
-          }
-        } else {
-          buildConfig.buildSettings.HEADER_SEARCH_PATHS = [
-            headerSearchPaths,
-            ...newPaths,
-          ];
-        }
-
-        buildConfig.buildSettings.HEADER_SEARCH_PATHS = headerSearchPaths;
-      }
-    }
-
-    return config;
-  });
-}
-
 module.exports = function withDSPModule(config) {
+  // Only Android needs the plugin - iOS uses the DSP pod
   config = withDSPModuleAndroid(config);
-  config = withDSPModuleiOS(config);
   return config;
 };

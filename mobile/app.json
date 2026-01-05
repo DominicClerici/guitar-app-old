@@ -33,6 +33,6 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "plugins": ["expo-router", "./plugins/withDSPModule"]
+    "plugins": ["expo-router"]
   }
 }

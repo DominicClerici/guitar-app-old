@@ -17,7 +17,7 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "type-check": "tsc --noEmit",
-    "clean": "rm -rf node_modules .expo",
+    "clean": "rm -rf node_modules .expo ios android",
     "convert-colors": "tsx lib/theme/convertColors.ts"
   },
   "dependencies": {
