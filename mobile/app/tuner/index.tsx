@@ -13,11 +13,10 @@ const UPDATE_INTERVAL_MS = 46.5 // How often to add new points when playing (fas
 const CENTS_RANGE = 50 // +/- 50 cents displayed
 
 interface DataPoint {
-  cents: number // -50 to +50 (clamped)
+  cents: number
   isActive: boolean // Whether pitch was detected at this point
 }
 
-// Circular buffer for efficient data point management
 class CircularBuffer {
   private buffer: DataPoint[]
   private _head: number = 0 // Points to the oldest element (next to be overwritten)
@@ -45,13 +44,11 @@ class CircularBuffer {
     this._version++
   }
 
-  // Get point at logical index (0 = oldest, capacity-1 = newest)
   getAt(logicalIndex: number): DataPoint {
     const physicalIndex = (this._head + logicalIndex) % this.capacity
     return this.buffer[physicalIndex]
   }
 
-  // Find the last active point's cents value
   getLastActiveCents(): number {
     for (let i = 0; i < this.capacity; i++) {
       const index = (this._head - 1 - i + this.capacity * 2) % this.capacity
@@ -63,7 +60,6 @@ class CircularBuffer {
   }
 }
 
-// Get color based on cents deviation
 function getColorForCents(cents: number): string {
   const absCents = Math.abs(cents)
   if (absCents > 15) return "#f87171" // Red (way off)
@@ -71,7 +67,6 @@ function getColorForCents(cents: number): string {
   return "#4ade80" // Green (in tune)
 }
 
-// Pre-computed indicator styles to avoid array creation on every render
 type IndicatorState = "inTune" | "sharp" | "flat"
 function getIndicatorState(cents: number): IndicatorState {
   if (Math.abs(cents) <= 5) return "inTune"
@@ -79,7 +74,6 @@ function getIndicatorState(cents: number): IndicatorState {
   return "flat"
 }
 
-// Pre-computed cents text styles
 type CentsState = "inTune" | "sharp" | "flat"
 function getCentsState(cents: number): CentsState {
   if (Math.abs(cents) <= 5) return "inTune"
@@ -87,7 +81,6 @@ function getCentsState(cents: number): CentsState {
   return "flat"
 }
 
-// Convert cents to X position (0 to chartWidth)
 function centsToX(cents: number, chartWidth: number): number {
   const clamped = Math.max(-CENTS_RANGE, Math.min(CENTS_RANGE, cents))
   return ((clamped + CENTS_RANGE) / (CENTS_RANGE * 2)) * chartWidth
@@ -106,12 +99,10 @@ function SeismographChart({
   chartWidth: number
   chartHeight: number
 }) {
-  // Animated value for the current indicator position
-  const indicatorX = useSharedValue(50) // percentage (50 = center)
+  const indicatorX = useSharedValue(50)
 
   useEffect(() => {
     if (currentCents !== null) {
-      // Map cents (-50 to +50) to percentage (0 to 100)
       const clamped = Math.max(-CENTS_RANGE, Math.min(CENTS_RANGE, currentCents))
       const percent = ((clamped + CENTS_RANGE) / (CENTS_RANGE * 2)) * 100
       indicatorX.value = withTiming(percent, { duration: 50 })
@@ -149,11 +140,9 @@ function SeismographChart({
       const x2 = centsToX(point.cents, chartWidth)
       const y2 = (MAX_POINTS - i) * segmentHeight
 
-      // Use the average cents for color
       const avgCents = (point.cents + prevPoint.cents) / 2
       const color = getColorForCents(avgCents)
 
-      // If color changes or this is a new segment, start a new path
       if (color !== currentColor) {
         if (currentPath) {
           segments.push({ d: currentPath, color: currentColor })
@@ -161,11 +150,9 @@ function SeismographChart({
         currentPath = `M${x1.toFixed(1)},${y1.toFixed(1)}L${x2.toFixed(1)},${y2.toFixed(1)}`
         currentColor = color
       } else {
-        // Continue the path - if we're at the same position, just lineto
         if (Math.abs(lastX - x1) < 0.1 && Math.abs(lastY - y1) < 0.1) {
           currentPath += `L${x2.toFixed(1)},${y2.toFixed(1)}`
         } else {
-          // Need to move to new position
           currentPath += `M${x1.toFixed(1)},${y1.toFixed(1)}L${x2.toFixed(1)},${y2.toFixed(1)}`
         }
       }
@@ -173,7 +160,6 @@ function SeismographChart({
       lastY = y2
     }
 
-    // Don't forget the last segment
     if (currentPath) {
       segments.push({ d: currentPath, color: currentColor })
     }
@@ -184,23 +170,18 @@ function SeismographChart({
 
   return (
     <View style={styles.chartContainer}>
-      {/* Chart labels */}
       <View style={styles.chartLabels}>
         <Text style={styles.chartLabel}>♭ Flat</Text>
         <Text style={[styles.chartLabel, styles.chartLabelCenter]}>In Tune</Text>
         <Text style={styles.chartLabel}>Sharp ♯</Text>
       </View>
 
-      {/* Main chart area */}
       <View style={[styles.chartArea, { height: chartHeight }]}>
-        {/* Center line (in-tune reference) */}
         <View style={styles.centerLine} />
 
-        {/* Guide lines at -25 and +25 cents */}
         <View style={[styles.guideLine, { left: "25%" }]} />
         <View style={[styles.guideLine, { left: "75%" }]} />
 
-        {/* SVG Seismograph line - using Path elements for better performance */}
         <Svg width={chartWidth} height={chartHeight} style={styles.svgContainer}>
           {pathSegments.map((seg, idx) => (
             <Path
@@ -215,7 +196,6 @@ function SeismographChart({
           ))}
         </Svg>
 
-        {/* Current position indicator at the top */}
         {currentCents !== null && (
           <Animated.View style={[styles.currentIndicator, indicatorStyle]}>
             <View style={indicatorDotStyles[getIndicatorState(currentCents)]} />
@@ -227,30 +207,23 @@ function SeismographChart({
 }
 
 export default function TunerScreen() {
-  // const { status, error, pitch } = usePitchDetection()
   const { status, error, pitch } = useFastPitchDetection()
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions()
 
-  // Use primitive values instead of noteInfo object to stabilize dependencies
   const noteName = getClosestNoteName(pitch)
   const cents = getCentsDeviation(pitch)
 
-  // Circular buffer for efficient data point management (avoids array spreading)
   const bufferRef = useRef<CircularBuffer>(new CircularBuffer(MAX_POINTS))
   const [bufferVersion, setBufferVersion] = useState(0)
   const lastUpdateRef = useRef<number>(0)
   const centsRef = useRef<number | null>(null)
 
-  // Keep centsRef in sync with current cents value
   centsRef.current = cents
 
-  // Calculate chart dimensions based on screen size
-  // Container has paddingHorizontal: 20, chart is 90% of container width
   const chartWidth = (windowWidth - 40) * (CHART_WIDTH_PERCENT / 100)
   const chartHeight = windowHeight * (CHART_HEIGHT_PERCENT / 100)
 
-  // Update data points when pitch changes - reads from ref for stable callback
   const updateDataPoints = useCallback(() => {
     const now = Date.now()
     if (now - lastUpdateRef.current < UPDATE_INTERVAL_MS) {
@@ -263,18 +236,13 @@ export default function TunerScreen() {
     if (currentCents !== null) {
       buffer.push({ cents: currentCents, isActive: true })
     } else {
-      // Keep the last cents value but mark as inactive (stops drawing)
       buffer.push({ cents: buffer.getLastActiveCents(), isActive: false })
     }
-    // Trigger re-render with the buffer's version (no array allocation)
     setBufferVersion(buffer.version)
   }, [])
 
-  // Effect to continuously update the chart - interval persists while recording
   useEffect(() => {
     if (status !== "recording") return
-
-    // Set up interval for continuous updates (reads current cents from ref)
     const interval = setInterval(updateDataPoints, UPDATE_INTERVAL_MS)
     return () => clearInterval(interval)
   }, [status, updateDataPoints])
@@ -286,7 +254,6 @@ export default function TunerScreen() {
 
         {status === "recording" && (
           <>
-            {/* Pitch display above chart */}
             <View style={styles.pitchContainer}>
               <Text style={styles.noteText}>{noteName ?? "--"}</Text>
               <View style={styles.pitchDetails}>
@@ -301,8 +268,6 @@ export default function TunerScreen() {
                 )}
               </View>
             </View>
-
-            {/* Seismograph chart */}
             <SeismographChart
               buffer={bufferRef.current}
               bufferVersion={bufferVersion}
@@ -405,7 +370,6 @@ const styles = StyleSheet.create({
   },
 })
 
-// Pre-computed combined styles to avoid array spreading on every render
 const indicatorDotStyles: Record<IndicatorState, object> = {
   inTune: {
     width: 16,
