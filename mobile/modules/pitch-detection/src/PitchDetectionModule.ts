@@ -8,6 +8,18 @@ export type PitchEvent = {
   frequency: number
 }
 
+/**
+ * Pitch detection algorithm selection.
+ * - Autocorrelation: Standard autocorrelation algorithm (default)
+ * - BitstreamAutocorrelation: Fast bitstream-based algorithm using XOR operations
+ */
+export enum PitchAlgorithm {
+  /** Standard autocorrelation - more accurate but slower */
+  Autocorrelation = 0,
+  /** Bitstream autocorrelation - 32-64x faster, good for low latency */
+  BitstreamAutocorrelation = 1,
+}
+
 export type PitchDetectionOptions = {
   /** Buffer size for audio capture. Default: 4096 */
   bufferSize?: number
@@ -15,6 +27,8 @@ export type PitchDetectionOptions = {
   minVolume?: number
   /** Update interval in milliseconds. Default: 100 */
   updateIntervalMs?: number
+  /** Pitch detection algorithm. Default: Autocorrelation */
+  algorithm?: PitchAlgorithm
 }
 
 declare class PitchDetectionModule extends NativeModule<PitchDetectionModuleEvents> {
@@ -22,6 +36,12 @@ declare class PitchDetectionModule extends NativeModule<PitchDetectionModuleEven
    * Configure detection options before starting
    */
   setOptions(bufferSize: number, minVolume: number, updateIntervalMs: number): void
+
+  /**
+   * Set the pitch detection algorithm
+   * @param algorithm 0 = Autocorrelation, 1 = BitstreamAutocorrelation
+   */
+  setAlgorithm(algorithm: number): void
 
   /**
    * Start listening for pitch

@@ -18,6 +18,7 @@ class PitchDetectionModule : Module() {
     private var bufferSize = 4096
     private var minVolume = -20.0
     private var updateIntervalMs = 100
+    private var algorithm = 0  // 0 = Autocorrelation, 1 = BitstreamAutocorrelation
 
     companion object {
         init {
@@ -26,6 +27,7 @@ class PitchDetectionModule : Module() {
     }
 
     private external fun nativeAutoCorrelate(buffer: ShortArray, sampleRate: Int, minVolume: Double): Double
+    private external fun nativeBitstreamAutoCorrelate(buffer: ShortArray, sampleRate: Int, minVolume: Double): Double
 
     override fun definition() = ModuleDefinition {
         Name("PitchDetection")
@@ -36,6 +38,10 @@ class PitchDetectionModule : Module() {
             this@PitchDetectionModule.bufferSize = bufferSize.toInt()
             this@PitchDetectionModule.minVolume = minVolume
             this@PitchDetectionModule.updateIntervalMs = updateIntervalMs.toInt()
+        }
+
+        Function("setAlgorithm") { algorithmType: Int ->
+            this@PitchDetectionModule.algorithm = algorithmType
         }
 
         Function("isListening") {
@@ -83,7 +89,11 @@ class PitchDetectionModule : Module() {
                             val read = audioRecord?.read(buffer, 0, actualBufferSize) ?: 0
 
                             if (read > 0) {
-                                val frequency = nativeAutoCorrelate(buffer.copyOf(read), sampleRate, minVolume)
+                                val frequency = if (algorithm == 1) {
+                                    nativeBitstreamAutoCorrelate(buffer.copyOf(read), sampleRate, minVolume)
+                                } else {
+                                    nativeAutoCorrelate(buffer.copyOf(read), sampleRate, minVolume)
+                                }
                                 sendEvent("onPitchDetected", mapOf("frequency" to frequency))
                                 lastUpdateTime = currentTime
                             }

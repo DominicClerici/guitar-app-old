@@ -1,7 +1,12 @@
 import { useFocusEffect } from "expo-router"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { PermissionsAndroid, Platform } from "react-native"
-import PitchDetectionModule, { PitchEvent } from "../../modules/pitch-detection"
+import PitchDetectionModule, {
+  PitchAlgorithm,
+  PitchEvent,
+} from "../../modules/pitch-detection"
+
+export { PitchAlgorithm }
 
 export type PitchDetectionStatus = "idle" | "requesting" | "recording" | "error"
 
@@ -12,6 +17,8 @@ interface UseFastPitchDetectionOptions {
   minVolume?: number
   /** Update interval in milliseconds. Default: 50 */
   updateIntervalMs?: number
+  /** Pitch detection algorithm. Default: Autocorrelation */
+  algorithm?: PitchAlgorithm
 }
 
 interface UseFastPitchDetectionResult {
@@ -27,6 +34,7 @@ const DEFAULT_OPTIONS: Required<UseFastPitchDetectionOptions> = {
   bufferSize: 4096,
   minVolume: -70.0,
   updateIntervalMs: 46.5,
+  algorithm: PitchAlgorithm.Autocorrelation,
 }
 
 export function useFastPitchDetection(
@@ -75,8 +83,9 @@ export function useFastPitchDetection(
       }
 
       // Configure options before starting
-      const { bufferSize, minVolume, updateIntervalMs } = optionsRef.current
+      const { bufferSize, minVolume, updateIntervalMs, algorithm } = optionsRef.current
       PitchDetectionModule.setOptions(bufferSize, minVolume, updateIntervalMs)
+      PitchDetectionModule.setAlgorithm(algorithm)
 
       await PitchDetectionModule.startListening()
 

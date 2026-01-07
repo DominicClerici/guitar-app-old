@@ -1,7 +1,7 @@
 import { Fretboard } from "@/components/fretboard/fretboard"
 import { ScreenContainer } from "@/components/ScreenContainer"
 import { buttonVariants } from "@/components/ui/button"
-import { useFastPitchDetection } from "@/lib/audio/useFastPitchDetection"
+import { PitchAlgorithm, useFastPitchDetection } from "@/lib/audio/useFastPitchDetection"
 import { NOTE_NAMES, NoteName } from "@/lib/audio/utils"
 import { ScaleType } from "@/lib/constants"
 import {
@@ -181,8 +181,9 @@ export default function PracticePage() {
 
   const { pitch } = useFastPitchDetection({
     minVolume: -70.0,
-    updateIntervalMs: 50,
-    bufferSize: 2048,
+    updateIntervalMs: 27.5, // 32.5 for 1536, 43 for 2048
+    bufferSize: 1280, // if too low, try 1536, then 2048
+    algorithm: PitchAlgorithm.BitstreamAutocorrelation,
   })
 
   const showNotesEnabled = showNotes === "true"

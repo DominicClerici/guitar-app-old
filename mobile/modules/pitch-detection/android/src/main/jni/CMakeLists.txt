@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD 14)
 
 add_library(pitchdetection SHARED
     ../../../../shared/AutoCorrelate.cpp
+    ../../../../shared/BitstreamAutoCorrelate.cpp
     cpp-adapter.cpp
 )
 

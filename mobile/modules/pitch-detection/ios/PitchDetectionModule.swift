@@ -14,6 +14,9 @@ public class PitchDetectionModule: Module {
     private var updateIntervalMs: Int = 100
     private var currentSampleRate: Double = 44100
 
+    // Algorithm selection: 0 = Autocorrelation, 1 = BitstreamAutocorrelation
+    private var algorithm: Int = 0
+
     public func definition() -> ModuleDefinition {
         Name("PitchDetection")
 
@@ -23,6 +26,10 @@ public class PitchDetectionModule: Module {
             self.bufferSize = AVAudioFrameCount(bufferSize)
             self.minVolume = minVolume
             self.updateIntervalMs = Int(updateIntervalMs)
+        }
+
+        Function("setAlgorithm") { (algorithmType: Int) in
+            self.algorithm = algorithmType
         }
 
         Function("isListening") { () -> Bool in
@@ -113,13 +120,25 @@ public class PitchDetectionModule: Module {
             guard let channelData = buffer.floatChannelData else { return }
             let frameLength = Int32(buffer.frameLength)
 
-            // Call ObjC wrapper which calls C++ autocorrelation
-            let frequency = AutoCorrelate.detectPitch(
-                fromBuffer: channelData[0],
-                bufferSize: frameLength,
-                sampleRate: currentSampleRate,
-                minVolume: minVolume
-            )
+            // Call appropriate algorithm based on selection
+            let frequency: Double
+            if algorithm == 1 {
+                // Bitstream Autocorrelation (BACF)
+                frequency = BitstreamAutoCorrelate.detectPitch(
+                    fromBuffer: channelData[0],
+                    bufferSize: frameLength,
+                    sampleRate: currentSampleRate,
+                    minVolume: minVolume
+                )
+            } else {
+                // Standard Autocorrelation
+                frequency = AutoCorrelate.detectPitch(
+                    fromBuffer: channelData[0],
+                    bufferSize: frameLength,
+                    sampleRate: currentSampleRate,
+                    minVolume: minVolume
+                )
+            }
 
             sendEvent("onPitchDetected", [
                 "frequency": frequency
