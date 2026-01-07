@@ -1,5 +1,6 @@
 // Note names using sharps (prefer sharps over flats)
 export const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+export type NoteName = (typeof NOTE_NAMES)[number]
 
 // A4 = 440 Hz is the reference pitch (MIDI note 69)
 const A4_FREQ = 440
