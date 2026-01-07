@@ -1,15 +1,23 @@
 import { Fretboard } from "@/components/fretboard/fretboard"
 import { ScreenContainer } from "@/components/ScreenContainer"
 import { buttonVariants } from "@/components/ui/button"
+import { useFastPitchDetection } from "@/lib/audio/useFastPitchDetection"
 import { NOTE_NAMES, NoteName } from "@/lib/audio/utils"
-import { getMajorScale, getNoteName, getShapeNotes, ScaleNote } from "@/lib/scales/major-scale"
+import { getMajorScale, getShapeNotes, ScaleNote } from "@/lib/scales/major-scale"
 import { ThemeColors, useColors } from "@/lib/theme/ThemeContext"
 import { useLocalSearchParams } from "expo-router"
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react-native"
-import React, { useEffect, useMemo, useState } from "react"
+import React, { useEffect, useMemo, useRef, useState } from "react"
 import { Pressable, StyleSheet, Text, View } from "react-native"
 
-export type ScaleType = "major"
+function isFrequencyMatch(detected: number, target: number, tolerance: number = 0.02): boolean {
+  if (detected <= 0) return false
+  const lowerBound = target * (1 - tolerance)
+  const upperBound = target * (1 + tolerance)
+  return detected >= lowerBound && detected <= upperBound
+}
+
+export type ScaleType = "major" | "minor"
 
 export type ScalePracticeParams = {
   scale: ScaleType
@@ -24,13 +32,36 @@ type Marker = {
   label: string
 }
 
-function scaleNotesToMarkers(notes: ScaleNote[]): Marker[] {
-  return notes.map((note) => ({
-    stringIndex: note.stringIndex,
-    fretIndex: note.fretIndex,
-    type: note.degree === 1 ? "root" : "note",
-    label: getNoteName(note.noteIndex),
-  }))
+function createNoteKey(stringIndex: number, fretIndex: number): string {
+  return `${stringIndex}-${fretIndex}`
+}
+
+function scaleNotesToMarkers(
+  notes: ScaleNote[],
+  playedNotes: Set<string>,
+  showNotes: boolean,
+): Marker[] {
+  return notes.map((note) => {
+    const key = createNoteKey(note.stringIndex, note.fretIndex)
+    const isPlayed = playedNotes.has(key)
+    const isRoot = note.degree === 1
+
+    let type: Marker["type"]
+    if (isPlayed) {
+      type = isRoot ? "root" : "note"
+    } else if (showNotes) {
+      type = isRoot ? "root-disabled" : "note-disabled"
+    } else {
+      type = isRoot ? "root-hidden" : "note-hidden"
+    }
+
+    return {
+      stringIndex: note.stringIndex,
+      fretIndex: note.fretIndex,
+      type,
+      label: NOTE_NAMES[note.noteIndex],
+    }
+  })
 }
 
 function calculateViewFrets(shapeNotes: ScaleNote[]): [number, number] {
@@ -49,6 +80,9 @@ function calculateViewFrets(shapeNotes: ScaleNote[]): [number, number] {
   return [startFret, endFret]
 }
 
+const SHAPE_COMPLETION_DELAY_MS = 1000
+const TOTAL_SHAPES = 5
+
 export default function PracticePage() {
   const colors = useColors()
   const styles = createStyles(colors)
@@ -56,22 +90,72 @@ export default function PracticePage() {
 
   const [shapeIndex, setShapeIndex] = useState(0)
   const [viewFrets, setViewFrets] = useState<[number, number]>([0, 6])
+  const [playedNotes, setPlayedNotes] = useState<Set<string>>(new Set())
+
+  const lastMatchRef = useRef<string | null>(null) // since we just need 2 consecutive matches
+  const isTransitioningRef = useRef(false)
+
+  const { pitch } = useFastPitchDetection({
+    minVolume: -70.0,
+    updateIntervalMs: 50,
+    bufferSize: 2048,
+  })
+
+  const showNotesEnabled = showNotes === "true"
 
   const rootNoteIndex = useMemo(() => {
     const index = NOTE_NAMES.indexOf(key)
-    return index >= 0 ? index : 9 // Default to A if not found
+    return index >= 0 ? index : 9
   }, [key])
 
   const fullScale = useMemo(() => getMajorScale(rootNoteIndex), [rootNoteIndex])
 
   const shapeNotes = useMemo(() => getShapeNotes(shapeIndex, fullScale), [shapeIndex, fullScale])
 
-  const markers = useMemo(() => scaleNotesToMarkers(shapeNotes), [shapeNotes])
+  const markers = useMemo(
+    () => scaleNotesToMarkers(shapeNotes, playedNotes, showNotesEnabled),
+    [shapeNotes, playedNotes, showNotesEnabled],
+  )
+
+  const selectRandomShape = () => {
+    let newIndex = Math.floor(Math.random() * TOTAL_SHAPES)
+    while (newIndex === shapeIndex) {
+      newIndex = Math.floor(Math.random() * TOTAL_SHAPES)
+    }
+    const newViewFrets = calculateViewFrets(getShapeNotes(newIndex, fullScale))
+    setViewFrets(newViewFrets)
+    setShapeIndex(newIndex)
+    setPlayedNotes(new Set())
+    lastMatchRef.current = null
+    isTransitioningRef.current = false
+  }
 
   useEffect(() => {
-    const newViewFrets = calculateViewFrets(shapeNotes)
-    setViewFrets(newViewFrets)
-  }, [shapeNotes])
+    if (pitch <= 0 || isTransitioningRef.current) return
+
+    for (const note of shapeNotes) {
+      const key = createNoteKey(note.stringIndex, note.fretIndex)
+      if (playedNotes.has(key)) continue
+
+      if (isFrequencyMatch(pitch, note.targetFrequency)) {
+        if (lastMatchRef.current === key) {
+          setPlayedNotes((prev) => new Set(prev).add(key))
+          lastMatchRef.current = null
+        } else {
+          lastMatchRef.current = key
+        }
+        break
+      }
+    }
+  }, [pitch])
+
+  useEffect(() => {
+    if (playedNotes.size === 0 || playedNotes.size < shapeNotes.length) return
+
+    isTransitioningRef.current = true
+    const timeout = setTimeout(selectRandomShape, SHAPE_COMPLETION_DELAY_MS)
+    return () => clearTimeout(timeout)
+  }, [playedNotes.size, shapeNotes.length, selectRandomShape])
 
   return (
     <ScreenContainer>
@@ -131,11 +215,6 @@ const createStyles = (colors: ThemeColors) =>
       alignItems: "center",
       width: "100%",
       marginBottom: 12,
-    },
-    fretboardControlButton: {
-      width: 40,
-      height: 40,
-      padding: 0,
     },
     fretboardControlText: {
       fontSize: 12,

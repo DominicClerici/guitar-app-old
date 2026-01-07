@@ -1,13 +1,18 @@
-import { NOTE_NAMES } from "@/lib/audio/utils"
+import { midiToFreq, STRING_OPEN_MIDI } from "@/lib/audio/utils"
 
 export type ScaleNote = {
   fretIndex: number
   stringIndex: number
   noteIndex: number
   degree: number
+  targetFrequency: number
 }
 
 const STRING_OPEN_NOTES = [4, 9, 2, 7, 11, 4]
+
+function getFrequencyFromPosition(stringIndex: number, fretIndex: number): number {
+  return midiToFreq(STRING_OPEN_MIDI[stringIndex] + fretIndex)
+}
 
 const A_MAJOR_NOTES: Record<number, number> = {
   9: 1,
@@ -41,6 +46,7 @@ export const A_MAJOR_SCALE: ScaleNote[] = (() => {
           stringIndex,
           noteIndex,
           degree,
+          targetFrequency: getFrequencyFromPosition(stringIndex, fretIndex),
         })
       }
     }
@@ -75,10 +81,14 @@ export function getShapeNotes(shapeIndex: number, scale: ScaleNote[] = A_MAJOR_S
   }
 
   const wrappedScale = shouldWrapShape
-    ? scale.map((note) => ({
-        ...note,
-        fretIndex: note.fretIndex >= 13 ? note.fretIndex - 12 : note.fretIndex,
-      }))
+    ? scale.map((note) => {
+        const newFretIndex = note.fretIndex >= 13 ? note.fretIndex - 12 : note.fretIndex
+        return {
+          ...note,
+          fretIndex: newFretIndex,
+          targetFrequency: getFrequencyFromPosition(note.stringIndex, newFretIndex),
+        }
+      })
     : scale
 
   return wrappedScale.filter((note) => note.fretIndex >= startFret && note.fretIndex <= endFret)
@@ -87,11 +97,15 @@ export function getShapeNotes(shapeIndex: number, scale: ScaleNote[] = A_MAJOR_S
 export function transposeScale(scale: ScaleNote[], semitones: number): ScaleNote[] {
   const shift = ((semitones % 12) + 12) % 12
 
-  return scale.map((note) => ({
-    ...note,
-    fretIndex: note.fretIndex + shift,
-    noteIndex: (note.noteIndex + shift) % 12,
-  }))
+  return scale.map((note) => {
+    const newFretIndex = note.fretIndex + shift
+    return {
+      ...note,
+      fretIndex: newFretIndex,
+      noteIndex: (note.noteIndex + shift) % 12,
+      targetFrequency: getFrequencyFromPosition(note.stringIndex, newFretIndex),
+    }
+  })
 }
 
 export function getSemitoneShift(targetRoot: number): number {
@@ -102,8 +116,4 @@ export function getSemitoneShift(targetRoot: number): number {
 export function getMajorScale(rootNoteIndex: number): ScaleNote[] {
   const shift = getSemitoneShift(rootNoteIndex)
   return transposeScale(A_MAJOR_SCALE, shift)
-}
-
-export function getNoteName(noteIndex: number): string {
-  return NOTE_NAMES[noteIndex]
 }

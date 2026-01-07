@@ -1,0 +1,2 @@
+For all note recording stuff
+- add a premium shred mode, where we only pick from frets higher than 10, and then we can set the min buffer to 1024, so the polling is every 23ms. Low E is at 150hz roughly, that gives about 3-4 cycles, so it should be accurate.
