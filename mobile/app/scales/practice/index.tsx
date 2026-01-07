@@ -36,7 +36,7 @@ export default function PracticePage() {
   const styles = createStyles(colors)
   const { scale, key, showNotes } = useLocalSearchParams<ScalePracticeParams>()
 
-  const [startFret, setStartFret] = useState([0, 5])
+  const [viewFrets, setViewFrets] = useState([0, 6])
 
   return (
     <ScreenContainer>
@@ -46,28 +46,35 @@ export default function PracticePage() {
             <View style={styles.fretboardControlButtonContainer}>
               <Pressable
                 style={buttonVariants(colors, { variant: "outline", size: "default" }).button}
-                onPress={() => setStartFret([startFret[0] - 1, startFret[1] - 1])}
-                disabled={startFret[0] <= 0}
+                onPress={() => setViewFrets([viewFrets[0] - 1, viewFrets[1] - 1])}
+                disabled={viewFrets[0] <= 0}
               >
                 <ChevronLeftIcon size={20} color={colors.foreground} />
               </Pressable>
-              <Text style={styles.fretboardControlText}>{startFret[0]}</Text>
+              <Text style={styles.fretboardControlText}>{viewFrets[0]}</Text>
             </View>
             <View style={styles.fretboardControlButtonContainer}>
-              <Text style={styles.fretboardControlText}>{startFret[1]}</Text>
+              <Pressable
+                style={buttonVariants(colors, { variant: "outline", size: "default" }).button}
+              >
+                <Text>Select Random Shape</Text>
+              </Pressable>
+            </View>
+            <View style={styles.fretboardControlButtonContainer}>
+              <Text style={styles.fretboardControlText}>{viewFrets[1]}</Text>
 
               <Pressable
                 style={buttonVariants(colors, { variant: "outline", size: "default" }).button}
-                onPress={() => setStartFret([startFret[0] + 1, startFret[1] + 1])}
-                disabled={startFret[1] >= 22}
+                onPress={() => setViewFrets([viewFrets[0] + 1, viewFrets[1] + 1])}
+                disabled={viewFrets[1] >= 22}
               >
                 <ChevronRightIcon size={20} color={colors.foreground} />
               </Pressable>
             </View>
           </View>
           <Fretboard
-            startFret={startFret[0]}
-            endFret={startFret[1]}
+            startFret={viewFrets[0]}
+            endFret={viewFrets[1]}
             widthPercent={95}
             heightPercent={30}
             markers={EXAMPLE_NOTES}

@@ -16,7 +16,7 @@ export default function ScalesScreen() {
           href={{
             pathname: "/scales/practice",
             params: {
-              key: "C",
+              key: "A",
               scale: "major",
               showNotes: "true",
             },
