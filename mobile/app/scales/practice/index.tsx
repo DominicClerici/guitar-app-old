@@ -1,11 +1,18 @@
 import { Fretboard } from "@/components/fretboard/fretboard"
 import { ScreenContainer } from "@/components/ScreenContainer"
 import { buttonVariants } from "@/components/ui/button"
-import { NoteName } from "@/lib/audio/utils"
+import { NOTE_NAMES, NoteName } from "@/lib/audio/utils"
+import {
+  CAGED_SHAPE_RANGES,
+  getMajorScale,
+  getNoteName,
+  getShapeNotes,
+  ScaleNote,
+} from "@/lib/scales/major-scale"
 import { ThemeColors, useColors } from "@/lib/theme/ThemeContext"
 import { useLocalSearchParams } from "expo-router"
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react-native"
-import React, { useState } from "react"
+import React, { useCallback, useEffect, useMemo, useState } from "react"
 import { Pressable, StyleSheet, Text, View } from "react-native"
 
 export type ScaleType = "major"
@@ -16,27 +23,78 @@ export type ScalePracticeParams = {
   showNotes: "true" | "false"
 }
 
-const EXAMPLE_NOTES = [
-  {
-    type: "note-disabled" as const,
-    fretIndex: 0, // nut
-    stringIndex: 0, // bottom string (Low E string)
-    label: "E",
-  },
-  {
-    type: "note" as const,
-    fretIndex: 3, // 3rd fret
-    stringIndex: 1, // 2nd string (A string)
-    label: "C",
-  },
-]
+type Marker = {
+  stringIndex: number
+  fretIndex: number
+  type: "root-disabled" | "root" | "note-disabled" | "note" | "root-hidden" | "note-hidden"
+  label: string
+}
+
+function scaleNotesToMarkers(notes: ScaleNote[]): Marker[] {
+  return notes.map((note) => ({
+    stringIndex: note.stringIndex,
+    fretIndex: note.fretIndex,
+    type: note.degree === 1 ? "root" : "note",
+    label: getNoteName(note.noteIndex),
+  }))
+}
+
+function calculateViewFrets(shapeNotes: ScaleNote[]): [number, number] {
+  if (shapeNotes.length === 0) return [0, 6]
+
+  const frets = shapeNotes.map((n) => n.fretIndex)
+  const minFret = Math.min(...frets)
+  const maxFret = Math.max(...frets)
+  const span = maxFret - minFret + 1
+
+  // If span is 4 frets, display 6 frets (1 empty on each side)
+  // If span is 5 frets, display 7 frets (1 empty on each side)
+  const displayCount = span <= 4 ? 6 : 7
+
+  const startFret = Math.max(0, minFret - 1)
+  const endFret = startFret + displayCount - 1
+
+  return [startFret, endFret]
+}
 
 export default function PracticePage() {
   const colors = useColors()
   const styles = createStyles(colors)
   const { scale, key, showNotes } = useLocalSearchParams<ScalePracticeParams>()
 
-  const [viewFrets, setViewFrets] = useState([0, 6])
+  const [shapeIndex, setShapeIndex] = useState(0)
+  const [viewFrets, setViewFrets] = useState<[number, number]>([0, 6])
+
+  // Get the root note index from the key param
+  const rootNoteIndex = useMemo(() => {
+    const index = NOTE_NAMES.indexOf(key)
+    return index >= 0 ? index : 9 // Default to A if not found
+  }, [key])
+
+  // Get the full scale for the selected key
+  const fullScale = useMemo(() => getMajorScale(rootNoteIndex), [rootNoteIndex])
+
+  // Get the notes for the current shape
+  const shapeNotes = useMemo(() => getShapeNotes(shapeIndex, fullScale), [shapeIndex, fullScale])
+
+  // Convert to fretboard markers
+  const markers = useMemo(() => scaleNotesToMarkers(shapeNotes), [shapeNotes])
+
+  // Update view frets when shape changes
+  useEffect(() => {
+    const newViewFrets = calculateViewFrets(shapeNotes)
+    setViewFrets(newViewFrets)
+  }, [shapeNotes])
+
+  // Select a random shape (different from current)
+  const selectRandomShape = useCallback(() => {
+    const shapeCount = CAGED_SHAPE_RANGES.length
+    let newIndex: number
+    do {
+      newIndex = Math.floor(Math.random() * shapeCount)
+    } while (newIndex === shapeIndex && shapeCount > 1)
+    setShapeIndex(newIndex)
+  }, [shapeIndex])
 
   return (
     <ScreenContainer>
@@ -56,8 +114,9 @@ export default function PracticePage() {
             <View style={styles.fretboardControlButtonContainer}>
               <Pressable
                 style={buttonVariants(colors, { variant: "outline", size: "default" }).button}
+                onPress={selectRandomShape}
               >
-                <Text>Select Random Shape</Text>
+                <Text style={styles.buttonText}>Random Shape</Text>
               </Pressable>
             </View>
             <View style={styles.fretboardControlButtonContainer}>
@@ -66,7 +125,7 @@ export default function PracticePage() {
               <Pressable
                 style={buttonVariants(colors, { variant: "outline", size: "default" }).button}
                 onPress={() => setViewFrets([viewFrets[0] + 1, viewFrets[1] + 1])}
-                disabled={viewFrets[1] >= 22}
+                disabled={viewFrets[1] >= 23}
               >
                 <ChevronRightIcon size={20} color={colors.foreground} />
               </Pressable>
@@ -77,7 +136,7 @@ export default function PracticePage() {
             endFret={viewFrets[1]}
             widthPercent={95}
             heightPercent={30}
-            markers={EXAMPLE_NOTES}
+            markers={markers}
           />
         </View>
       </View>
@@ -118,5 +177,10 @@ const createStyles = (colors: ThemeColors) =>
       flexDirection: "row",
       alignItems: "center",
       gap: 12,
+    },
+    buttonText: {
+      color: colors.foreground,
+      fontSize: 14,
+      fontWeight: "500",
     },
   })
