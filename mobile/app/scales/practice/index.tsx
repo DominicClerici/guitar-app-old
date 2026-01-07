@@ -3,7 +3,7 @@ import { ScreenContainer } from "@/components/ScreenContainer"
 import { buttonVariants } from "@/components/ui/button"
 import { useFastPitchDetection } from "@/lib/audio/useFastPitchDetection"
 import { NOTE_NAMES, NoteName } from "@/lib/audio/utils"
-import { getMajorScale, getShapeNotes, ScaleNote } from "@/lib/scales/major-scale"
+import { convertToMinor, getMajorScale, getShapeNotes, ScaleNote } from "@/lib/scales/major-scale"
 import { ThemeColors, useColors } from "@/lib/theme/ThemeContext"
 import { useLocalSearchParams } from "expo-router"
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react-native"
@@ -17,12 +17,29 @@ function isFrequencyMatch(detected: number, target: number, tolerance: number = 
   return detected >= lowerBound && detected <= upperBound
 }
 
+export type ScalePracticeShape = {
+  shapeIndex: number
+  duration: number
+  key: NoteName
+  scale: ScaleType
+  showNotes: boolean
+}
+
+export type ScalePracticeSession = {
+  startTime: number
+  endTime: number
+  showNotes: boolean
+  scale: ScaleType
+  shapes: ScalePracticeShape[]
+}
+
 export type ScaleType = "major" | "minor"
 
 export type ScalePracticeParams = {
   scale: ScaleType
   key: NoteName
   showNotes: "true" | "false"
+  duration: string // is a number in seconds, with minimum of 30 and maximum of 600 (10 minutes)
 }
 
 type Marker = {
@@ -86,7 +103,7 @@ const TOTAL_SHAPES = 5
 export default function PracticePage() {
   const colors = useColors()
   const styles = createStyles(colors)
-  const { scale, key, showNotes } = useLocalSearchParams<ScalePracticeParams>()
+  const { scale, key, showNotes, duration = "60" } = useLocalSearchParams<ScalePracticeParams>()
 
   const [shapeIndex, setShapeIndex] = useState(0)
   const [viewFrets, setViewFrets] = useState<[number, number]>([0, 6])
@@ -108,7 +125,10 @@ export default function PracticePage() {
     return index >= 0 ? index : 9
   }, [key])
 
-  const fullScale = useMemo(() => getMajorScale(rootNoteIndex), [rootNoteIndex])
+  const fullScale = useMemo(() => {
+    const majorScale = getMajorScale(rootNoteIndex)
+    return scale === "minor" ? convertToMinor(majorScale) : majorScale
+  }, [rootNoteIndex, scale])
 
   const shapeNotes = useMemo(() => getShapeNotes(shapeIndex, fullScale), [shapeIndex, fullScale])
 

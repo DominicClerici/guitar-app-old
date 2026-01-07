@@ -117,3 +117,18 @@ export function getMajorScale(rootNoteIndex: number): ScaleNote[] {
   const shift = getSemitoneShift(rootNoteIndex)
   return transposeScale(A_MAJOR_SCALE, shift)
 }
+
+export function convertToMinor(scale: ScaleNote[]): ScaleNote[] {
+  return scale.map((note) => {
+    if (note.degree === 3 || note.degree === 6 || note.degree === 7) {
+      const newFretIndex = note.fretIndex - 1
+      return {
+        ...note,
+        fretIndex: newFretIndex,
+        noteIndex: (note.noteIndex - 1 + 12) % 12,
+        targetFrequency: midiToFreq(STRING_OPEN_MIDI[note.stringIndex] + newFretIndex),
+      }
+    }
+    return note
+  })
+}
