@@ -1,3 +1,4 @@
+import { ScreenContainer } from "@/components/ScreenContainer"
 import { supabase } from "@/lib/supabase"
 import { loginZod } from "@guitar/schemas"
 import { Link } from "expo-router"
@@ -52,7 +53,7 @@ export default function LoginScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <ScreenContainer style={styles.container}>
       <Text style={styles.title}>Login</Text>
 
       <View style={styles.inputContainer}>
@@ -97,14 +98,13 @@ export default function LoginScreen() {
       <Link href="/signup" style={styles.linkButton}>
         <Text style={styles.linkText}>Don't have an account? Sign up</Text>
       </Link>
-    </View>
+    </ScreenContainer>
   )
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
     justifyContent: "center",
     backgroundColor: "#fff",
   },

@@ -95,7 +95,6 @@ const createStyles = (colors: ThemeColors) =>
       backgroundColor: colors.background,
       alignItems: "center",
       justifyContent: "center",
-      padding: 20,
     },
     title: {
       fontSize: 28,

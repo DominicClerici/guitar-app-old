@@ -72,12 +72,6 @@ function main() {
   fs.writeFileSync(outputPath, content, "utf-8")
 
   console.log(`Converted colors written to ${outputPath}`)
-  console.log("\nSample conversions:")
-  console.log(`  dark.background: ${COLORS.dark.background} -> ${convertedColors.dark.background}`)
-  console.log(`  light.primary: ${COLORS.light.primary} -> ${convertedColors.light.primary}`)
-  console.log(
-    `  dark.destructive: ${COLORS.dark.destructive} -> ${convertedColors.dark.destructive}`,
-  )
 }
 
 main()

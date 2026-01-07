@@ -1,3 +1,4 @@
+import { ScreenContainer } from "@/components/ScreenContainer"
 import { trpc } from "@/lib/trpc/react"
 import { signUpZod } from "@guitar/schemas"
 import { useRouter } from "expo-router"
@@ -49,7 +50,7 @@ export default function SignupScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <ScreenContainer style={styles.container}>
       <Text style={styles.title}>Sign Up</Text>
 
       <View style={styles.inputContainer}>
@@ -109,14 +110,13 @@ export default function SignupScreen() {
       <Pressable onPress={() => router.push("/login")} style={styles.linkButton}>
         <Text style={styles.linkText}>Already have an account? Log in</Text>
       </Pressable>
-    </View>
+    </ScreenContainer>
   )
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
     justifyContent: "center",
     backgroundColor: "#fff",
   },

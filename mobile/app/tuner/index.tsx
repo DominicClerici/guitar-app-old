@@ -248,36 +248,34 @@ export default function TunerScreen() {
   }, [status, updateDataPoints])
 
   return (
-    <ScreenContainer>
-      <View style={styles.container}>
-        {error && <Text style={styles.error}>{error}</Text>}
+    <ScreenContainer contentStyle={styles.container}>
+      {error && <Text style={styles.error}>{error}</Text>}
 
-        {status === "recording" && (
-          <>
-            <View style={styles.pitchContainer}>
-              <Text style={styles.noteText}>{noteName ?? "--"}</Text>
-              <View style={styles.pitchDetails}>
-                <Text style={styles.frequencyText}>
-                  {pitch > 0 ? `${pitch.toFixed(1)} Hz` : "-- Hz"}
+      {status === "recording" && (
+        <>
+          <View style={styles.pitchContainer}>
+            <Text style={styles.noteText}>{noteName ?? "--"}</Text>
+            <View style={styles.pitchDetails}>
+              <Text style={styles.frequencyText}>
+                {pitch > 0 ? `${pitch.toFixed(1)} Hz` : "-- Hz"}
+              </Text>
+              {cents !== null && (
+                <Text style={centsTextStyles[getCentsState(cents)]}>
+                  {cents > 0 ? "+" : ""}
+                  {cents.toFixed(0)} cents
                 </Text>
-                {cents !== null && (
-                  <Text style={centsTextStyles[getCentsState(cents)]}>
-                    {cents > 0 ? "+" : ""}
-                    {cents.toFixed(0)} cents
-                  </Text>
-                )}
-              </View>
+              )}
             </View>
-            <SeismographChart
-              buffer={bufferRef.current}
-              bufferVersion={bufferVersion}
-              currentCents={cents}
-              chartWidth={chartWidth}
-              chartHeight={chartHeight}
-            />
-          </>
-        )}
-      </View>
+          </View>
+          <SeismographChart
+            buffer={bufferRef.current}
+            bufferVersion={bufferVersion}
+            currentCents={cents}
+            chartWidth={chartWidth}
+            chartHeight={chartHeight}
+          />
+        </>
+      )}
     </ScreenContainer>
   )
 }

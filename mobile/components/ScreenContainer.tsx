@@ -1,7 +1,7 @@
 import { useColors } from "@/lib/theme/ThemeContext"
 import { ReactNode } from "react"
 import { StyleProp, View, ViewStyle } from "react-native"
-import { useSafeAreaInsets, EdgeInsets } from "react-native-safe-area-context"
+import { EdgeInsets, useSafeAreaInsets } from "react-native-safe-area-context"
 
 export function useSafeInsets(): EdgeInsets {
   return useSafeAreaInsets()
@@ -19,7 +19,7 @@ interface ScreenContainerProps {
 
 export function ScreenContainer({
   children,
-  edges = ["top", "bottom"],
+  edges = ["top", "bottom", "left", "right"],
   style,
   contentStyle,
 }: ScreenContainerProps) {
@@ -34,8 +34,8 @@ export function ScreenContainer({
             flex: 1,
             paddingTop: edges.includes("top") ? insets.top : 0,
             paddingBottom: edges.includes("bottom") ? insets.bottom : 0,
-            paddingLeft: edges.includes("left") ? insets.left : 0,
-            paddingRight: edges.includes("right") ? insets.right : 0,
+            paddingLeft: edges.includes("left") ? "2.5%" : 0,
+            paddingRight: edges.includes("right") ? "2.5%" : 0,
           },
           contentStyle,
         ]}

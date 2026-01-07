@@ -1,6 +1,7 @@
 const COLORS = {
   dark: {
     background: "#0a0a0a",
+    backgroundElevated: "#0e0e0e",
     foreground: "#fafafa",
     card: "#171717",
     cardForeground: "#fafafa",

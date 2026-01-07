@@ -23,6 +23,8 @@ export type ScalePracticeShape = {
   key: NoteName
   scale: ScaleType
   showNotes: boolean
+  noteCount: number
+  fretRange: [number, number]
 }
 
 export type ScalePracticeSession = {
@@ -99,17 +101,70 @@ function calculateViewFrets(shapeNotes: ScaleNote[]): [number, number] {
 
 const SHAPE_COMPLETION_DELAY_MS = 1000
 const TOTAL_SHAPES = 5
+const COUNTDOWN_START = 4
+
+type SessionState = "countdown" | "active" | "finished"
+
+type DerivedSessionStats = {
+  totalShapes: number
+  totalNotes: number
+  totalDurationSeconds: number
+  shapesPerMinute: number
+  notesPerSecond: number
+  slowestShape: { shapeIndex: number; fretRange: [number, number]; duration: number } | null
+  fastestShape: { shapeIndex: number; fretRange: [number, number]; duration: number } | null
+}
+
+function deriveSessionStats(session: ScalePracticeSession): DerivedSessionStats {
+  const shapes = session.shapes
+  const totalShapes = shapes.length
+  const totalDurationSeconds = (session.endTime - session.startTime) / 1000
+  const totalNotes = shapes.reduce((sum, s) => sum + s.noteCount, 0)
+
+  const shapesPerMinute = totalDurationSeconds > 0 ? (totalShapes / totalDurationSeconds) * 60 : 0
+  const notesPerSecond = totalDurationSeconds > 0 ? totalNotes / totalDurationSeconds : 0
+
+  let slowestShape: DerivedSessionStats["slowestShape"] = null
+  let fastestShape: DerivedSessionStats["fastestShape"] = null
+
+  for (const shape of shapes) {
+    const shapeData = {
+      shapeIndex: shape.shapeIndex,
+      fretRange: shape.fretRange as [number, number],
+      duration: shape.duration,
+    }
+    if (!slowestShape || shape.duration > slowestShape.duration) slowestShape = shapeData
+    if (!fastestShape || shape.duration < fastestShape.duration) fastestShape = shapeData
+  }
+
+  return {
+    totalShapes,
+    totalNotes,
+    totalDurationSeconds,
+    shapesPerMinute,
+    notesPerSecond,
+    slowestShape,
+    fastestShape,
+  }
+}
 
 export default function PracticePage() {
   const colors = useColors()
   const styles = createStyles(colors)
   const { scale, key, showNotes, duration = "60" } = useLocalSearchParams<ScalePracticeParams>()
 
+  const durationMs = parseInt(duration, 10) * 1000
+
+  const [sessionState, setSessionState] = useState<SessionState>("countdown")
+  const [countdown, setCountdown] = useState(COUNTDOWN_START)
+  const [remainingMs, setRemainingMs] = useState(durationMs)
   const [shapeIndex, setShapeIndex] = useState(0)
   const [viewFrets, setViewFrets] = useState<[number, number]>([0, 6])
   const [playedNotes, setPlayedNotes] = useState<Set<string>>(new Set())
 
-  const lastMatchRef = useRef<string | null>(null) // since we just need 2 consecutive matches
+  const sessionRef = useRef<ScalePracticeSession | null>(null)
+  const shapeStartTimeRef = useRef<number>(0)
+  const lastMatchRef = useRef<string | null>(null)
   const isTransitioningRef = useRef(false)
 
   const { pitch } = useFastPitchDetection({
@@ -137,81 +192,176 @@ export default function PracticePage() {
     [shapeNotes, playedNotes, showNotesEnabled],
   )
 
-  const selectRandomShape = () => {
-    let newIndex = Math.floor(Math.random() * TOTAL_SHAPES)
-    while (newIndex === shapeIndex) {
-      newIndex = Math.floor(Math.random() * TOTAL_SHAPES)
+  const finalizeSession = () => {
+    if (!sessionRef.current) return
+    sessionRef.current.endTime = Date.now()
+    const stats = deriveSessionStats(sessionRef.current)
+    console.log("=== Scale Practice Session Complete ===")
+    console.log("Session:", sessionRef.current)
+    console.log("Stats:", stats)
+    setSessionState("finished")
+  }
+
+  const finalizeCurrentShape = () => {
+    if (!sessionRef.current) return
+    const now = Date.now()
+    const shapeDuration = now - shapeStartTimeRef.current
+    const frets = shapeNotes.map((n) => n.fretIndex)
+    const completedShape: ScalePracticeShape = {
+      shapeIndex,
+      duration: shapeDuration,
+      key,
+      scale,
+      showNotes: showNotesEnabled,
+      noteCount: shapeNotes.length,
+      fretRange: [Math.min(...frets), Math.max(...frets)],
     }
-    const newViewFrets = calculateViewFrets(getShapeNotes(newIndex, fullScale))
+    sessionRef.current.shapes.push(completedShape)
+  }
+
+  const selectRandomShape = (isFirst = false) => {
+    let newIndex = Math.floor(Math.random() * TOTAL_SHAPES)
+    if (!isFirst) {
+      while (newIndex === shapeIndex) {
+        newIndex = Math.floor(Math.random() * TOTAL_SHAPES)
+      }
+    }
+    const newShapeNotes = getShapeNotes(newIndex, fullScale)
+    const newViewFrets = calculateViewFrets(newShapeNotes)
     setViewFrets(newViewFrets)
     setShapeIndex(newIndex)
     setPlayedNotes(new Set())
     lastMatchRef.current = null
     isTransitioningRef.current = false
+    shapeStartTimeRef.current = Date.now()
   }
 
+  // Countdown effect
   useEffect(() => {
-    if (pitch <= 0 || isTransitioningRef.current) return
+    if (sessionState !== "countdown") return
+    if (countdown <= 0) {
+      const now = Date.now()
+      sessionRef.current = {
+        startTime: now,
+        endTime: 0,
+        showNotes: showNotesEnabled,
+        scale,
+        shapes: [],
+      }
+      shapeStartTimeRef.current = now
+      setSessionState("active")
+      return
+    }
+    const timer = setTimeout(() => setCountdown((c) => c - 1), 1000)
+    return () => clearTimeout(timer)
+  }, [sessionState, countdown])
+
+  // Session timer effect
+  useEffect(() => {
+    if (sessionState !== "active") return
+    if (remainingMs <= 0) {
+      finalizeSession()
+      return
+    }
+    const timer = setTimeout(() => setRemainingMs((r) => r - 1000), 1000)
+    return () => clearTimeout(timer)
+  }, [sessionState, remainingMs])
+
+  // Pitch detection effect
+  useEffect(() => {
+    if (sessionState !== "active" || pitch <= 0 || isTransitioningRef.current) return
 
     for (const note of shapeNotes) {
-      const key = createNoteKey(note.stringIndex, note.fretIndex)
-      if (playedNotes.has(key)) continue
+      const noteKey = createNoteKey(note.stringIndex, note.fretIndex)
+      if (playedNotes.has(noteKey)) continue
 
       if (isFrequencyMatch(pitch, note.targetFrequency)) {
-        if (lastMatchRef.current === key) {
-          setPlayedNotes((prev) => new Set(prev).add(key))
+        if (lastMatchRef.current === noteKey) {
+          setPlayedNotes((prev) => new Set(prev).add(noteKey))
           lastMatchRef.current = null
         } else {
-          lastMatchRef.current = key
+          lastMatchRef.current = noteKey
         }
         break
       }
     }
-  }, [pitch])
+  }, [sessionState, pitch])
 
+  // Shape completion effect
   useEffect(() => {
+    if (sessionState !== "active") return
     if (playedNotes.size === 0 || playedNotes.size < shapeNotes.length) return
 
     isTransitioningRef.current = true
-    const timeout = setTimeout(selectRandomShape, SHAPE_COMPLETION_DELAY_MS)
+    finalizeCurrentShape()
+    const timeout = setTimeout(() => selectRandomShape(), SHAPE_COMPLETION_DELAY_MS)
     return () => clearTimeout(timeout)
-  }, [playedNotes.size, shapeNotes.length, selectRandomShape])
+  }, [sessionState, playedNotes.size, shapeNotes.length])
+
+  const formatTime = (ms: number) => {
+    const totalSeconds = Math.max(0, Math.ceil(ms / 1000))
+    const minutes = Math.floor(totalSeconds / 60)
+    const seconds = totalSeconds % 60
+    return `${minutes}:${seconds.toString().padStart(2, "0")}`
+  }
+
+  if (sessionState === "countdown") {
+    return (
+      <ScreenContainer>
+        <View style={styles.countdownContainer}>
+          <Text style={styles.countdownText}>{countdown}</Text>
+        </View>
+      </ScreenContainer>
+    )
+  }
+
+  if (sessionState === "finished") {
+    return (
+      <ScreenContainer>
+        <View style={styles.finishedContainer}>
+          <Text style={styles.finishedText}>Session Complete</Text>
+          <Text style={styles.finishedSubtext}>Check console for results</Text>
+        </View>
+      </ScreenContainer>
+    )
+  }
 
   return (
-    <ScreenContainer>
-      <View style={styles.container}>
-        <View style={styles.fretboardContainer}>
-          <View style={styles.fretboardControlsRow}>
-            <View style={styles.fretboardControlButtonContainer}>
-              <Pressable
-                style={buttonVariants(colors, { variant: "outline", size: "default" }).button}
-                onPress={() => setViewFrets([viewFrets[0] - 1, viewFrets[1] - 1])}
-                disabled={viewFrets[0] <= 0}
-              >
-                <ChevronLeftIcon size={20} color={colors.foreground} />
-              </Pressable>
-              <Text style={styles.fretboardControlText}>{viewFrets[0]}</Text>
-            </View>
-            <View style={styles.fretboardControlButtonContainer}>
-              <Text style={styles.fretboardControlText}>{viewFrets[1]}</Text>
-
-              <Pressable
-                style={buttonVariants(colors, { variant: "outline", size: "default" }).button}
-                onPress={() => setViewFrets([viewFrets[0] + 1, viewFrets[1] + 1])}
-                disabled={viewFrets[1] >= 23}
-              >
-                <ChevronRightIcon size={20} color={colors.foreground} />
-              </Pressable>
-            </View>
+    <ScreenContainer contentStyle={styles.container}>
+      <View style={styles.timerContainer}>
+        <Text style={styles.timerText}>{formatTime(remainingMs)}</Text>
+      </View>
+      <View style={styles.fretboardContainer}>
+        <View style={styles.fretboardControlsRow}>
+          <View style={styles.fretboardControlButtonContainer}>
+            <Pressable
+              style={buttonVariants(colors, { variant: "outline", size: "default" }).button}
+              onPress={() => setViewFrets([viewFrets[0] - 1, viewFrets[1] - 1])}
+              disabled={viewFrets[0] <= 0}
+            >
+              <ChevronLeftIcon size={20} color={colors.foreground} />
+            </Pressable>
+            <Text style={styles.fretboardControlText}>{viewFrets[0]}</Text>
           </View>
-          <Fretboard
-            startFret={viewFrets[0]}
-            endFret={viewFrets[1]}
-            widthPercent={95}
-            heightPercent={30}
-            markers={markers}
-          />
+          <View style={styles.fretboardControlButtonContainer}>
+            <Text style={styles.fretboardControlText}>{viewFrets[1]}</Text>
+
+            <Pressable
+              style={buttonVariants(colors, { variant: "outline", size: "default" }).button}
+              onPress={() => setViewFrets([viewFrets[0] + 1, viewFrets[1] + 1])}
+              disabled={viewFrets[1] >= 23}
+            >
+              <ChevronRightIcon size={20} color={colors.foreground} />
+            </Pressable>
+          </View>
         </View>
+        <Fretboard
+          startFret={viewFrets[0]}
+          endFret={viewFrets[1]}
+          widthPercent={95}
+          heightPercent={30}
+          markers={markers}
+        />
       </View>
     </ScreenContainer>
   )
@@ -221,8 +371,43 @@ const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     container: {
       flex: 1,
-      paddingInline: "2.5%",
       backgroundColor: colors.background,
+    },
+    countdownContainer: {
+      flex: 1,
+      justifyContent: "center",
+      alignItems: "center",
+      backgroundColor: colors.background,
+    },
+    countdownText: {
+      fontSize: 120,
+      fontWeight: "700",
+      color: colors.foreground,
+    },
+    finishedContainer: {
+      flex: 1,
+      justifyContent: "center",
+      alignItems: "center",
+      backgroundColor: colors.background,
+    },
+    finishedText: {
+      fontSize: 28,
+      fontWeight: "600",
+      color: colors.foreground,
+    },
+    finishedSubtext: {
+      fontSize: 16,
+      color: colors.mutedForeground,
+      marginTop: 8,
+    },
+    timerContainer: {
+      alignItems: "center",
+      paddingVertical: 16,
+    },
+    timerText: {
+      fontSize: 32,
+      fontWeight: "600",
+      color: colors.foreground,
     },
     fretboardContainer: {
       flex: 1,
