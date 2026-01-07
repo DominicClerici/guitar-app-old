@@ -1,12 +1,11 @@
-import { ScaleType } from "@/app/scales/practice"
 import { ScreenContainer } from "@/components/ScreenContainer"
 import Button from "@/components/ui/button"
 import { NOTE_NAMES, NoteName } from "@/lib/audio/utils"
-import { SCALE_NAMES } from "@/lib/constants"
+import { SCALE_NAMES, ScaleType } from "@/lib/constants"
 import { ThemeColors, useColors } from "@/lib/theme/ThemeContext"
 import { useRouter } from "expo-router"
 import React, { useState } from "react"
-import { StyleSheet, Text, View } from "react-native"
+import { ScrollView, StyleSheet, Text, View } from "react-native"
 
 export default function ScalesScreen() {
   const [selectedScale, setSelectedScale] = useState<ScaleType | null>(null)
@@ -15,24 +14,45 @@ export default function ScalesScreen() {
   const styles = createStyles(colors)
   const router = useRouter()
   return (
-    <ScreenContainer contentStyle={styles.container}>
+    <ScreenContainer contentStyle={styles.container} topBarTitle="Scales">
       <View style={styles.topControls}>
-        <View style={styles.scaleButtons}>
-          <Button
-            variant={selectedScale === "major" ? "default" : "outline"}
-            size="lg"
-            onPress={() => setSelectedScale(selectedScale === "major" ? null : "major")}
-          >
-            Major
-          </Button>
-          <Button
-            variant={selectedScale === "minor" ? "default" : "outline"}
-            size="lg"
-            onPress={() => setSelectedScale(selectedScale === "minor" ? null : "minor")}
-          >
-            Minor
-          </Button>
-        </View>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={{
+            flexGrow: 0,
+            width: "105%",
+          }}
+          contentContainerStyle={{
+            paddingRight: "5%",
+          }}
+        >
+          <View style={styles.scaleButtonsContainer}>
+            {[0, 1].map((rowIndex) => {
+              const scales = Object.keys(SCALE_NAMES)
+              const half = Math.ceil(scales.length / 2)
+              const rowScales = rowIndex === 0 ? scales.slice(0, half) : scales.slice(half)
+              return (
+                <View key={rowIndex} style={styles.scaleButtonsRow}>
+                  {rowScales.map((scale) => (
+                    <Button
+                      key={scale}
+                      variant={selectedScale === (scale as ScaleType) ? "default" : "outline"}
+                      size="lg"
+                      onPress={() =>
+                        setSelectedScale(
+                          selectedScale === (scale as ScaleType) ? null : (scale as ScaleType),
+                        )
+                      }
+                    >
+                      {SCALE_NAMES[scale as ScaleType]}
+                    </Button>
+                  ))}
+                </View>
+              )
+            })}
+          </View>
+        </ScrollView>
         <View style={styles.separator}></View>
         <View style={styles.scaleButtons}>
           {NOTE_NAMES.map((note) => (
@@ -106,8 +126,15 @@ const createStyles = (colors: ThemeColors) =>
       height: 1,
       backgroundColor: colors.border,
     },
+    scaleButtonsContainer: {
+      flexDirection: "column",
+      gap: 8,
+    },
+    scaleButtonsRow: {
+      flexDirection: "row",
+      gap: 8,
+    },
     scaleButtons: {
-      display: "flex",
       flexDirection: "row",
       flexWrap: "wrap",
       alignItems: "center",
@@ -120,7 +147,8 @@ const createStyles = (colors: ThemeColors) =>
       padding: 16,
       borderWidth: 1,
       borderColor: colors.border,
-      height: "55%",
+      maxHeight: "55%",
+      flexGrow: 1,
     },
     bottomControlsInfo: {
       paddingInline: 12,

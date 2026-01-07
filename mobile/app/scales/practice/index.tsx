@@ -3,7 +3,21 @@ import { ScreenContainer } from "@/components/ScreenContainer"
 import { buttonVariants } from "@/components/ui/button"
 import { useFastPitchDetection } from "@/lib/audio/useFastPitchDetection"
 import { NOTE_NAMES, NoteName } from "@/lib/audio/utils"
-import { convertToMinor, getMajorScale, getShapeNotes, ScaleNote } from "@/lib/scales/major-scale"
+import { ScaleType } from "@/lib/constants"
+import {
+  convertToAeolian,
+  convertToDorian,
+  convertToLocrian,
+  convertToLydian,
+  convertToMajorPentatonic,
+  convertToMinor,
+  convertToMinorPentatonic,
+  convertToMixolydian,
+  convertToPhrygian,
+  getMajorScale,
+  getShapeNotes,
+  ScaleNote,
+} from "@/lib/scales/major-scale"
 import { ThemeColors, useColors } from "@/lib/theme/ThemeContext"
 import { useLocalSearchParams } from "expo-router"
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react-native"
@@ -34,8 +48,6 @@ export type ScalePracticeSession = {
   scale: ScaleType
   shapes: ScalePracticeShape[]
 }
-
-export type ScaleType = "major" | "minor"
 
 export type ScalePracticeParams = {
   scale: ScaleType
@@ -182,7 +194,28 @@ export default function PracticePage() {
 
   const fullScale = useMemo(() => {
     const majorScale = getMajorScale(rootNoteIndex)
-    return scale === "minor" ? convertToMinor(majorScale) : majorScale
+    switch (scale) {
+      case "minor":
+        return convertToMinor(majorScale)
+      case "dorian":
+        return convertToDorian(majorScale)
+      case "phrygian":
+        return convertToPhrygian(majorScale)
+      case "lydian":
+        return convertToLydian(majorScale)
+      case "mixolydian":
+        return convertToMixolydian(majorScale)
+      case "aeolian":
+        return convertToAeolian(majorScale)
+      case "locrian":
+        return convertToLocrian(majorScale)
+      case "majorPentatonic":
+        return convertToMajorPentatonic(majorScale)
+      case "minorPentatonic":
+        return convertToMinorPentatonic(majorScale)
+      default:
+        return majorScale
+    }
   }, [rootNoteIndex, scale])
 
   const shapeNotes = useMemo(() => getShapeNotes(shapeIndex, fullScale), [shapeIndex, fullScale])

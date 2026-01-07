@@ -1,3 +1,4 @@
+import NavTopBar from "@/components/navigation/nav-top-bar"
 import { useColors } from "@/lib/theme/ThemeContext"
 import { ReactNode } from "react"
 import { StyleProp, View, ViewStyle } from "react-native"
@@ -15,6 +16,8 @@ interface ScreenContainerProps {
   style?: StyleProp<ViewStyle>
   /** Additional style for the inner content container */
   contentStyle?: StyleProp<ViewStyle>
+  /** Title for the top bar */
+  topBarTitle?: string
 }
 
 export function ScreenContainer({
@@ -22,6 +25,7 @@ export function ScreenContainer({
   edges = ["top", "bottom", "left", "right"],
   style,
   contentStyle,
+  topBarTitle,
 }: ScreenContainerProps) {
   const insets = useSafeAreaInsets()
   const colors = useColors()
@@ -40,6 +44,7 @@ export function ScreenContainer({
           contentStyle,
         ]}
       >
+        {topBarTitle && <NavTopBar title={topBarTitle} edges={edges} />}
         {children}
       </View>
     </View>

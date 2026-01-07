@@ -34,6 +34,7 @@ const COLORS = {
   },
   light: {
     background: "oklch(0.985 0 0)",
+    backgroundElevated: "oklch(0.965 0 0)",
     foreground: "oklch(0.145 0 0)",
     card: "oklch(1 0 0)",
     cardForeground: "oklch(0.145 0 0)",

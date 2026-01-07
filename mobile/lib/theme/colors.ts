@@ -34,6 +34,7 @@ const COLORS = {
   },
   light: {
     background: "#fafafa",
+    backgroundElevated: "#f3f3f3",
     foreground: "#0a0a0a",
     card: "#ffffff",
     cardForeground: "#0a0a0a",

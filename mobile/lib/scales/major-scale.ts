@@ -118,17 +118,54 @@ export function getMajorScale(rootNoteIndex: number): ScaleNote[] {
   return transposeScale(A_MAJOR_SCALE, shift)
 }
 
-export function convertToMinor(scale: ScaleNote[]): ScaleNote[] {
+function applyModeTransform(scale: ScaleNote[], lowerDegrees: number[], raiseDegrees: number[] = []): ScaleNote[] {
   return scale.map((note) => {
-    if (note.degree === 3 || note.degree === 6 || note.degree === 7) {
-      const newFretIndex = note.fretIndex - 1
-      return {
-        ...note,
-        fretIndex: newFretIndex,
-        noteIndex: (note.noteIndex - 1 + 12) % 12,
-        targetFrequency: midiToFreq(STRING_OPEN_MIDI[note.stringIndex] + newFretIndex),
-      }
+    let shift = 0
+    if (lowerDegrees.includes(note.degree)) shift = -1
+    else if (raiseDegrees.includes(note.degree)) shift = 1
+    if (shift === 0) return note
+    const newFretIndex = note.fretIndex + shift
+    return {
+      ...note,
+      fretIndex: newFretIndex,
+      noteIndex: (note.noteIndex + shift + 12) % 12,
+      targetFrequency: midiToFreq(STRING_OPEN_MIDI[note.stringIndex] + newFretIndex),
     }
-    return note
   })
+}
+
+export function convertToMinor(scale: ScaleNote[]): ScaleNote[] {
+  return applyModeTransform(scale, [3, 6, 7])
+}
+
+export function convertToDorian(scale: ScaleNote[]): ScaleNote[] {
+  return applyModeTransform(scale, [3, 7])
+}
+
+export function convertToPhrygian(scale: ScaleNote[]): ScaleNote[] {
+  return applyModeTransform(scale, [2, 3, 6, 7])
+}
+
+export function convertToLydian(scale: ScaleNote[]): ScaleNote[] {
+  return applyModeTransform(scale, [], [4])
+}
+
+export function convertToMixolydian(scale: ScaleNote[]): ScaleNote[] {
+  return applyModeTransform(scale, [7])
+}
+
+export function convertToAeolian(scale: ScaleNote[]): ScaleNote[] {
+  return applyModeTransform(scale, [3, 6, 7])
+}
+
+export function convertToLocrian(scale: ScaleNote[]): ScaleNote[] {
+  return applyModeTransform(scale, [2, 3, 5, 6, 7])
+}
+
+export function convertToMajorPentatonic(scale: ScaleNote[]): ScaleNote[] {
+  return scale.filter((note) => note.degree !== 4 && note.degree !== 7)
+}
+
+export function convertToMinorPentatonic(scale: ScaleNote[]): ScaleNote[] {
+  return convertToMinor(scale).filter((note) => note.degree !== 2 && note.degree !== 6)
 }
