@@ -2,17 +2,11 @@ import { Fretboard } from "@/components/fretboard/fretboard"
 import { ScreenContainer } from "@/components/ScreenContainer"
 import { buttonVariants } from "@/components/ui/button"
 import { NOTE_NAMES, NoteName } from "@/lib/audio/utils"
-import {
-  CAGED_SHAPE_RANGES,
-  getMajorScale,
-  getNoteName,
-  getShapeNotes,
-  ScaleNote,
-} from "@/lib/scales/major-scale"
+import { getMajorScale, getNoteName, getShapeNotes, ScaleNote } from "@/lib/scales/major-scale"
 import { ThemeColors, useColors } from "@/lib/theme/ThemeContext"
 import { useLocalSearchParams } from "expo-router"
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react-native"
-import React, { useCallback, useEffect, useMemo, useState } from "react"
+import React, { useEffect, useMemo, useState } from "react"
 import { Pressable, StyleSheet, Text, View } from "react-native"
 
 export type ScaleType = "major"
@@ -47,8 +41,6 @@ function calculateViewFrets(shapeNotes: ScaleNote[]): [number, number] {
   const maxFret = Math.max(...frets)
   const span = maxFret - minFret + 1
 
-  // If span is 4 frets, display 6 frets (1 empty on each side)
-  // If span is 5 frets, display 7 frets (1 empty on each side)
   const displayCount = span <= 4 ? 6 : 7
 
   const startFret = Math.max(0, minFret - 1)
@@ -65,36 +57,21 @@ export default function PracticePage() {
   const [shapeIndex, setShapeIndex] = useState(0)
   const [viewFrets, setViewFrets] = useState<[number, number]>([0, 6])
 
-  // Get the root note index from the key param
   const rootNoteIndex = useMemo(() => {
     const index = NOTE_NAMES.indexOf(key)
     return index >= 0 ? index : 9 // Default to A if not found
   }, [key])
 
-  // Get the full scale for the selected key
   const fullScale = useMemo(() => getMajorScale(rootNoteIndex), [rootNoteIndex])
 
-  // Get the notes for the current shape
   const shapeNotes = useMemo(() => getShapeNotes(shapeIndex, fullScale), [shapeIndex, fullScale])
 
-  // Convert to fretboard markers
   const markers = useMemo(() => scaleNotesToMarkers(shapeNotes), [shapeNotes])
 
-  // Update view frets when shape changes
   useEffect(() => {
     const newViewFrets = calculateViewFrets(shapeNotes)
     setViewFrets(newViewFrets)
   }, [shapeNotes])
-
-  // Select a random shape (different from current)
-  const selectRandomShape = useCallback(() => {
-    const shapeCount = CAGED_SHAPE_RANGES.length
-    let newIndex: number
-    do {
-      newIndex = Math.floor(Math.random() * shapeCount)
-    } while (newIndex === shapeIndex && shapeCount > 1)
-    setShapeIndex(newIndex)
-  }, [shapeIndex])
 
   return (
     <ScreenContainer>
@@ -110,14 +87,6 @@ export default function PracticePage() {
                 <ChevronLeftIcon size={20} color={colors.foreground} />
               </Pressable>
               <Text style={styles.fretboardControlText}>{viewFrets[0]}</Text>
-            </View>
-            <View style={styles.fretboardControlButtonContainer}>
-              <Pressable
-                style={buttonVariants(colors, { variant: "outline", size: "default" }).button}
-                onPress={selectRandomShape}
-              >
-                <Text style={styles.buttonText}>Random Shape</Text>
-              </Pressable>
             </View>
             <View style={styles.fretboardControlButtonContainer}>
               <Text style={styles.fretboardControlText}>{viewFrets[1]}</Text>
