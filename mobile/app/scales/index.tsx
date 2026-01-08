@@ -95,7 +95,7 @@ export default function ScalesScreen() {
                 scale: selectedScale,
                 key: "C",
                 showNotes: "true",
-                duration: "30",
+                duration: "120",
               },
             })
           }}
