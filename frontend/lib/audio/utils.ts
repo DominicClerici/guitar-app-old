@@ -1,6 +1,8 @@
 export const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 export type NoteName = (typeof NOTE_NAMES)[number]
 
+export const STRING_OPEN_MIDI = [40, 45, 50, 55, 59, 64] // E2, A2, D3, G3, B3, E4
+
 const A4_FREQ = 440
 const A4_MIDI = 69
 const MIN_MIDI = 28

@@ -11,6 +11,7 @@ export default async function Home() {
       <h1>Hello World</h1>
       <p>Username: {user?.name || "No name/not logged in"}</p>
       <Link href="/microphone-test">Microphone Test</Link>
+      <Link href="/scale-trainer">Scale trainer</Link>
       <TestPage />
       {user ? <LogoutButton /> : <Link href="/login">Login</Link>}
     </div>
