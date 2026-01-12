@@ -10,6 +10,7 @@ export default async function Home() {
     <div className="flex h-screen flex-col items-center justify-center">
       <h1>Hello World</h1>
       <p>Username: {user?.name || "No name/not logged in"}</p>
+      <Link href="/microphone-test">Microphone Test</Link>
       <TestPage />
       {user ? <LogoutButton /> : <Link href="/login">Login</Link>}
     </div>
