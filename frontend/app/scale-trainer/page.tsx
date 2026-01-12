@@ -2,6 +2,7 @@
 
 import { Fretboard, type Marker, type MarkerType } from "@/components/fretboard/fretboard"
 import ScaleTrainerControls from "@/components/scale-trainer/scale-trainer-controls"
+import SessionReview, { formatTime } from "@/components/scale-trainer/session-review"
 import AnimatedUnmount from "@/components/ui/animated-unmount"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
@@ -18,10 +19,12 @@ import {
   convertToMinorPentatonic,
   convertToMixolydian,
   convertToPhrygian,
+  findBestFretPosition,
   getMajorScale,
   getShapeNotes,
   type ScaleNote,
 } from "@/lib/scales/major-scale"
+import { freqToMidi } from "@/lib/audio/utils"
 import { X } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
@@ -40,6 +43,7 @@ function scaleNotesToMarkers(
   notes: ScaleNote[],
   playedNotes: Set<string>,
   showNotes: boolean,
+  isActive: boolean,
 ): Marker[] {
   return notes.map((note) => {
     const key = createNoteKey(note.stringIndex, note.fretIndex)
@@ -47,7 +51,7 @@ function scaleNotesToMarkers(
     const isRoot = note.degree === 1
 
     let type: MarkerType
-    if (isPlayed) {
+    if (isPlayed || !isActive) {
       type = isRoot ? "root" : "note"
     } else if (showNotes) {
       type = isRoot ? "root-disabled" : "note-disabled"
@@ -60,6 +64,7 @@ function scaleNotesToMarkers(
       fretIndex: note.fretIndex,
       type,
       label: NOTE_NAMES[note.noteIndex],
+      degree: note.degree,
     }
   })
 }
@@ -82,7 +87,7 @@ type ScalePracticeSession = {
   shapes: ScalePracticeShape[]
 }
 
-type DerivedSessionStats = {
+export type DerivedSessionStats = {
   totalShapes: number
   totalNotes: number
   totalDurationSeconds: number
@@ -130,21 +135,24 @@ const TOTAL_SHAPES = 5
 const COUNTDOWN_START = 4
 const DEFAULT_DURATION_MS = 120 * 1000
 
-type SessionState = "idle" | "countdown" | "active" | "finished"
+export type SessionState = "idle" | "countdown" | "active" | "finished"
+export type PracticeMode = "timed" | "unlimited"
 
 export default function ScaleTrainerPage() {
-  // Selection state
-  const [selectedScale, setSelectedScale] = useState<ScaleType | null>(null)
-  const [selectedKey, setSelectedKey] = useState<NoteName | null>(null)
+  const [selectedScale, setSelectedScale] = useState<ScaleType | null>("major")
+  const [selectedKey, setSelectedKey] = useState<NoteName | null>("C")
   const [showNotes, setShowNotes] = useState(true)
+  const [showDegree, setShowDegree] = useState(false)
+  const [showPlayedNote, setShowPlayedNote] = useState(true)
 
-  // Session state
   const [sessionState, setSessionState] = useState<SessionState>("idle")
+  const [practiceMode, setPracticeMode] = useState<PracticeMode>("timed")
   const [countdown, setCountdown] = useState(COUNTDOWN_START)
-  const [remainingMs, setRemainingMs] = useState(DEFAULT_DURATION_MS)
-  const [shapeIndex, setShapeIndex] = useState(0)
+  const [timerMs, setTimerMs] = useState(DEFAULT_DURATION_MS)
+  const [shapeIndex, setShapeIndex] = useState<number | null>(0)
   const [playedNotes, setPlayedNotes] = useState<Set<string>>(new Set())
   const [sessionStats, setSessionStats] = useState<DerivedSessionStats | null>(null)
+  const [playedNoteMarker, setPlayedNoteMarker] = useState<Marker | null>(null)
 
   const sessionRef = useRef<ScalePracticeSession | null>(null)
   const shapeStartTimeRef = useRef<number>(0)
@@ -197,17 +205,23 @@ export default function ScaleTrainerPage() {
     }
   }, [rootNoteIndex, selectedScale])
 
-  const shapeNotes = useMemo(() => getShapeNotes(shapeIndex, fullScale), [shapeIndex, fullScale])
-
-  const markers = useMemo(
-    () => scaleNotesToMarkers(shapeNotes, playedNotes, showNotes),
-    [shapeNotes, playedNotes, showNotes],
+  const shapeNotes = useMemo(
+    () => (shapeIndex === null ? fullScale : getShapeNotes(shapeIndex, fullScale)),
+    [shapeIndex, fullScale],
   )
+
+  const markers = useMemo(() => {
+    const scaleMarkers = scaleNotesToMarkers(shapeNotes, playedNotes, showNotes, sessionState === "active")
+    if (playedNoteMarker && sessionState === "active") {
+      return [...scaleMarkers, playedNoteMarker]
+    }
+    return scaleMarkers
+  }, [shapeNotes, playedNotes, showNotes, sessionState, playedNoteMarker])
 
   const selectRandomShape = useCallback(
     (isFirst = false) => {
       let newIndex = Math.floor(Math.random() * TOTAL_SHAPES)
-      if (!isFirst) {
+      if (!isFirst && shapeIndex !== null) {
         while (newIndex === shapeIndex) {
           newIndex = Math.floor(Math.random() * TOTAL_SHAPES)
         }
@@ -217,11 +231,11 @@ export default function ScaleTrainerPage() {
       isTransitioningRef.current = false
       shapeStartTimeRef.current = Date.now()
     },
-    [shapeIndex, fullScale],
+    [shapeIndex],
   )
 
   const finalizeCurrentShape = useCallback(() => {
-    if (!sessionRef.current || !selectedScale || !selectedKey) return
+    if (!sessionRef.current || !selectedScale || !selectedKey || shapeIndex === null) return
     const now = Date.now()
     const shapeDuration = now - shapeStartTimeRef.current
     const frets = shapeNotes.map((n) => n.fretIndex)
@@ -249,16 +263,19 @@ export default function ScaleTrainerPage() {
     stopListening()
   }, [stopListening])
 
-  const startSession = useCallback(async () => {
-    if (!selectedScale || !selectedKey) return
+  const startSession = useCallback(
+    async (mode: PracticeMode) => {
+      if (!selectedScale || !selectedKey) return
 
-    await startListening()
-    selectRandomShape(true)
-    setCountdown(COUNTDOWN_START)
-    setRemainingMs(DEFAULT_DURATION_MS)
-    setSessionStats(null)
-    setSessionState("countdown")
-  }, [selectedScale, selectedKey, startListening, selectRandomShape])
+      await startListening()
+      setCountdown(COUNTDOWN_START)
+      setTimerMs(mode === "timed" ? DEFAULT_DURATION_MS : 0)
+      setPracticeMode(mode)
+      setSessionStats(null)
+      setSessionState("countdown")
+    },
+    [selectedScale, selectedKey, startListening, selectRandomShape],
+  )
 
   const cancelSession = useCallback(() => {
     stopListening()
@@ -271,6 +288,7 @@ export default function ScaleTrainerPage() {
     if (sessionState !== "countdown") return
     if (countdown <= 0) {
       const now = Date.now()
+      selectRandomShape(true)
       sessionRef.current = {
         startTime: now,
         endTime: 0,
@@ -284,31 +302,64 @@ export default function ScaleTrainerPage() {
     }
     const timer = setTimeout(() => setCountdown((c) => c - 1), 1000)
     return () => clearTimeout(timer)
-  }, [sessionState, countdown, showNotes, selectedScale])
+  }, [sessionState, countdown, showNotes, selectedScale, selectRandomShape])
 
   useEffect(() => {
     if (sessionState !== "active") return
-    if (remainingMs <= 0) {
+    if (practiceMode === "timed" && timerMs <= 0) {
       finalizeSession()
       return
     }
-    const timer = setTimeout(() => setRemainingMs((r) => r - 1000), 1000)
+    const timer = setTimeout(
+      () => setTimerMs((t) => (practiceMode === "timed" ? t - 1000 : t + 1000)),
+      1000,
+    )
     return () => clearTimeout(timer)
-  }, [sessionState, remainingMs, finalizeSession])
+  }, [sessionState, timerMs, practiceMode, finalizeSession])
 
   useEffect(() => {
-    if (sessionState !== "active" || pitch <= 0 || isTransitioningRef.current) return
+    if (sessionState !== "active" || pitch <= 0 || isTransitioningRef.current) {
+      setPlayedNoteMarker(null)
+      return
+    }
 
+    let matchedScaleNote = false
     for (const note of shapeNotes) {
       const noteKey = createNoteKey(note.stringIndex, note.fretIndex)
       if (playedNotes.has(noteKey)) continue
 
       if (isFrequencyMatch(pitch, note.targetFrequency)) {
         setPlayedNotes((prev) => new Set(prev).add(noteKey))
+        matchedScaleNote = true
+        setPlayedNoteMarker(null)
         break
       }
     }
-  }, [sessionState, pitch, shapeNotes, playedNotes])
+
+    if (!matchedScaleNote && showPlayedNote) {
+      const midi = Math.round(freqToMidi(pitch))
+      const noteIndex = ((midi % 12) + 12) % 12
+      const isNoteInScale = shapeNotes.some((note) => note.noteIndex === noteIndex)
+
+      if (!isNoteInScale) {
+        const position = findBestFretPosition(midi, shapeNotes, playedNotes)
+        if (position) {
+          setPlayedNoteMarker({
+            stringIndex: position.stringIndex,
+            fretIndex: position.fretIndex,
+            type: "played",
+            label: NOTE_NAMES[noteIndex],
+          })
+        } else {
+          setPlayedNoteMarker(null)
+        }
+      } else {
+        setPlayedNoteMarker(null)
+      }
+    } else if (!showPlayedNote) {
+      setPlayedNoteMarker(null)
+    }
+  }, [sessionState, pitch, shapeNotes, playedNotes, showPlayedNote])
 
   useEffect(() => {
     if (sessionState !== "active") return
@@ -320,16 +371,9 @@ export default function ScaleTrainerPage() {
     return () => clearTimeout(timeout)
   }, [sessionState, playedNotes.size, shapeNotes.length, finalizeCurrentShape, selectRandomShape])
 
-  const formatTime = (ms: number) => {
-    const totalSeconds = Math.max(0, Math.ceil(ms / 1000))
-    const minutes = Math.floor(totalSeconds / 60)
-    const seconds = totalSeconds % 60
-    return `${minutes}:${seconds.toString().padStart(2, "0")}`
-  }
-
   return (
     <div className="bg-background flex min-h-screen flex-col">
-      <div className="mx-auto w-full max-w-7xl py-12">
+      <div className="mx-auto mt-12 w-full max-w-7xl">
         <AnimatedUnmount
           animClassIn="animation-fade-in"
           animClassOut="animation-fade-out"
@@ -342,110 +386,94 @@ export default function ScaleTrainerPage() {
             setSelectedKey={setSelectedKey}
             showNotes={showNotes}
             setShowNotes={setShowNotes}
+            showDegree={showDegree}
+            setShowDegree={setShowDegree}
+            showPlayedNote={showPlayedNote}
+            setShowPlayedNote={setShowPlayedNote}
             isListening={isListening}
             stopListening={stopListening}
             startListening={startListening}
             startSession={startSession}
           />
         </AnimatedUnmount>
-      </div>
-      <Separator />
-
-      <div className="flex flex-1 flex-col items-center justify-center p-6">
-        <AnimatedUnmount
-          animClassIn="animation-fade-in"
-          animClassOut="animation-fade-out"
-          display={sessionState === "countdown"}
-          className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center"
-        >
-          <span className="text-foreground text-9xl font-bold">{countdown}</span>
-          <p className="text-muted-foreground mt-4 text-lg">Get ready...</p>
-        </AnimatedUnmount>
-
         <AnimatedUnmount
           animClassIn="animation-fade-in"
           animClassOut="animation-fade-out"
           display={sessionState === "active"}
-          className="flex w-full max-w-7xl flex-col items-center gap-6"
+          className="flex flex-col items-center gap-2"
         >
-          <div className="flex items-center gap-2">
-            <div className="text-foreground text-4xl font-semibold tabular-nums">
-              {formatTime(remainingMs)}
-            </div>
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={cancelSession}
-              className="pointer-events-auto opacity-100"
-            >
+          <div className="text-foreground text-4xl font-semibold tabular-nums">
+            {formatTime(timerMs)}
+          </div>
+          <div className="text-muted-foreground text-sm">
+            Shape {(shapeIndex ?? 0) + 1} of {TOTAL_SHAPES} • {playedNotes.size} /{" "}
+            {shapeNotes.length} notes
+          </div>
+          <div className="flex gap-2">
+            {practiceMode === "unlimited" && (
+              <Button size="sm" onClick={finalizeSession}>
+                End Session
+              </Button>
+            )}
+            <Button variant="destructive" size="sm" onClick={cancelSession}>
               <X className="mr-2 h-4 w-4" />
               Cancel
             </Button>
           </div>
-
-          <Fretboard className="w-full" markers={markers} />
-
-          <div className="text-muted-foreground text-sm">
-            Shape {shapeIndex + 1} of {TOTAL_SHAPES} • {playedNotes.size} / {shapeNotes.length}{" "}
-            notes
-          </div>
-        </AnimatedUnmount>
-
-        <AnimatedUnmount
-          animClassIn="animation-fade-in"
-          animClassOut="animation-fade-out"
-          display={sessionState === "finished" && !!sessionStats}
-          className="bg-card border-border max-w-md rounded-lg border p-6"
-        >
-          {!!sessionStats && (
-            <>
-              <h2 className="text-foreground mb-4 text-2xl font-bold">Session Complete</h2>
-              <div className="space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Total Time</span>
-                  <span className="text-foreground font-medium">
-                    {formatTime(sessionStats!.totalDurationSeconds * 1000)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Shapes Completed</span>
-                  <span className="text-foreground font-medium">{sessionStats!.totalShapes}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Notes Played</span>
-                  <span className="text-foreground font-medium">{sessionStats!.totalNotes}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Shapes/Minute</span>
-                  <span className="text-foreground font-medium">
-                    {sessionStats!.shapesPerMinute.toFixed(1)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Notes/Second</span>
-                  <span className="text-foreground font-medium">
-                    {sessionStats!.notesPerSecond.toFixed(2)}
-                  </span>
-                </div>
-              </div>
-              <div className="mt-6 flex gap-3">
-                <Button
-                  className="flex-1"
-                  onClick={() => {
-                    setSessionState("idle")
-                    setPlayedNotes(new Set())
-                  }}
-                >
-                  Done
-                </Button>
-                <Button variant="outline" className="flex-1" onClick={startSession}>
-                  Practice Again
-                </Button>
-              </div>
-            </>
-          )}
         </AnimatedUnmount>
       </div>
+      <Separator className="my-12" />
+      <AnimatedUnmount
+        animClassIn="animation-fade-in"
+        animClassOut="animation-fade-out"
+        display={sessionState === "countdown"}
+        className="pointer-events-none absolute inset-0"
+      >
+        <div className="bg-background flex h-full w-full flex-col items-center justify-center">
+          <span className="text-foreground text-9xl font-bold">{countdown}</span>
+          <p className="text-muted-foreground mt-4 text-lg">Get ready...</p>
+        </div>
+      </AnimatedUnmount>
+
+      <div className="flex flex-col items-center gap-4">
+        <Fretboard className="mx-auto w-full max-w-7xl" markers={markers} showDegree={showDegree} />
+        {sessionState === "idle" && !!selectedScale && !!selectedKey && (
+          <div className="flex items-center gap-4">
+            <Button
+              variant={shapeIndex === null ? "default" : "outline"}
+              size="sm"
+              onClick={() => setShapeIndex(null)}
+            >
+              All Shapes
+            </Button>
+            {Array.from({ length: TOTAL_SHAPES }, (_, i) => (
+              <Button
+                key={i}
+                variant={shapeIndex === i ? "default" : "outline"}
+                size="sm"
+                onClick={() => setShapeIndex(i)}
+              >
+                Shape {i + 1}
+              </Button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <AnimatedUnmount
+        animClassIn="animation-fade-in"
+        animClassOut="animation-fade-out"
+        display={sessionState === "finished"}
+        className="bg-card border-border max-w-md rounded-lg border p-6"
+      >
+        <SessionReview
+          sessionStats={sessionStats}
+          setSessionState={setSessionState}
+          setPlayedNotes={setPlayedNotes}
+          startSession={startSession}
+          practiceMode={practiceMode}
+        />
+      </AnimatedUnmount>
     </div>
   )
 }

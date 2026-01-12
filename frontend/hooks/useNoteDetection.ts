@@ -1,7 +1,7 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
 import { PitchDetector } from "pitchy"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 export type NoteDetectionStatus = "idle" | "requesting" | "recording" | "error"
 
@@ -27,9 +27,7 @@ const DEFAULT_OPTIONS: Required<UseNoteDetectionOptions> = {
   updateIntervalMs: 50,
 }
 
-export function useNoteDetection(
-  options: UseNoteDetectionOptions = {}
-): UseNoteDetectionResult {
+export function useNoteDetection(options: UseNoteDetectionOptions = {}): UseNoteDetectionResult {
   const [status, setStatus] = useState<NoteDetectionStatus>("idle")
   const [error, setError] = useState<string | null>(null)
   const [pitch, setPitch] = useState<number>(-1)
@@ -42,7 +40,7 @@ export function useNoteDetection(
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const animationFrameRef = useRef<number | null>(null)
   const detectorRef = useRef<PitchDetector<Float32Array> | null>(null)
-  const inputArrayRef = useRef<Float32Array | null>(null)
+  const inputArrayRef = useRef<Float32Array<ArrayBuffer> | null>(null)
   const lastUpdateRef = useRef<number>(0)
 
   useEffect(() => {
@@ -62,10 +60,7 @@ export function useNoteDetection(
       lastUpdateRef.current = now
 
       analyser.getFloatTimeDomainData(input)
-      const [detectedPitch, detectedClarity] = detector.findPitch(
-        input,
-        audioContext.sampleRate
-      )
+      const [detectedPitch, detectedClarity] = detector.findPitch(input, audioContext.sampleRate)
 
       if (detectedClarity >= optionsRef.current.minClarity && detectedPitch > 0) {
         setPitch(detectedPitch)

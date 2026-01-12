@@ -170,3 +170,77 @@ export function convertToMajorPentatonic(scale: ScaleNote[]): ScaleNote[] {
 export function convertToMinorPentatonic(scale: ScaleNote[]): ScaleNote[] {
   return convertToMinor(scale).filter((note) => note.degree !== 2 && note.degree !== 6)
 }
+
+export type FretPosition = {
+  stringIndex: number
+  fretIndex: number
+}
+
+const STRING_COUNT = 6
+const MAX_FRET_FOR_DETECTION = 18
+
+export function findAllFretPositionsForMidi(midi: number): FretPosition[] {
+  const positions: FretPosition[] = []
+  for (let stringIndex = 0; stringIndex < STRING_COUNT; stringIndex++) {
+    const fretIndex = midi - STRING_OPEN_MIDI[stringIndex]
+    if (fretIndex >= 0 && fretIndex <= MAX_FRET_FOR_DETECTION) {
+      positions.push({ stringIndex, fretIndex })
+    }
+  }
+  return positions
+}
+
+function getDistance(a: FretPosition, b: FretPosition): number {
+  return Math.abs(a.stringIndex - b.stringIndex) + Math.abs(a.fretIndex - b.fretIndex)
+}
+
+export function findBestFretPosition(
+  midi: number,
+  scaleNotes: ScaleNote[],
+  playedNoteKeys: Set<string>,
+): FretPosition | null {
+  const candidates = findAllFretPositionsForMidi(midi)
+  if (candidates.length === 0) return null
+  if (candidates.length === 1) return candidates[0]
+
+  let bestCandidates = candidates
+  let minDistance = Infinity
+  for (const candidate of candidates) {
+    for (const scaleNote of scaleNotes) {
+      const dist = getDistance(candidate, scaleNote)
+      if (dist < minDistance) {
+        minDistance = dist
+        bestCandidates = [candidate]
+      } else if (dist === minDistance && !bestCandidates.includes(candidate)) {
+        bestCandidates.push(candidate)
+      }
+    }
+  }
+
+  if (bestCandidates.length === 1) return bestCandidates[0]
+
+  const unplayedScaleNotes = scaleNotes.filter(
+    (note) => !playedNoteKeys.has(`${note.stringIndex}-${note.fretIndex}`),
+  )
+
+  if (unplayedScaleNotes.length > 0) {
+    let narrowed = bestCandidates
+    minDistance = Infinity
+    for (const candidate of bestCandidates) {
+      for (const unplayedNote of unplayedScaleNotes) {
+        const dist = getDistance(candidate, unplayedNote)
+        if (dist < minDistance) {
+          minDistance = dist
+          narrowed = [candidate]
+        } else if (dist === minDistance && !narrowed.includes(candidate)) {
+          narrowed.push(candidate)
+        }
+      }
+    }
+    bestCandidates = narrowed
+  }
+
+  if (bestCandidates.length === 1) return bestCandidates[0]
+
+  return bestCandidates.reduce((best, curr) => (curr.fretIndex > best.fretIndex ? curr : best))
+}

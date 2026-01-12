@@ -7,9 +7,10 @@ const STRING_COUNT = 6
 const FRET_COUNT = 19 // 0 (nut) through 18
 
 const SVG_WIDTH = 900
-const SVG_HEIGHT = 200
+const SVG_HEIGHT = 220
+const FRET_LABEL_AREA_HEIGHT = 20
 const FRET_WIDTH = SVG_WIDTH / FRET_COUNT
-const MARKER_RADIUS = 14
+const MARKER_RADIUS = 12
 const FRET_DOT_RADIUS = 6
 
 type MarkerType =
@@ -19,22 +20,27 @@ type MarkerType =
   | "note"
   | "root-hidden"
   | "note-hidden"
+  | "played"
 
 type Marker = {
   stringIndex: number
   fretIndex: number
   type: MarkerType
   label: string
+  degree?: number
 }
 
 type FretboardProps = {
   tuning?: readonly string[]
   markers?: Marker[]
   className?: string
+  showDegree?: boolean
 }
 
+const FRETBOARD_HEIGHT = SVG_HEIGHT - FRET_LABEL_AREA_HEIGHT
+
 const getStringY = (stringIndex: number): number => {
-  return ((STRING_COUNT - stringIndex) / (STRING_COUNT + 1)) * SVG_HEIGHT
+  return ((STRING_COUNT - stringIndex - 0.5) / STRING_COUNT) * FRETBOARD_HEIGHT
 }
 
 const getFretX = (fretIndex: number): number => {
@@ -49,15 +55,25 @@ export function Fretboard({
   tuning = DEFAULT_TUNING,
   markers = [],
   className = "",
+  showDegree = false,
 }: FretboardProps) {
   const getMarkerStyle = (type: MarkerType) => {
+    if (type === "played") {
+      return {
+        fill: "var(--destructive)",
+        textColor: "var(--destructive-foreground)",
+        borderColor: "var(--destructive)",
+        opacity: 1,
+      }
+    }
     const isHidden = type.includes("hidden")
     const isDisabled = type.includes("disabled")
     const isRoot = type.includes("root")
     return {
-      fillClass: isRoot ? "fill-primary" : "fill-foreground",
-      textClass: isRoot ? "fill-primary-foreground" : "fill-background",
-      opacity: isHidden ? 0 : isDisabled ? 0.4 : 1,
+      fill: isRoot ? "var(--foreground)" : "var(--muted)",
+      textColor: isRoot ? "var(--background)" : "var(--foreground)",
+      borderColor: isRoot ? "var(--background)" : "var(--border)",
+      opacity: isHidden ? 0 : isDisabled ? 0.25 : 1,
     }
   }
 
@@ -73,7 +89,7 @@ export function Fretboard({
           x={x}
           y={0}
           width={width}
-          height={SVG_HEIGHT}
+          height={FRETBOARD_HEIGHT}
           className={isNut ? "fill-foreground" : "fill-muted"}
         />
       )
@@ -91,16 +107,16 @@ export function Fretboard({
           <g key={`fret-marker-${fretNumber}`}>
             <circle
               cx={cx}
-              cy={SVG_HEIGHT / 2 - gap / 2}
+              cy={FRETBOARD_HEIGHT / 2 - gap}
               r={FRET_DOT_RADIUS}
-              className="fill-muted"
+              className="fill-muted-foreground"
               opacity={0.5}
             />
             <circle
               cx={cx}
-              cy={SVG_HEIGHT / 2 + gap / 2}
+              cy={FRETBOARD_HEIGHT / 2 + gap}
               r={FRET_DOT_RADIUS}
-              className="fill-muted"
+              className="fill-muted-foreground"
               opacity={0.5}
             />
           </g>
@@ -111,9 +127,9 @@ export function Fretboard({
         <circle
           key={`fret-marker-${fretNumber}`}
           cx={cx}
-          cy={SVG_HEIGHT / 2}
+          cy={FRETBOARD_HEIGHT / 2}
           r={FRET_DOT_RADIUS}
-          className="fill-muted"
+          className="fill-muted-foreground"
           opacity={0.5}
         />
       )
@@ -159,6 +175,28 @@ export function Fretboard({
     })
   }
 
+  const renderFretLabels = () => {
+    return Array.from({ length: FRET_COUNT - 1 }, (_, i) => {
+      const fretNumber = i + 1
+      const cx = getFretCenterX(fretNumber)
+      const cy = FRETBOARD_HEIGHT + FRET_LABEL_AREA_HEIGHT / 2
+
+      return (
+        <text
+          key={`fret-label-${fretNumber}`}
+          x={cx}
+          y={cy}
+          textAnchor="middle"
+          dominantBaseline="central"
+          className="fill-muted-foreground text-xs"
+          style={{ fontSize: 10 }}
+        >
+          {fretNumber}
+        </text>
+      )
+    })
+  }
+
   const renderNoteMarkers = () => {
     return markers.map((marker, index) => {
       if (marker.fretIndex < 0 || marker.fretIndex >= FRET_COUNT) return null
@@ -166,22 +204,32 @@ export function Fretboard({
       const style = getMarkerStyle(marker.type)
       const cx = getFretCenterX(marker.fretIndex)
       const cy = getStringY(marker.stringIndex)
+      const displayLabel =
+        showDegree && marker.degree !== undefined ? String(marker.degree) : marker.label
 
       return (
         <g
           key={`marker-${marker.stringIndex}-${marker.fretIndex}-${index}`}
           opacity={style.opacity}
         >
-          <circle cx={cx} cy={cy} r={MARKER_RADIUS} className={style.fillClass} />
+          <circle
+            cx={cx}
+            cy={cy}
+            r={MARKER_RADIUS}
+            fill={style.fill}
+            stroke={style.borderColor}
+            strokeWidth={1}
+          />
           <text
             x={cx}
             y={cy}
             textAnchor="middle"
             dominantBaseline="central"
-            className={`${style.textClass} font-bold`}
+            fill={style.textColor}
+            className={`font-bold`}
             style={{ fontSize: 12 }}
           >
-            {marker.label}
+            {displayLabel}
           </text>
         </g>
       )
@@ -191,13 +239,23 @@ export function Fretboard({
   return (
     <svg
       viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
-      className={`border-border border-y ${className}`}
+      className={className}
       preserveAspectRatio="xMidYMid meet"
     >
+      <line
+        x1={0}
+        y1={FRETBOARD_HEIGHT}
+        x2={SVG_WIDTH}
+        y2={FRETBOARD_HEIGHT}
+        stroke="var(--border)"
+        strokeWidth={1}
+      />
+      <line x1={0} y1={0.5} x2={SVG_WIDTH} y2={0.5} strokeWidth={1} stroke="var(--border)" />
       {renderFrets()}
       {renderFretMarkers()}
       {renderStrings()}
       {renderTuningLabels()}
+      {renderFretLabels()}
       {renderNoteMarkers()}
     </svg>
   )

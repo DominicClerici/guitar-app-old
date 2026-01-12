@@ -1,3 +1,4 @@
+import { type PracticeMode } from "@/app/scale-trainer/page"
 import { NOTE_NAMES, NoteName } from "@/lib/audio/utils"
 import { SCALE_NAMES, ScaleType } from "@/lib/constants"
 import { Mic, MicOff } from "lucide-react"
@@ -10,10 +11,14 @@ interface ScaleTrainerControlsProps {
   setSelectedKey: (key: NoteName | null) => void
   showNotes: boolean
   setShowNotes: (showNotes: boolean) => void
+  showDegree: boolean
+  setShowDegree: (showDegree: boolean) => void
+  showPlayedNote: boolean
+  setShowPlayedNote: (showPlayedNote: boolean) => void
   isListening: boolean
   stopListening: () => void
   startListening: () => void
-  startSession: () => void
+  startSession: (mode: PracticeMode) => void
 }
 
 export default function ScaleTrainerControls({
@@ -23,6 +28,10 @@ export default function ScaleTrainerControls({
   setSelectedKey,
   showNotes,
   setShowNotes,
+  showDegree,
+  setShowDegree,
+  showPlayedNote,
+  setShowPlayedNote,
   isListening,
   stopListening,
   startListening,
@@ -72,6 +81,22 @@ export default function ScaleTrainerControls({
           {showNotes ? "Notes Visible" : "Notes Hidden"}
         </Button>
 
+        <Button
+          variant={showDegree ? "default" : "outline"}
+          size="sm"
+          onClick={() => setShowDegree(!showDegree)}
+        >
+          {showDegree ? "Show Degree" : "Show Notes"}
+        </Button>
+
+        <Button
+          variant={showPlayedNote ? "default" : "outline"}
+          size="sm"
+          onClick={() => setShowPlayedNote(!showPlayedNote)}
+        >
+          {showPlayedNote ? "Show Played Note" : "Hide Played Note"}
+        </Button>
+
         <Button variant="outline" size="sm" onClick={isListening ? stopListening : startListening}>
           {isListening ? (
             <>
@@ -100,9 +125,23 @@ export default function ScaleTrainerControls({
               Practice random CAGED shapes with pitch detection
             </p>
           </div>
-          <Button size="lg" disabled={!(selectedScale && selectedKey)} onClick={startSession}>
-            Start Practice
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              size="lg"
+              disabled={!(selectedScale && selectedKey)}
+              onClick={() => startSession("timed")}
+            >
+              Start Practice
+            </Button>
+            <Button
+              size="lg"
+              variant="outline"
+              disabled={!(selectedScale && selectedKey)}
+              onClick={() => startSession("unlimited")}
+            >
+              Start Unlimited
+            </Button>
+          </div>
         </div>
       </div>
     </div>
