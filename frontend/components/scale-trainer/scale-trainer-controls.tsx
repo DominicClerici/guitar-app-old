@@ -13,8 +13,6 @@ interface ScaleTrainerControlsProps {
   setShowNotes: (showNotes: boolean) => void
   showDegree: boolean
   setShowDegree: (showDegree: boolean) => void
-  showPlayedNote: boolean
-  setShowPlayedNote: (showPlayedNote: boolean) => void
   isListening: boolean
   stopListening: () => void
   startListening: () => void
@@ -30,8 +28,6 @@ export default function ScaleTrainerControls({
   setShowNotes,
   showDegree,
   setShowDegree,
-  showPlayedNote,
-  setShowPlayedNote,
   isListening,
   stopListening,
   startListening,
@@ -87,14 +83,6 @@ export default function ScaleTrainerControls({
           onClick={() => setShowDegree(!showDegree)}
         >
           {showDegree ? "Show Degree" : "Show Notes"}
-        </Button>
-
-        <Button
-          variant={showPlayedNote ? "default" : "outline"}
-          size="sm"
-          onClick={() => setShowPlayedNote(!showPlayedNote)}
-        >
-          {showPlayedNote ? "Show Played Note" : "Hide Played Note"}
         </Button>
 
         <Button variant="outline" size="sm" onClick={isListening ? stopListening : startListening}>

@@ -143,7 +143,6 @@ export default function ScaleTrainerPage() {
   const [selectedKey, setSelectedKey] = useState<NoteName | null>("C")
   const [showNotes, setShowNotes] = useState(true)
   const [showDegree, setShowDegree] = useState(false)
-  const [showPlayedNote, setShowPlayedNote] = useState(true)
 
   const [sessionState, setSessionState] = useState<SessionState>("idle")
   const [practiceMode, setPracticeMode] = useState<PracticeMode>("timed")
@@ -152,7 +151,6 @@ export default function ScaleTrainerPage() {
   const [shapeIndex, setShapeIndex] = useState<number | null>(0)
   const [playedNotes, setPlayedNotes] = useState<Set<string>>(new Set())
   const [sessionStats, setSessionStats] = useState<DerivedSessionStats | null>(null)
-  const [playedNoteMarker, setPlayedNoteMarker] = useState<Marker | null>(null)
 
   const sessionRef = useRef<ScalePracticeSession | null>(null)
   const shapeStartTimeRef = useRef<number>(0)
@@ -210,13 +208,10 @@ export default function ScaleTrainerPage() {
     [shapeIndex, fullScale],
   )
 
-  const markers = useMemo(() => {
-    const scaleMarkers = scaleNotesToMarkers(shapeNotes, playedNotes, showNotes, sessionState === "active")
-    if (playedNoteMarker && sessionState === "active") {
-      return [...scaleMarkers, playedNoteMarker]
-    }
-    return scaleMarkers
-  }, [shapeNotes, playedNotes, showNotes, sessionState, playedNoteMarker])
+  const markers = useMemo(
+    () => scaleNotesToMarkers(shapeNotes, playedNotes, showNotes, sessionState === "active"),
+    [shapeNotes, playedNotes, showNotes, sessionState],
+  )
 
   const selectRandomShape = useCallback(
     (isFirst = false) => {
@@ -318,48 +313,18 @@ export default function ScaleTrainerPage() {
   }, [sessionState, timerMs, practiceMode, finalizeSession])
 
   useEffect(() => {
-    if (sessionState !== "active" || pitch <= 0 || isTransitioningRef.current) {
-      setPlayedNoteMarker(null)
-      return
-    }
+    if (sessionState !== "active" || pitch <= 0 || isTransitioningRef.current) return
 
-    let matchedScaleNote = false
     for (const note of shapeNotes) {
       const noteKey = createNoteKey(note.stringIndex, note.fretIndex)
       if (playedNotes.has(noteKey)) continue
 
       if (isFrequencyMatch(pitch, note.targetFrequency)) {
         setPlayedNotes((prev) => new Set(prev).add(noteKey))
-        matchedScaleNote = true
-        setPlayedNoteMarker(null)
         break
       }
     }
-
-    if (!matchedScaleNote && showPlayedNote) {
-      const midi = Math.round(freqToMidi(pitch))
-      const noteIndex = ((midi % 12) + 12) % 12
-      const isNoteInScale = shapeNotes.some((note) => note.noteIndex === noteIndex)
-
-      if (!isNoteInScale) {
-        const position = findBestFretPosition(midi, shapeNotes, playedNotes)
-        if (position) {
-          setPlayedNoteMarker({
-            stringIndex: position.stringIndex,
-            fretIndex: position.fretIndex,
-            type: "played",
-            label: NOTE_NAMES[noteIndex],
-          })
-        } else {
-          setPlayedNoteMarker(null)
-        }
-      } else {
-        setPlayedNoteMarker(null)
-      }
-    } else if (!showPlayedNote) {
-      setPlayedNoteMarker(null)
-    }
-  }, [sessionState, pitch, shapeNotes, playedNotes, showPlayedNote])
+  }, [sessionState, pitch, shapeNotes, playedNotes])
 
   useEffect(() => {
     if (sessionState !== "active") return
@@ -388,8 +353,6 @@ export default function ScaleTrainerPage() {
             setShowNotes={setShowNotes}
             showDegree={showDegree}
             setShowDegree={setShowDegree}
-            showPlayedNote={showPlayedNote}
-            setShowPlayedNote={setShowPlayedNote}
             isListening={isListening}
             stopListening={stopListening}
             startListening={startListening}
