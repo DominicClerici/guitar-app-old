@@ -6,6 +6,12 @@ const FRET_MARKERS = [3, 5, 7, 9, 12, 15, 17, 19, 21, 24]
 const STRING_COUNT = 6
 const FRET_COUNT = 19 // 0 (nut) through 18
 
+const SVG_WIDTH = 900
+const SVG_HEIGHT = 200
+const FRET_WIDTH = SVG_WIDTH / FRET_COUNT
+const MARKER_RADIUS = 14
+const FRET_DOT_RADIUS = 6
+
 type MarkerType =
   | "root-disabled"
   | "root"
@@ -27,121 +33,173 @@ type FretboardProps = {
   className?: string
 }
 
+const getStringY = (stringIndex: number): number => {
+  return ((STRING_COUNT - stringIndex) / (STRING_COUNT + 1)) * SVG_HEIGHT
+}
+
+const getFretX = (fretIndex: number): number => {
+  return fretIndex * FRET_WIDTH
+}
+
+const getFretCenterX = (fretIndex: number): number => {
+  return getFretX(fretIndex) + FRET_WIDTH / 2
+}
+
 export function Fretboard({
   tuning = DEFAULT_TUNING,
   markers = [],
   className = "",
 }: FretboardProps) {
-  const frets = Array.from({ length: FRET_COUNT }, (_, i) => i)
-
-  const getMarkerColors = (type: MarkerType) => {
+  const getMarkerStyle = (type: MarkerType) => {
     const isHidden = type.includes("hidden")
     const isDisabled = type.includes("disabled")
     const isRoot = type.includes("root")
     return {
-      background: isRoot ? "bg-primary" : "bg-foreground",
-      text: isRoot ? "text-primary-foreground" : "text-background",
-      opacity: isHidden ? "opacity-0" : isDisabled ? "opacity-40" : "opacity-100",
+      fillClass: isRoot ? "fill-primary" : "fill-foreground",
+      textClass: isRoot ? "fill-primary-foreground" : "fill-background",
+      opacity: isHidden ? 0 : isDisabled ? 0.4 : 1,
     }
   }
 
-  const renderMarker = (marker: Marker, index: number) => {
-    if (marker.fretIndex < 0 || marker.fretIndex >= FRET_COUNT) return null
+  const renderFrets = () => {
+    return Array.from({ length: FRET_COUNT }, (_, fretNumber) => {
+      const isNut = fretNumber === 0
+      const x = getFretX(fretNumber)
+      const width = isNut ? 6 : 2
 
-    const markerColors = getMarkerColors(marker.type)
-    const leftPercent = (marker.fretIndex / FRET_COUNT) * 100 + 100 / FRET_COUNT / 2
-    const topPercent = ((STRING_COUNT - marker.stringIndex) / (STRING_COUNT + 1)) * 100
-
-    return (
-      <div
-        key={`${marker.stringIndex}-${marker.fretIndex}-${index}`}
-        className={`absolute flex h-7 w-7 items-center justify-center rounded-full ${markerColors.background} ${markerColors.opacity}`}
-        style={{
-          left: `${leftPercent}%`,
-          top: `${topPercent}%`,
-          transform: "translate(-50%, -50%)",
-        }}
-      >
-        <span className={`text-xs font-bold ${markerColors.text}`}>{marker.label}</span>
-      </div>
-    )
+      return (
+        <rect
+          key={`fret-${fretNumber}`}
+          x={x}
+          y={0}
+          width={width}
+          height={SVG_HEIGHT}
+          className={isNut ? "fill-foreground" : "fill-muted"}
+        />
+      )
+    })
   }
 
-  const renderFret = (fretNumber: number) => {
-    const isNut = fretNumber === 0
-    const hasMarker = FRET_MARKERS.includes(fretNumber)
-    const isDoubleDot = fretNumber === 12
+  const renderFretMarkers = () => {
+    return FRET_MARKERS.filter((fretNumber) => fretNumber < FRET_COUNT).map((fretNumber) => {
+      const cx = getFretCenterX(fretNumber)
+      const isDoubleDot = fretNumber === 12
 
-    return (
-      <div key={fretNumber} className="relative h-full" style={{ width: `${100 / FRET_COUNT}%` }}>
-        <div
-          className={`absolute top-0 bottom-0 left-0 ${isNut ? "bg-foreground" : "bg-muted"}`}
-          style={{ width: isNut ? 6 : 2 }}
+      if (isDoubleDot) {
+        const gap = 32
+        return (
+          <g key={`fret-marker-${fretNumber}`}>
+            <circle
+              cx={cx}
+              cy={SVG_HEIGHT / 2 - gap / 2}
+              r={FRET_DOT_RADIUS}
+              className="fill-muted"
+              opacity={0.5}
+            />
+            <circle
+              cx={cx}
+              cy={SVG_HEIGHT / 2 + gap / 2}
+              r={FRET_DOT_RADIUS}
+              className="fill-muted"
+              opacity={0.5}
+            />
+          </g>
+        )
+      }
+
+      return (
+        <circle
+          key={`fret-marker-${fretNumber}`}
+          cx={cx}
+          cy={SVG_HEIGHT / 2}
+          r={FRET_DOT_RADIUS}
+          className="fill-muted"
+          opacity={0.5}
         />
+      )
+    })
+  }
 
-        {hasMarker && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            {isDoubleDot ? (
-              <div className="flex flex-col gap-8">
-                <div className="bg-muted h-3 w-3 rounded-full opacity-50" />
-                <div className="bg-muted h-3 w-3 rounded-full opacity-50" />
-              </div>
-            ) : (
-              <div className="bg-muted h-3 w-3 rounded-full opacity-50" />
-            )}
-          </div>
-        )}
-      </div>
-    )
+  const renderStrings = () => {
+    return tuning.map((_, stringIndex) => {
+      const y = getStringY(stringIndex)
+      const thickness = STRING_THICKNESSES[stringIndex]
+
+      return (
+        <rect
+          key={`string-${stringIndex}`}
+          x={FRET_WIDTH}
+          y={y - thickness / 2}
+          width={SVG_WIDTH - FRET_WIDTH}
+          height={thickness}
+          className="fill-muted"
+        />
+      )
+    })
+  }
+
+  const renderTuningLabels = () => {
+    return tuning.map((note, stringIndex) => {
+      const y = getStringY(stringIndex)
+      const x = FRET_WIDTH / 2
+
+      return (
+        <text
+          key={`tuning-${stringIndex}`}
+          x={x}
+          y={y}
+          textAnchor="middle"
+          dominantBaseline="central"
+          className="fill-muted-foreground text-xs font-semibold"
+          style={{ fontSize: 12 }}
+        >
+          {note}
+        </text>
+      )
+    })
+  }
+
+  const renderNoteMarkers = () => {
+    return markers.map((marker, index) => {
+      if (marker.fretIndex < 0 || marker.fretIndex >= FRET_COUNT) return null
+
+      const style = getMarkerStyle(marker.type)
+      const cx = getFretCenterX(marker.fretIndex)
+      const cy = getStringY(marker.stringIndex)
+
+      return (
+        <g
+          key={`marker-${marker.stringIndex}-${marker.fretIndex}-${index}`}
+          opacity={style.opacity}
+        >
+          <circle cx={cx} cy={cy} r={MARKER_RADIUS} className={style.fillClass} />
+          <text
+            x={cx}
+            y={cy}
+            textAnchor="middle"
+            dominantBaseline="central"
+            className={`${style.textClass} font-bold`}
+            style={{ fontSize: 12 }}
+          >
+            {marker.label}
+          </text>
+        </g>
+      )
+    })
   }
 
   return (
-    <div
-      className={`border-border relative overflow-hidden border-y ${className}`}
-      style={{ height: 200 }}
+    <svg
+      viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
+      className={`border-border border-y ${className}`}
+      preserveAspectRatio="xMidYMid meet"
     >
-      <div className="flex h-full">{frets.map(renderFret)}</div>
-
-      <div className="pointer-events-none absolute inset-0">
-        {tuning.map((_, stringIndex) => {
-          const topPercent = ((STRING_COUNT - stringIndex) / (STRING_COUNT + 1)) * 100
-          return (
-            <div
-              key={stringIndex}
-              className="bg-muted absolute"
-              style={{
-                top: `${topPercent}%`,
-                height: STRING_THICKNESSES[stringIndex],
-                left: `${100 / FRET_COUNT}%`,
-                right: 0,
-                transform: "translateY(-50%)",
-              }}
-            />
-          )
-        })}
-      </div>
-
-      <div className="pointer-events-none absolute inset-0">
-        {tuning.map((note, stringIndex) => {
-          const topPercent = ((STRING_COUNT - stringIndex) / (STRING_COUNT + 1)) * 100
-          return (
-            <div
-              key={stringIndex}
-              className="text-muted-foreground absolute w-4 text-center text-xs font-semibold"
-              style={{
-                top: `${topPercent}%`,
-                left: `${100 / FRET_COUNT / 2}%`,
-                transform: "translate(-50%, -50%)",
-              }}
-            >
-              {note}
-            </div>
-          )
-        })}
-      </div>
-
-      <div className="pointer-events-none absolute inset-0">{markers.map(renderMarker)}</div>
-    </div>
+      {renderFrets()}
+      {renderFretMarkers()}
+      {renderStrings()}
+      {renderTuningLabels()}
+      {renderNoteMarkers()}
+    </svg>
   )
 }
 

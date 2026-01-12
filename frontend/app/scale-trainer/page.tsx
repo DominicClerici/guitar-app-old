@@ -1,10 +1,13 @@
 "use client"
 
 import { Fretboard, type Marker, type MarkerType } from "@/components/fretboard/fretboard"
+import ScaleTrainerControls from "@/components/scale-trainer/scale-trainer-controls"
+import AnimatedUnmount from "@/components/ui/animated-unmount"
 import { Button } from "@/components/ui/button"
+import { Separator } from "@/components/ui/separator"
 import { useNoteDetection } from "@/hooks/useNoteDetection"
 import { NOTE_NAMES, type NoteName } from "@/lib/audio/utils"
-import { SCALE_NAMES, type ScaleType } from "@/lib/constants"
+import { type ScaleType } from "@/lib/constants"
 import {
   convertToAeolian,
   convertToDorian,
@@ -19,8 +22,7 @@ import {
   getShapeNotes,
   type ScaleNote,
 } from "@/lib/scales/major-scale"
-import { cn } from "@/lib/utils"
-import { Mic, MicOff, X } from "lucide-react"
+import { X } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 function isFrequencyMatch(detected: number, target: number, tolerance: number = 0.02): boolean {
@@ -325,19 +327,51 @@ export default function ScaleTrainerPage() {
     return `${minutes}:${seconds.toString().padStart(2, "0")}`
   }
 
-  const canStart = selectedScale && selectedKey
-
   return (
     <div className="bg-background flex min-h-screen flex-col">
-      <div
-        className={cn(
-          "border-border space-y-6 border-b p-6 transition-opacity",
-          sessionState !== "idle" && "pointer-events-none opacity-50",
-        )}
-      >
-        <div className="flex items-center justify-between">
-          <h1 className="text-foreground text-2xl font-bold">Scale Trainer</h1>
-          {sessionState !== "idle" && (
+      <div className="mx-auto w-full max-w-7xl py-12">
+        <AnimatedUnmount
+          animClassIn="animation-fade-in"
+          animClassOut="animation-fade-out"
+          display={sessionState === "idle"}
+        >
+          <ScaleTrainerControls
+            selectedScale={selectedScale}
+            setSelectedScale={setSelectedScale}
+            selectedKey={selectedKey}
+            setSelectedKey={setSelectedKey}
+            showNotes={showNotes}
+            setShowNotes={setShowNotes}
+            isListening={isListening}
+            stopListening={stopListening}
+            startListening={startListening}
+            startSession={startSession}
+          />
+        </AnimatedUnmount>
+      </div>
+      <Separator />
+
+      <div className="flex flex-1 flex-col items-center justify-center p-6">
+        <AnimatedUnmount
+          animClassIn="animation-fade-in"
+          animClassOut="animation-fade-out"
+          display={sessionState === "countdown"}
+          className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center"
+        >
+          <span className="text-foreground text-9xl font-bold">{countdown}</span>
+          <p className="text-muted-foreground mt-4 text-lg">Get ready...</p>
+        </AnimatedUnmount>
+
+        <AnimatedUnmount
+          animClassIn="animation-fade-in"
+          animClassOut="animation-fade-out"
+          display={sessionState === "active"}
+          className="flex w-full max-w-7xl flex-col items-center gap-6"
+        >
+          <div className="flex items-center gap-2">
+            <div className="text-foreground text-4xl font-semibold tabular-nums">
+              {formatTime(remainingMs)}
+            </div>
             <Button
               variant="destructive"
               size="sm"
@@ -347,198 +381,70 @@ export default function ScaleTrainerPage() {
               <X className="mr-2 h-4 w-4" />
               Cancel
             </Button>
+          </div>
+
+          <Fretboard className="w-full" markers={markers} />
+
+          <div className="text-muted-foreground text-sm">
+            Shape {shapeIndex + 1} of {TOTAL_SHAPES} • {playedNotes.size} / {shapeNotes.length}{" "}
+            notes
+          </div>
+        </AnimatedUnmount>
+
+        <AnimatedUnmount
+          animClassIn="animation-fade-in"
+          animClassOut="animation-fade-out"
+          display={sessionState === "finished" && !!sessionStats}
+          className="bg-card border-border max-w-md rounded-lg border p-6"
+        >
+          {!!sessionStats && (
+            <>
+              <h2 className="text-foreground mb-4 text-2xl font-bold">Session Complete</h2>
+              <div className="space-y-3">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Total Time</span>
+                  <span className="text-foreground font-medium">
+                    {formatTime(sessionStats!.totalDurationSeconds * 1000)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Shapes Completed</span>
+                  <span className="text-foreground font-medium">{sessionStats!.totalShapes}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Notes Played</span>
+                  <span className="text-foreground font-medium">{sessionStats!.totalNotes}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Shapes/Minute</span>
+                  <span className="text-foreground font-medium">
+                    {sessionStats!.shapesPerMinute.toFixed(1)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Notes/Second</span>
+                  <span className="text-foreground font-medium">
+                    {sessionStats!.notesPerSecond.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+              <div className="mt-6 flex gap-3">
+                <Button
+                  className="flex-1"
+                  onClick={() => {
+                    setSessionState("idle")
+                    setPlayedNotes(new Set())
+                  }}
+                >
+                  Done
+                </Button>
+                <Button variant="outline" className="flex-1" onClick={startSession}>
+                  Practice Again
+                </Button>
+              </div>
+            </>
           )}
-        </div>
-
-        <div className="space-y-2">
-          <label className="text-muted-foreground text-sm font-medium">Scale</label>
-          <div className="flex flex-wrap gap-2">
-            {(Object.keys(SCALE_NAMES) as ScaleType[]).map((scale) => (
-              <Button
-                key={scale}
-                variant={selectedScale === scale ? "default" : "outline"}
-                size="sm"
-                onClick={() => setSelectedScale(selectedScale === scale ? null : scale)}
-              >
-                {SCALE_NAMES[scale]}
-              </Button>
-            ))}
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <label className="text-muted-foreground text-sm font-medium">Key</label>
-          <div className="flex flex-wrap gap-2">
-            {NOTE_NAMES.map((note) => (
-              <Button
-                key={note}
-                variant={selectedKey === note ? "default" : "outline"}
-                size="sm"
-                className="w-12"
-                onClick={() => setSelectedKey(selectedKey === note ? null : note)}
-              >
-                {note}
-              </Button>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex items-center gap-4">
-          <Button
-            variant={showNotes ? "default" : "outline"}
-            size="sm"
-            onClick={() => setShowNotes(!showNotes)}
-          >
-            {showNotes ? "Notes Visible" : "Notes Hidden"}
-          </Button>
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={isListening ? stopListening : startListening}
-          >
-            {isListening ? (
-              <>
-                <Mic className="mr-2 h-4 w-4" />
-                Mic On
-              </>
-            ) : (
-              <>
-                <MicOff className="mr-2 h-4 w-4" />
-                Mic Off
-              </>
-            )}
-          </Button>
-        </div>
-
-        <div className="bg-card border-border rounded-lg border p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-foreground text-lg font-semibold">
-                {selectedScale
-                  ? selectedKey
-                    ? `${selectedKey} ${SCALE_NAMES[selectedScale]}`
-                    : "Select a key"
-                  : "Select a scale"}
-              </p>
-              <p className="text-muted-foreground text-sm">
-                Practice random CAGED shapes with pitch detection
-              </p>
-            </div>
-            <Button size="lg" disabled={!canStart} onClick={startSession}>
-              Start Practice
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex flex-1 flex-col items-center justify-center p-6">
-        {sessionState === "countdown" && (
-          <div className="flex flex-col items-center justify-center">
-            <span className="text-foreground text-9xl font-bold">{countdown}</span>
-            <p className="text-muted-foreground mt-4 text-lg">Get ready...</p>
-          </div>
-        )}
-
-        {sessionState === "active" && (
-          <div className="flex w-full max-w-4xl flex-col items-center gap-6">
-            <div className="text-foreground text-4xl font-semibold tabular-nums">
-              {formatTime(remainingMs)}
-            </div>
-
-            <div className="w-full">
-              <Fretboard markers={markers} />
-            </div>
-            <div className="text-muted-foreground text-sm">
-              Shape {shapeIndex + 1} of {TOTAL_SHAPES} • {playedNotes.size} / {shapeNotes.length}{" "}
-              notes
-            </div>
-          </div>
-        )}
-
-        {sessionState === "finished" && sessionStats && (
-          <div className="bg-card border-border max-w-md rounded-lg border p-6">
-            <h2 className="text-foreground mb-4 text-2xl font-bold">Session Complete</h2>
-            <div className="space-y-3">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Total Time</span>
-                <span className="text-foreground font-medium">
-                  {formatTime(sessionStats.totalDurationSeconds * 1000)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Shapes Completed</span>
-                <span className="text-foreground font-medium">{sessionStats.totalShapes}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Notes Played</span>
-                <span className="text-foreground font-medium">{sessionStats.totalNotes}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Shapes/Minute</span>
-                <span className="text-foreground font-medium">
-                  {sessionStats.shapesPerMinute.toFixed(1)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Notes/Second</span>
-                <span className="text-foreground font-medium">
-                  {sessionStats.notesPerSecond.toFixed(2)}
-                </span>
-              </div>
-            </div>
-            <div className="mt-6 flex gap-3">
-              <Button
-                className="flex-1"
-                onClick={() => {
-                  setSessionState("idle")
-                  setPlayedNotes(new Set())
-                }}
-              >
-                Done
-              </Button>
-              <Button variant="outline" className="flex-1" onClick={startSession}>
-                Practice Again
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {sessionState === "idle" && (
-          <div className="flex w-full max-w-4xl flex-col items-center gap-4">
-            {canStart ? (
-              <>
-                <p className="text-muted-foreground text-center">
-                  Preview: {selectedKey} {selectedScale && SCALE_NAMES[selectedScale]} - Shape{" "}
-                  {shapeIndex + 1}
-                </p>
-
-                <div className="w-full">
-                  <Fretboard markers={markers} />
-                </div>
-
-                <div className="flex gap-2">
-                  {Array.from({ length: TOTAL_SHAPES }, (_, i) => (
-                    <Button
-                      key={i}
-                      variant={shapeIndex === i ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => {
-                        setShapeIndex(i)
-                      }}
-                    >
-                      Shape {i + 1}
-                    </Button>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <p className="text-muted-foreground">
-                Select a scale and key above to preview the fretboard
-              </p>
-            )}
-          </div>
-        )}
+        </AnimatedUnmount>
       </div>
     </div>
   )
