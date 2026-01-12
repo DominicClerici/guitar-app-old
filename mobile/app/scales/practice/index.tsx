@@ -176,13 +176,12 @@ export default function PracticePage() {
 
   const sessionRef = useRef<ScalePracticeSession | null>(null)
   const shapeStartTimeRef = useRef<number>(0)
-  const lastMatchRef = useRef<string | null>(null)
   const isTransitioningRef = useRef(false)
 
   const { pitch } = useFastPitchDetection({
     minVolume: -70.0,
-    updateIntervalMs: 27.5, // 32.5 for 1536, 43 for 2048
-    bufferSize: 1280, // if too low, try 1536, then 2048
+    updateIntervalMs: 32.5, // 32.5 for 1536, 43 for 2048
+    bufferSize: 1536, // if too low, try 1536, then 2048
     algorithm: PitchAlgorithm.BitstreamAutocorrelation,
   })
 
@@ -265,7 +264,6 @@ export default function PracticePage() {
     setViewFrets(newViewFrets)
     setShapeIndex(newIndex)
     setPlayedNotes(new Set())
-    lastMatchRef.current = null
     isTransitioningRef.current = false
     shapeStartTimeRef.current = Date.now()
   }
@@ -310,12 +308,7 @@ export default function PracticePage() {
       if (playedNotes.has(noteKey)) continue
 
       if (isFrequencyMatch(pitch, note.targetFrequency)) {
-        if (lastMatchRef.current === noteKey) {
-          setPlayedNotes((prev) => new Set(prev).add(noteKey))
-          lastMatchRef.current = null
-        } else {
-          lastMatchRef.current = noteKey
-        }
+        setPlayedNotes((prev) => new Set(prev).add(noteKey))
         break
       }
     }
