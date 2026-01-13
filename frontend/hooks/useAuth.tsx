@@ -10,6 +10,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<{ error: string | null }>
   logout: () => Promise<{ error: string | null }>
   signInWithGoogle: () => Promise<{ error: string | null }>
+  signInWithApple: () => Promise<{ error: string | null }>
   supabase: SupabaseClient
 }
 
@@ -19,6 +20,7 @@ const AuthContext = createContext<AuthContextType>({
   login: async () => ({ error: null }),
   logout: async () => ({ error: null }),
   signInWithGoogle: async () => ({ error: null }),
+  signInWithApple: async () => ({ error: null }),
   supabase: {} as SupabaseClient,
 })
 
@@ -87,8 +89,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  const signInWithApple = async (): Promise<{ error: string | null }> => {
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "apple",
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
+      })
+      if (error) throw error
+      return { error: null }
+    } catch (error) {
+      if (error instanceof Error) {
+        return { error: error.message }
+      }
+      return { error: "An unknown error occurred" }
+    }
+  }
+
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout, signInWithGoogle, supabase }}>
+    <AuthContext.Provider
+      value={{ user, isLoading, login, logout, signInWithGoogle, signInWithApple, supabase }}
+    >
       {children}
     </AuthContext.Provider>
   )
