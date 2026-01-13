@@ -1,15 +1,30 @@
 "use client"
+import { GoogleIcon } from "@/components/icons/google"
 import { Button } from "@/components/ui/button"
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { Separator } from "@/components/ui/separator"
 import useAuth from "@/hooks/useAuth"
+import { createClient } from "@/lib/supabase/client"
 import { signUpZod } from "@guitar/schemas"
 import { useForm } from "@tanstack/react-form"
 import { useRouter } from "next/navigation"
+import { useState } from "react"
 import { toast } from "sonner"
 
 export default function SignupForm() {
-  const { register } = useAuth()
+  const { signInWithGoogle } = useAuth()
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false)
+  const supabase = createClient()
+
+  const handleGoogleSignIn = async () => {
+    setIsGoogleLoading(true)
+    const { error } = await signInWithGoogle()
+    if (error) {
+      toast.error(error)
+      setIsGoogleLoading(false)
+    }
+  }
   const router = useRouter()
   const form = useForm({
     defaultValues: {
@@ -22,13 +37,18 @@ export default function SignupForm() {
     },
     onSubmit: async ({ value }) => {
       try {
-        const { error } = await register(value)
-        if (error) {
-          toast.error(error)
-        } else {
-          toast.success("Account created successfully! Please log in.")
-          router.push("/")
-        }
+        const { error: registerError } = await supabase.auth.signUp({
+          email: value.email,
+          password: value.password,
+          options: {
+            data: {
+              name: value.name,
+            },
+          },
+        })
+        if (registerError) toast.error(registerError.message)
+        toast.success("Account created successfully! Please log in.")
+        router.push("/")
       } catch (error) {
         toast.error("Failed to create account")
       }
@@ -117,6 +137,23 @@ export default function SignupForm() {
       </form>
       <Button type="submit" form="signup-form" isLoading={form.state.isSubmitting}>
         Signup
+      </Button>
+
+      <div className="my-4 flex items-center gap-4">
+        <Separator className="flex-1" />
+        <span className="text-muted-foreground text-sm">or</span>
+        <Separator className="flex-1" />
+      </div>
+
+      <Button
+        type="button"
+        variant="outline"
+        className="w-full"
+        onClick={handleGoogleSignIn}
+        disabled={isGoogleLoading}
+      >
+        <GoogleIcon className="mr-2 h-5 w-5" />
+        Continue with Google
       </Button>
     </>
   )

@@ -1,10 +1,16 @@
 "use client"
 
-import { trpc } from "@/lib/trpc"
+import useAuth from "@/hooks/useAuth"
 
 export default function TestPage() {
-  const { data: user, isLoading } = trpc.user.getUserInfo.useQuery()
+  const { user, isLoading } = useAuth()
   return (
-    <>{isLoading ? <p>Loading...</p> : <p>Username: {user?.name || "No name/not logged in"}</p>}</>
+    <>
+      {isLoading ? (
+        <p>Loading...</p>
+      ) : (
+        <p>Username: {user ? "Logged in" : "No email/not logged in"}</p>
+      )}
+    </>
   )
 }

@@ -1,3 +1,5 @@
+This is a project that helps users learn the guitar. The name of this product is StringFlow.
+
 You are working in a monorepo with folders:
 - /frontend a next.js v16 react v19 project.
 - /mobile a react native v19 expo v54 project.
@@ -6,7 +8,7 @@ You are working in a monorepo with folders:
 - - /db our database schema defined by drizzle orm. import ... from "@guitar/db"
 - - /schemas shared zod schemas for validation. import ... from "@guitar/schemas"
 
-When adding packages, never write directly to a package.json file, instead use `pnpm add` or `expo install`
+When adding packages, never write directly to a package.json file, instead use `pnpm add` or `npx expo install`
 
 Do not write comments that are redundant. Only write comments when the code may be confusing, and a comment will clear up the confusion.
 

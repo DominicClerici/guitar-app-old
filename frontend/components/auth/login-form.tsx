@@ -1,16 +1,31 @@
 "use client"
 
+import { GoogleIcon } from "@/components/icons/google"
 import { Button } from "@/components/ui/button"
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { createClient } from "@/lib/supabase/client"
+import { Separator } from "@/components/ui/separator"
+import useAuth from "@/hooks/useAuth"
 import { loginZod } from "@guitar/schemas"
 import { useForm } from "@tanstack/react-form"
 import { useRouter } from "next/navigation"
+import { useState } from "react"
 import { toast } from "sonner"
 
 export default function LoginForm() {
   const router = useRouter()
+  const { signInWithGoogle, supabase } = useAuth()
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false)
+
+  const handleGoogleSignIn = async () => {
+    setIsGoogleLoading(true)
+    const { error } = await signInWithGoogle()
+    if (error) {
+      toast.error(error)
+      setIsGoogleLoading(false)
+    }
+  }
+
   const form = useForm({
     defaultValues: {
       email: "",
@@ -20,8 +35,7 @@ export default function LoginForm() {
       onSubmit: loginZod,
     },
     onSubmit: async ({ value }) => {
-      const supabase = createClient()
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { error } = await supabase.auth.signInWithPassword({
         email: value.email,
         password: value.password,
       })
@@ -93,6 +107,23 @@ export default function LoginForm() {
       </form>
       <Button type="submit" form="login-form">
         Login
+      </Button>
+
+      <div className="flex items-center gap-4 my-4">
+        <Separator className="flex-1" />
+        <span className="text-muted-foreground text-sm">or</span>
+        <Separator className="flex-1" />
+      </div>
+
+      <Button
+        type="button"
+        variant="outline"
+        className="w-full"
+        onClick={handleGoogleSignIn}
+        disabled={isGoogleLoading}
+      >
+        <GoogleIcon className="w-5 h-5 mr-2" />
+        Continue with Google
       </Button>
     </>
   )

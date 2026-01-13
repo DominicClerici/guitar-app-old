@@ -1,19 +1,15 @@
 "use client"
 
 import { createClient } from "@/lib/supabase/client"
-import { trpc } from "@/lib/trpc/client"
-import { signUpZod, z } from "@guitar/schemas"
 import type { SupabaseClient, User } from "@supabase/supabase-js"
 import { createContext, useContext, useEffect, useState } from "react"
-
-type RegisterInput = z.infer<typeof signUpZod>
 
 interface AuthContextType {
   user: User | null
   isLoading: boolean
   login: (email: string, password: string) => Promise<{ error: string | null }>
   logout: () => Promise<{ error: string | null }>
-  register: (input: RegisterInput) => Promise<{ error: string | null }>
+  signInWithGoogle: () => Promise<{ error: string | null }>
   supabase: SupabaseClient
 }
 
@@ -22,7 +18,7 @@ const AuthContext = createContext<AuthContextType>({
   isLoading: true,
   login: async () => ({ error: null }),
   logout: async () => ({ error: null }),
-  register: async () => ({ error: null }),
+  signInWithGoogle: async () => ({ error: null }),
   supabase: {} as SupabaseClient,
 })
 
@@ -33,14 +29,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const userSubscription = supabase.auth.onAuthStateChange((event, session) => {
-      console.log("Supabase auth event: ", event)
-      if (event === "SIGNED_IN" && session?.user) {
-        setUser(session.user)
-      } else if (event === "SIGNED_OUT") {
-        setUser(null)
-      } else {
-        setUser(null)
-      }
+      setUser(session?.user ?? null)
       setIsLoading(false)
     })
     return () => userSubscription.data.subscription.unsubscribe()
@@ -80,29 +69,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const register = async (input: RegisterInput): Promise<{ error: string | null }> => {
+  const signInWithGoogle = async (): Promise<{ error: string | null }> => {
     try {
-      setIsLoading(true)
-      const { error: registerError } = await trpc.user.registerUser.mutate(input)
-      if (registerError) throw registerError
-      const { error: loginError } = await supabase.auth.signInWithPassword({
-        email: input.email,
-        password: input.password,
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
       })
-      if (loginError) throw loginError
+      if (error) throw error
       return { error: null }
     } catch (error) {
       if (error instanceof Error) {
         return { error: error.message }
       }
       return { error: "An unknown error occurred" }
-    } finally {
-      setIsLoading(false)
     }
   }
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout, register, supabase }}>
+    <AuthContext.Provider value={{ user, isLoading, login, logout, signInWithGoogle, supabase }}>
       {children}
     </AuthContext.Provider>
   )
