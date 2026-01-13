@@ -333,7 +333,7 @@ export function useStringCalibration(
       setCurrentStep({ type: "phase-complete", phase: completedPhase })
       setTimeout(() => {
         moveToNextPhase()
-      }, 1000)
+      }, 5000)
       return
     }
 
@@ -447,10 +447,14 @@ export function useStringCalibration(
               existingSamples.sustain.length >= SUSTAIN_SAMPLES_REQUIRED
 
             if (isComplete) {
-              setCurrentStep({ type: "complete", stringNumber: currentString, fret: currentFretValue })
+              setCurrentStep({
+                type: "complete",
+                stringNumber: currentString,
+                fret: currentFretValue,
+              })
               setTimeout(() => {
                 moveToNextString()
-              }, 500)
+              }, 2000)
               return
             }
           }
