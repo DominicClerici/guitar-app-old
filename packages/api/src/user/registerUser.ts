@@ -8,7 +8,7 @@ export default async function registerUser(
 ) {
   const { name, email, password } = input
 
-  const { data, error } = await supabase.auth.signUp({
+  const { error } = await supabase.auth.signUp({
     email,
     password,
     options: {
@@ -24,7 +24,6 @@ export default async function registerUser(
       code: "BAD_REQUEST",
       message: error.message,
     })
-  } else {
-    return data
   }
+  return { error: null }
 }

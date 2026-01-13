@@ -2,15 +2,15 @@
 import { Button } from "@/components/ui/button"
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { trpc } from "@/lib/trpc/react"
+import useAuth from "@/hooks/useAuth"
 import { signUpZod } from "@guitar/schemas"
 import { useForm } from "@tanstack/react-form"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 
 export default function SignupForm() {
+  const { register } = useAuth()
   const router = useRouter()
-  const register = trpc.user.registerUser.useMutation()
   const form = useForm({
     defaultValues: {
       name: "",
@@ -22,11 +22,15 @@ export default function SignupForm() {
     },
     onSubmit: async ({ value }) => {
       try {
-        await register.mutateAsync(value)
-        toast.success("Form submitted successfully")
-        router.push("/")
+        const { error } = await register(value)
+        if (error) {
+          toast.error(error)
+        } else {
+          toast.success("Account created successfully! Please log in.")
+          router.push("/")
+        }
       } catch (error) {
-        toast.error("Failed to submit form")
+        toast.error("Failed to create account")
       }
     },
   })
@@ -111,7 +115,7 @@ export default function SignupForm() {
           />
         </FieldGroup>
       </form>
-      <Button type="submit" form="signup-form" isLoading={register.isPending}>
+      <Button type="submit" form="signup-form" isLoading={form.state.isSubmitting}>
         Signup
       </Button>
     </>
