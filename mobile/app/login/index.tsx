@@ -1,5 +1,5 @@
 import { ScreenContainer } from "@/components/ScreenContainer"
-import { useAuth } from "@/lib/auth/AuthContext"
+import GoogleButton from "@/components/ui/google-button"
 import { supabase } from "@/lib/supabase"
 import { loginZod } from "@guitar/schemas"
 import { Link } from "expo-router"
@@ -39,7 +39,6 @@ function GoogleIcon({ size = 20 }: { size?: number }) {
 }
 
 export default function LoginScreen() {
-  const { signInWithGoogle } = useAuth()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
@@ -128,27 +127,7 @@ export default function LoginScreen() {
         <View style={styles.divider} />
       </View>
 
-      <Pressable
-        style={[styles.googleButton, isGoogleLoading && styles.buttonDisabled]}
-        onPress={async () => {
-          setIsGoogleLoading(true)
-          const { error } = await signInWithGoogle()
-          if (error) {
-            Alert.alert("Google Sign In Error", error)
-          }
-          setIsGoogleLoading(false)
-        }}
-        disabled={isGoogleLoading}
-      >
-        {isGoogleLoading ? (
-          <ActivityIndicator color="#000" />
-        ) : (
-          <>
-            <GoogleIcon />
-            <Text style={styles.googleButtonText}>Continue with Google</Text>
-          </>
-        )}
-      </Pressable>
+      <GoogleButton />
 
       <Link href="/signup" style={styles.linkButton}>
         <Text style={styles.linkText}>Don't have an account? Sign up</Text>
