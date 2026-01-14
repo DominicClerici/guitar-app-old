@@ -2,9 +2,27 @@
 
 import type { HarmonicPeak, SpectralFeatures } from "./guitar-constants"
 
-const NUM_HARMONICS = 10
+const DEFAULT_NUM_HARMONICS = 10
 const HARMONIC_SEARCH_RANGE = 0.03
 const MIN_PEAK_AMPLITUDE = 0.001
+
+export function getOptimalHarmonicCount(fundamentalFreq: number, sampleRate: number): number {
+  const nyquist = sampleRate / 2
+  const maxUsableHarmonic = Math.floor(nyquist / fundamentalFreq)
+
+  let baseCount: number
+  if (fundamentalFreq < 100) {
+    baseCount = 18
+  } else if (fundamentalFreq < 150) {
+    baseCount = 15
+  } else if (fundamentalFreq < 250) {
+    baseCount = 12
+  } else {
+    baseCount = 10
+  }
+
+  return Math.min(baseCount, maxUsableHarmonic - 1)
+}
 
 export function computeMagnitudeSpectrum(
   analyser: AnalyserNode,
@@ -80,11 +98,12 @@ function parabolicInterpolation(
 export function detectHarmonicPeaks(
   frequencies: Float32Array,
   magnitudes: Float32Array,
-  fundamentalFreq: number
+  fundamentalFreq: number,
+  numHarmonics: number = DEFAULT_NUM_HARMONICS
 ): HarmonicPeak[] {
   const peaks: HarmonicPeak[] = []
 
-  for (let n = 1; n <= NUM_HARMONICS; n++) {
+  for (let n = 1; n <= numHarmonics; n++) {
     const expectedFreq = n * fundamentalFreq
     const peak = findPeakInRange(frequencies, magnitudes, expectedFreq, HARMONIC_SEARCH_RANGE)
 
@@ -185,15 +204,18 @@ export function calculateInharmonicityCoefficient(peaks: HarmonicPeak[]): number
   return Math.max(0, B)
 }
 
-export function getNormalizedHarmonicAmplitudes(peaks: HarmonicPeak[]): number[] {
+export function getNormalizedHarmonicAmplitudes(
+  peaks: HarmonicPeak[],
+  numHarmonics: number = DEFAULT_NUM_HARMONICS
+): number[] {
   const fundamental = peaks.find((p) => p.harmonicNumber === 1)
   if (!fundamental || fundamental.amplitude < MIN_PEAK_AMPLITUDE) {
-    return new Array(NUM_HARMONICS).fill(0)
+    return new Array(numHarmonics).fill(0)
   }
 
-  const normalized = new Array(NUM_HARMONICS).fill(0)
+  const normalized = new Array(numHarmonics).fill(0)
   for (const peak of peaks) {
-    if (peak.harmonicNumber <= NUM_HARMONICS) {
+    if (peak.harmonicNumber <= numHarmonics) {
       normalized[peak.harmonicNumber - 1] = peak.amplitude / fundamental.amplitude
     }
   }

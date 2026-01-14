@@ -1,0 +1,993 @@
+STRING DETECTION ALGORITHM IMPROVEMENT SUGGESTIONS
+==================================================
+
+This document contains a comprehensive analysis of the current string detection algorithm and detailed improvement suggestions. Each suggestion includes an explanation, rationale, tradeoffs, and implementation guidance.
+
+Current Implementation Overview:
+- Pitch detection via "pitchy" library (autocorrelation-based)
+- Candidate generation based on pitch-to-MIDI mapping
+- Scoring based on: inharmonicity (40%), harmonic pattern (60%), spectral features (0% - disabled)
+- Calibration system for per-guitar profiles with attack/sustain temporal phases
+- Fret interpolation for calibrated data
+
+================================================================================
+SECTION 1: PREDICTION STABILITY IMPROVEMENTS
+================================================================================
+
+1.1 TEMPORAL SMOOTHING WITH HYSTERESIS
+--------------------------------------
+What: Implement a decision hysteresis system that requires multiple consecutive frames to agree before changing the predicted string.
+
+Why: The current implementation makes instantaneous decisions on each frame independently. This causes "jumping" between strings when the signal is ambiguous or noisy, even if the overall trend clearly favors one string.
+
+Concept: Maintain a short history buffer (e.g., last 5-10 predictions). Only change the displayed/returned string when:
+  a) The new prediction has been consistent for N consecutive frames, OR
+  b) The new prediction's cumulative score exceeds the current prediction by a significant margin
+
+Implementation guidance:
+- File: frontend/hooks/useStringDetection.ts
+- Add refs for: predictionHistory (circular buffer), currentLockedPrediction, lockConfidence
+- In updatePitchAndString(), after calling classifyString(), add the result to history
+- Implement a voting/consensus mechanism before updating state
+- Consider weighted voting where recent predictions count more
+- Tune the "stickiness" parameter - how much better must a new prediction be to overcome the current one
+
+Tradeoffs:
+- Adds latency to detection (user will notice ~100ms delay in string changes)
+- May cause brief incorrect display when quickly switching between strings
+- Memory overhead for history buffer (minimal)
+
+Tuning suggestions:
+- Start with 5 frames at 50ms intervals = 250ms of history
+- Require 2/5 agreement for initial lock, 4/5 for change
+- Or use exponential moving average of scores per string
+
+
+1.2 CONFIDENCE-BASED FILTERING
+------------------------------
+What: Only report a string classification when confidence exceeds a threshold, and suppress rapid low-confidence oscillations.
+
+Why: Many "jumps" occur when the algorithm is uncertain. Currently, even 51% confidence triggers a display change.
+
+Concept:
+- Define a minimum confidence threshold (e.g., 0.65) to report any string
+- Define a "change threshold" that's higher (e.g., 0.75) - to switch strings, the new one must exceed this
+- When confidence is low, keep showing the previous high-confidence result with a "fading" indicator
+
+Implementation guidance:
+- File: frontend/hooks/useStringDetection.ts
+- Add state: lastHighConfidenceResult, lastHighConfidenceTime
+- In the update loop, only update stringNumber/stringName when confidence exceeds threshold
+- Add a new state: predictionAge (time since last high-confidence result)
+- UI can use this to show fading/uncertain state
+
+Tradeoffs:
+- May show stale results during transitions
+- Could appear "laggy" for quick playing
+- Threshold tuning is guitar/environment dependent
+
+
+1.3 ONSET DETECTION AND DECISION LOCKING
+-----------------------------------------
+What: Detect note onsets (attack transients) and lock the string prediction for a defined window after each onset.
+
+Why: The most reliable classification happens during the attack phase when the signal is strongest and most characteristic. During sustain and decay, the signal becomes more ambiguous.
+
+Concept:
+- Detect when a new note onset occurs (sudden increase in RMS amplitude or clarity)
+- At onset, make a classification decision with higher weight on attack characteristics
+- Lock that decision for a configurable window (e.g., 300-500ms)
+- Only allow re-classification on the next detected onset
+
+Implementation guidance:
+- File: frontend/hooks/useStringDetection.ts (already has onsetTimeRef, but it's not used for locking)
+- Add onset detection based on RMS amplitude derivative or clarity jump
+- Add decisionLockedUntil ref
+- In updatePitchAndString(), skip classification update if current time < decisionLockedUntil
+- Consider allowing override if a completely different pitch is detected (new note)
+
+Tradeoffs:
+- May lock onto wrong string if initial classification fails
+- Needs careful onset detection to avoid false triggers
+- Hammer-ons and pull-offs may not trigger new onsets
+
+
+1.4 KALMAN FILTER FOR SCORE SMOOTHING - DONE
+-------------------------------------
+What: Apply Kalman filtering to the per-candidate scores over time, rather than using raw instantaneous scores.
+
+Why: Kalman filters excel at estimating true values from noisy observations. The raw scores fluctuate due to audio noise, but the underlying truth (which string is playing) is stable.
+
+Concept:
+- Maintain Kalman filter state for each candidate's score
+- Use the filtered scores for ranking instead of instantaneous scores
+- The filter naturally provides smoothing while remaining responsive to actual changes
+
+Implementation guidance:
+- Create new file: frontend/lib/audio/kalman-filter.ts
+- Implement simple 1D Kalman filter class
+- Modify classifyString() in string-classifier.ts to accept previous filter states
+- Or implement filtering at the hook level in useStringDetection.ts
+- Tune process noise (Q) and measurement noise (R) parameters
+
+Tradeoffs:
+- Adds complexity to the algorithm
+- Requires careful tuning of filter parameters
+- Some computational overhead per frame
+
+
+================================================================================
+SECTION 2: G STRING SPECIFIC IMPROVEMENTS
+================================================================================
+
+2.1 G STRING WOUND/UNWOUND DETECTION - DONE
+------------------------------------- 
+What: Add specific handling for the G string's unique characteristics, which sits at the boundary between wound and unwound strings.
+
+Why: The G string (string 3) is marked as isWound: false in guitar-constants.ts, but this varies by guitar:
+- Acoustic guitars: usually wound G
+- Electric guitars: usually plain (unwound) G
+- Classical guitars: nylon, completely different characteristics
+
+The current algorithm uses the wound/unwound flag for spectral scoring but doesn't account for this variability.
+
+Concept:
+- Before calibration, when it starts, ask the user if the G string is wound or unwound
+- Store this as a boolean in the calibrated profile
+- Use this during classification to apply appropriate scoring heuristics
+
+Implementation guidance:
+- File: frontend/lib/audio/calibration-types.ts - add optional `isWound?: boolean` to CalibratedStringProfile
+- File: frontend/hooks/useStringCalibration.ts - detect wound status during calibration:
+  * Wound strings have: lower spectral centroid, more harmonic energy in lower partials
+  * Analyze the attack samples to determine wound status
+- File: frontend/lib/audio/string-classifier.ts - use calibrated wound status if available
+
+Tradeoffs:
+- Adds complexity to calibration
+- May incorrectly detect wound status with poor calibration samples
+- Needs fallback for uncalibrated guitars
+
+
+2.2 G STRING INHARMONICITY ADJUSTMENT
+-------------------------------------
+What: Reconsider the typicalInharmonicity value for the G string and add special handling for its unique position.
+
+Why: Looking at guitar-constants.ts:
+- String 6 (Low E): 0.00012
+- String 5 (A):     0.00008
+- String 4 (D):     0.00005
+- String 3 (G):     0.00003  <-- This seems too low for wound G strings
+- String 2 (B):     0.00002
+- String 1 (High E): 0.00001
+
+For wound G strings, the inharmonicity should be higher than plain strings. The current value places it closer to B and high E, which may cause confusion.
+
+Concept:
+- If uncalibrated, check spectral features to estimate if G is wound
+- If wound, use higher inharmonicity baseline (e.g., 0.00006-0.00008)
+- If unwound/plain, current value may be appropriate
+
+Implementation guidance:
+- File: frontend/lib/audio/string-classifier.ts, function calculateExpectedInharmonicity()
+- Add special case for stringNumber === 3 that considers additional factors
+- Or create two profiles for G string (wound vs unwound) and select dynamically
+
+Tradeoffs:
+- Adds complexity for edge case
+- May need per-guitar calibration to be accurate
+- Could improve or worsen accuracy depending on guitar type
+
+
+2.3 G/B STRING DISAMBIGUATION
+-----------------------------
+What: Improve discrimination between G string fret 4 and B string open, as well as other G/B overlapping positions.
+
+Why: These strings have significant frequency overlap:
+- G string open: 196.0 Hz
+- G string fret 4: ~247 Hz (same as B open)
+- B string open: 246.94 Hz
+
+The G string (plain or wound) and B string (always plain) can produce very similar pitches with similar timbral characteristics.
+
+Concept:
+- Add string-pair-specific disambiguation rules
+- For G/B conflicts, rely more heavily on:
+  * Attack characteristics (B has sharper attack typically)
+  * Specific harmonic ratios that differ between positions
+  * Calibration data if available
+
+Implementation guidance:
+- File: frontend/lib/audio/string-classifier.ts
+- After initial scoring, check if top candidates are G and B
+- If so, apply secondary discrimination analysis
+- Consider the specific fret positions and their known characteristics
+
+Tradeoffs:
+- Adds special-case logic
+- May not generalize to all guitars
+- Calibration becomes more important
+
+
+2.4 THIRD HARMONIC ANALYSIS FOR G STRING
+----------------------------------------
+What: The G string often has a distinctive third harmonic relationship due to its position and construction. Use this for disambiguation.
+
+Why: The third harmonic (3f) behavior differs between wound and plain strings:
+- Plain G: third harmonic is relatively strong
+- Wound G: third harmonic is often suppressed relative to 2nd and 4th
+This characteristic can help distinguish G from nearby strings.
+
+Concept:
+- Calculate the ratio of 3rd harmonic to 2nd and 4th harmonics
+- Compare against expected ranges for G vs other strings
+- Weight this in the scoring
+
+Implementation guidance:
+- File: frontend/lib/audio/string-classifier.ts, function scoreHarmonicPattern()
+- Add specific analysis for 3rd harmonic ratio
+- Store expected ratios during calibration
+
+Tradeoffs:
+- May not be consistent across all playing styles
+- Requires sufficient harmonic content in signal
+- Additional computation per frame
+
+
+================================================================================
+SECTION 3: OVERALL ACCURACY IMPROVEMENTS
+================================================================================
+
+3.1 SPECTRAL CENTROID SCORING RE-ENABLEMENT - DONE
+-------------------------------------------
+What: Re-enable and fix the spectral scoring component, which is currently disabled (weight = 0).
+
+Why: The code comment says "seems to always make things worse," but spectral centroid IS genuinely different between strings. The issue is likely in how it's being used, not that it's useless.
+
+Current issues in scoreSpectralFeatures():
+- The default centroid ranges (wound: 200-800, unwound: 600-2000) are extremely broad
+- The flatness scoring is overly simplified
+- No consideration of fret position (higher frets shift centroid up)
+
+Concept:
+- Refine the expected centroid ranges based on actual measurements
+- Make ranges fret-dependent (centroid increases with fret number)
+- Use calibration data more effectively
+- Consider per-string centroid expectations rather than just wound/unwound
+
+Implementation guidance:
+- File: frontend/lib/audio/string-classifier.ts
+- Collect actual centroid measurements across strings/frets during testing
+- Implement fret-adjusted centroid expectations
+- Start with low weight (0.1) and increase if it helps
+- Consider using centroid only when calibration data exists
+
+Tradeoffs:
+- Requires testing to find useful parameters
+- May need more sophisticated model
+- Risk of making things worse again if not tuned properly
+
+
+3.2 HIGHER HARMONIC ANALYSIS - DONE
+----------------------------
+What: Analyze harmonics beyond the current 10th partial, particularly for lower strings.
+
+Why: Low E and A strings have rich harmonic content extending well beyond the 10th harmonic. These higher harmonics can provide additional discrimination information.
+
+Current state: NUM_HARMONICS = 10 in harmonic-analysis.ts
+
+Concept:
+- Increase NUM_HARMONICS to 15-20 for lower strings
+- Weight higher harmonics less (they're more affected by noise)
+- Low strings: analyze 15+ harmonics
+- High strings: 8-10 may be sufficient (higher harmonics exceed Nyquist/audible range)
+
+Implementation guidance:
+- File: frontend/lib/audio/harmonic-analysis.ts
+- Make NUM_HARMONICS dynamic based on fundamental frequency
+- File: frontend/lib/audio/string-classifier.ts
+- Adjust harmonic pattern scoring to use variable-length arrays
+- Weight harmonics by 1/n or similar decay function
+
+Tradeoffs:
+- Higher harmonics are often weak and noisy
+- Computational cost increases
+- May introduce noise rather than signal for some guitars
+
+
+3.3 ATTACK TRANSIENT ANALYSIS - DONE
+-----------------------------
+What: Analyze the initial attack transient (first 20-50ms) for string-specific signatures.
+
+Why: The attack transient contains string-specific information:
+- Wound strings: more complex attack with "buzz" components
+- Plain strings: cleaner, faster attack
+- Fret position affects attack (higher frets have faster attack)
+- String thickness affects attack decay rate
+
+Current state: The code tracks timeSinceOnset and has attack/sustain phases, but doesn't analyze attack transients specifically.
+
+Concept:
+- During the attack window, perform special analysis:
+  * Attack envelope slope
+  * Noise-to-harmonic ratio during first 30ms
+  * Time to reach peak amplitude
+  * Frequency of any transient "click" component
+- Use these features for disambiguation
+
+Implementation guidance:
+- File: frontend/lib/audio/harmonic-analysis.ts - add new function analyzeAttackTransient()
+- File: frontend/hooks/useStringDetection.ts - capture and analyze attack phase specifically
+- Store attack characteristics in calibration data
+- Weight attack analysis highly during onset, decay over time
+
+Tradeoffs:
+- Requires very low-latency processing to catch attack
+- Playing technique affects attack characteristics
+- May not work well with slow attack (classical guitar)
+
+
+3.4 DYNAMIC FEATURE WEIGHTING
+-----------------------------
+What: Adjust feature weights dynamically based on signal characteristics and available data.
+
+Why: Fixed weights (40% inharmonicity, 60% harmonic) may not be optimal for all situations:
+- Clear signal with high clarity: inharmonicity is reliable
+- Noisy signal: harmonic pattern may be more robust
+- Calibrated guitar: all features more reliable
+- Uncalibrated: some features unreliable
+
+Concept:
+- Calculate confidence/reliability for each feature type
+- Weight features by their estimated reliability
+- Adapt to signal quality and calibration availability
+
+Implementation guidance:
+- File: frontend/lib/audio/string-classifier.ts, function classifyString()
+- Before calculating scores, assess feature reliability:
+  * Inharmonicity reliability: based on number of usable harmonic peaks
+  * Spectral reliability: based on signal clarity
+  * Harmonic reliability: based on fundamental strength
+- Normalize weights based on reliability scores
+
+Tradeoffs:
+- Adds complexity
+- May be unstable if reliability estimation is poor
+- Requires careful implementation and testing
+
+
+3.5 MULTI-FRAME EVIDENCE ACCUMULATION - DONE
+-------------------------------------
+What: Accumulate evidence across multiple frames using a probabilistic framework (e.g., Bayesian updating).
+
+Why: Each frame provides partial information. By combining evidence over time, we can build stronger confidence in the classification.
+
+Concept:
+- Treat each frame's classification scores as likelihood ratios
+- Maintain prior probabilities for each string
+- Update posteriors using Bayes' rule after each frame
+- Report the maximum a posteriori (MAP) estimate
+
+Implementation guidance:
+- File: frontend/hooks/useStringDetection.ts
+- Maintain state: stringPriors (array of 6 probabilities)
+- After each classifyString() call, update priors:
+  posterior[s] ∝ prior[s] × likelihood[s]
+- Normalize to sum to 1
+- Reset priors on detected onset (new note)
+
+Tradeoffs:
+- Adds computational overhead
+- Need to tune "decay rate" for priors
+- Requires careful handling of note transitions
+
+
+3.6 PITCH TRACKING IMPROVEMENTS
+-------------------------------
+What: Improve pitch tracking by using the pitchy library more effectively or supplementing with additional algorithms.
+
+Why: Pitch detection accuracy directly impacts string detection. If the pitch is off, we may generate wrong candidates.
+
+Current observations from useStringDetection.ts:
+- minClarity threshold of 0.9 is quite high, may reject valid frames
+- No pitch smoothing between frames
+- No octave error correction
+
+Concept:
+- Implement pitch smoothing to reduce frame-to-frame jitter
+- Add octave error detection and correction
+- Consider adaptive clarity threshold based on environment noise
+- Use larger buffer size for lower frequencies (improve bass string detection)
+
+Implementation guidance:
+- File: frontend/hooks/useStringDetection.ts
+- Add median filter for pitch values (window of 3-5 frames)
+- Detect octave jumps (×2 or ÷2 in pitch) and flag as suspicious
+- Make bufferSize adaptive: larger for low frequencies detected
+- Consider using multiple detection algorithms and voting
+
+Tradeoffs:
+- Lower clarity threshold may accept noisy pitches
+- Pitch smoothing adds latency
+- Adaptive buffer size is complex to implement
+
+
+3.7 ENVIRONMENTAL NOISE ADAPTATION
+----------------------------------
+What: Analyze and adapt to background noise characteristics to improve SNR estimation.
+
+Why: Room noise, amplifier hum, and other environmental sounds affect detection quality. Currently, the algorithm doesn't explicitly model noise.
+
+Concept:
+- During silence (no pitch detected), measure noise floor
+- Characterize noise spectrum (e.g., 60Hz hum, broadband noise)
+- Subtract or weight against noise frequencies during analysis
+- Adjust clarity thresholds based on SNR estimate
+
+Implementation guidance:
+- File: frontend/hooks/useStringDetection.ts
+- Add noise profiling during idle periods
+- Store: noiseFloorLevel, noisePowerSpectrum
+- File: frontend/lib/audio/harmonic-analysis.ts
+- Factor in noise floor when detecting peaks
+- Reject peaks that barely exceed noise floor
+
+Tradeoffs:
+- Noise characteristics change over time
+- Adds initialization period
+- May incorrectly model environmental sounds as noise
+
+
+================================================================================
+SECTION 4: CALIBRATION IMPROVEMENTS
+================================================================================
+
+4.1 CALIBRATION QUALITY METRICS
+-------------------------------
+What: Add quality metrics to calibration data and use them to weight calibration reliability.
+
+Why: Not all calibration sessions are equal. Poor lighting, background noise, or user error can produce unreliable calibration data.
+
+Concept:
+- During calibration, track consistency metrics:
+  * Variance of inharmonicity measurements
+  * Consistency of harmonic profiles across samples
+  * Signal clarity during samples
+- Store quality scores per string, per fret
+- Weight calibrated vs default values based on quality
+
+Implementation guidance:
+- File: frontend/lib/audio/calibration-types.ts - add qualityScore to profiles
+- File: frontend/hooks/useStringCalibration.ts - calculate quality during calibration:
+  * Low variance = high quality
+  * High clarity samples = high quality
+- File: frontend/lib/audio/string-classifier.ts - use quality scores to blend calibrated and default
+
+Tradeoffs:
+- More complex calibration data structure
+- Quality estimation may be imperfect
+- User confusion if quality is reported as "poor"
+
+
+4.2 INCREMENTAL CALIBRATION UPDATES
+-----------------------------------
+What: Allow ongoing calibration updates during normal use.
+
+Why: One-time calibration may not capture all variations. As the user plays, the system could refine its model.
+
+Concept:
+- During detection, when confidence is very high (>0.90), save that frame's features
+- Periodically update calibration data with these high-confidence samples
+- Implement "soft" calibration that adapts over time
+
+Implementation guidance:
+- File: frontend/hooks/useStringDetection.ts
+- When confidence exceeds threshold, store sample to pending updates
+- Periodically merge pending updates with calibration data
+- Use exponential moving average to prevent overfitting to recent samples
+- Only update if sample count exceeds threshold
+
+Tradeoffs:
+- May slowly drift if classification has systematic errors
+- Privacy/storage considerations
+- Need mechanism to reset/reject bad updates
+
+
+4.3 CROSS-STRING CALIBRATION VALIDATION - DONE
+---------------------------------------
+What: Validate calibration data by checking for expected relationships between strings.
+
+Why: Calibration samples for different strings should show expected patterns:
+- Lower strings should have higher inharmonicity
+- Wound strings should have lower spectral centroid
+- Adjacent strings should have gradual changes in characteristics
+
+Concept:
+- After calibration completes, analyze inter-string relationships
+- Flag potential problems:
+  * String 4 has lower inharmonicity than string 3 (unexpected)
+  * Spectral characteristics don't match wound/unwound pattern
+- Warn user or auto-correct obvious errors
+
+Implementation guidance:
+- File: frontend/hooks/useStringCalibration.ts
+- After buildCalibrationData(), add validation step
+- Check ordering of inharmonicity values
+- Verify wound strings group together in spectral characteristics
+- Return quality warnings to UI
+
+Tradeoffs:
+- May flag valid but unusual guitars
+- Adds complexity to calibration flow
+- Assumptions may not hold for all instruments
+
+
+4.4 FRET-SPECIFIC CALIBRATION EXPANSION
+---------------------------------------
+What: Calibrate more fret positions, not just open/5/12.
+
+Why: Current calibration uses only frets 0, 5, and 12. Many commonly confused notes occur at other fret positions.
+
+Concept:
+- Add calibration for frets 7 and 9 (common confusion points)
+- Or use a "problem areas" calibration that focuses on user-identified trouble spots
+- Allow optional extended calibration for advanced users
+
+Implementation guidance:
+- File: frontend/hooks/useStringCalibration.ts
+- Modify CALIBRATION_FRETS to include additional frets
+- Add "quick" vs "full" calibration modes
+- Interpolation already handles intermediate frets, but more data points improve accuracy
+
+Tradeoffs:
+- Longer calibration time
+- User fatigue during calibration
+- Diminishing returns past certain density
+
+
+4.5 PLAYING STYLE CALIBRATION
+-----------------------------
+What: Calibrate for different playing styles (fingerstyle vs pick, hard vs soft attack).
+
+Why: Playing technique affects timbral characteristics:
+- Pick attack: sharper transient, more high-frequency content
+- Finger attack: softer transient, warmer tone
+- Hard attack: different harmonic envelope than soft attack
+
+Concept:
+- During calibration, ask user to play each string multiple ways
+- Store separate profiles for different attack types
+- During detection, estimate attack type and use appropriate profile
+
+Implementation guidance:
+- File: frontend/lib/audio/calibration-types.ts - add playingStyle to profiles
+- File: frontend/hooks/useStringCalibration.ts - add multi-style calibration phase
+- File: frontend/lib/audio/string-classifier.ts - detect attack style and select profile
+- Attack hardness can be estimated from transient slope
+
+Tradeoffs:
+- Significantly longer calibration time
+- May over-complicate the model
+- Attack detection reliability is uncertain
+
+
+================================================================================
+SECTION 5: ALGORITHM ARCHITECTURE IMPROVEMENTS
+================================================================================
+
+5.1 MACHINE LEARNING CLASSIFIER
+-------------------------------
+What: Replace or augment the heuristic scoring with a trained ML classifier.
+
+Why: The current scoring functions use hand-tuned weights and heuristics. ML can potentially find better feature combinations.
+
+Concept:
+- Train a classifier (neural network, random forest, etc.) on labeled guitar audio
+- Input features: inharmonicity, spectral features, harmonic amplitudes, temporal features
+- Output: string probabilities
+- Can be trained on:
+  * Synthetic data from guitar synthesis
+  * User-contributed labeled recordings
+  * Active learning from high-confidence detections
+
+Implementation guidance:
+- Create training data collection system
+- Use lightweight ML framework (TensorFlow.js, ONNX)
+- Could run inference in Web Worker to not block UI
+- Start with simple model (small neural net or decision tree)
+- Use current heuristic system as fallback
+
+Tradeoffs:
+- Requires training data collection infrastructure
+- Model may not generalize across guitars
+- Adds significant complexity and dependencies
+- Browser performance considerations
+
+
+5.2 ENSEMBLE OF CLASSIFIERS
+---------------------------
+What: Use multiple classification approaches and combine their outputs.
+
+Why: Different approaches have different failure modes. Combining them can improve robustness.
+
+Concept:
+- Classifier 1: Current heuristic scoring
+- Classifier 2: Template matching against calibration
+- Classifier 3: Simple ML model
+- Combine via voting, weighted average, or stacking
+
+Implementation guidance:
+- Create abstract classifier interface
+- Implement multiple classifier strategies
+- Implement combiner that weights each classifier
+- Weight classifiers based on historical accuracy (if tracked)
+
+Tradeoffs:
+- Computational overhead (running multiple classifiers)
+- Added complexity
+- May not improve if classifiers have correlated errors
+
+
+5.3 TWO-STAGE CLASSIFICATION
+----------------------------
+What: Use a fast coarse classifier followed by a detailed fine classifier.
+
+Why: Many notes have only one possible string (unique fret position). For these, detailed analysis is unnecessary.
+
+Concept:
+- Stage 1: Quick pitch-only check
+  * If only one candidate string, return immediately with high confidence
+  * If multiple candidates, proceed to stage 2
+- Stage 2: Full spectral analysis for disambiguation
+- This reduces average computation per frame
+
+Implementation guidance:
+- File: frontend/lib/audio/string-classifier.ts, function classifyString()
+- Early return if candidates.length === 1 (already done, line 430-435)
+- Further optimize stage 2 by only analyzing relevant features for specific conflicts
+- E.g., for low E vs A conflict, focus on inharmonicity (very different)
+- E.g., for G vs B conflict, focus on harmonic patterns
+
+Tradeoffs:
+- Minimal downside if well implemented
+- May need conflict-specific rules
+- Testing required to ensure stage 1 is accurate
+
+
+5.4 CONTEXT-AWARE CLASSIFICATION
+--------------------------------
+What: Use musical context to improve classification probabilities.
+
+Why: Music has structure. If the user just played notes on string 6, the next note is more likely to also be on a nearby string than jumping to string 1.
+
+Concept:
+- Track recent string history
+- Apply prior probability based on "distance" from recent strings
+- Consider typical playing patterns (scales, chords)
+- Optional: detect if user is playing a known pattern
+
+Implementation guidance:
+- File: frontend/hooks/useStringDetection.ts
+- Track last N string detections
+- Before final classification, multiply scores by proximity prior:
+  * Same string as previous: 1.2x
+  * Adjacent string: 1.1x
+  * 2 strings away: 1.0x
+  * 3+ strings away: 0.9x
+- These priors should be subtle to avoid over-biasing
+
+Tradeoffs:
+- May incorrectly bias against legitimate jumps
+- Prior strengths need careful tuning
+- May cause "sticky" behavior beyond what's desired
+
+
+5.5 PARALLEL AUDIO ANALYSIS
+---------------------------
+What: Move audio analysis to Web Worker or use AudioWorklet for dedicated processing.
+
+Why: Currently all processing happens on the main thread via requestAnimationFrame. This can cause:
+- Dropped frames when main thread is busy
+- Inconsistent timing between frames
+- UI jank during intensive computation
+
+Concept:
+- Use AudioWorkletNode for real-time audio processing
+- Move FFT and feature extraction to worklet or worker
+- Main thread only handles UI updates and final classification
+- More consistent analysis timing
+
+Implementation guidance:
+- Create AudioWorkletProcessor for feature extraction
+- Send extracted features (not raw audio) to main thread
+- Use SharedArrayBuffer if needed for performance
+- Or use AnalyserNode as currently done, but process in Worker
+
+Tradeoffs:
+- Significant architectural change
+- Cross-thread communication overhead
+- Browser compatibility considerations
+- More complex debugging
+
+
+================================================================================
+SECTION 6: USER EXPERIENCE IMPROVEMENTS
+================================================================================
+
+6.1 CONFIDENCE VISUALIZATION - DONE
+----------------------------
+What: Show users the classification confidence and alternatives in real-time.
+
+Why: Users can better understand algorithm behavior and potential errors if they see confidence levels.
+
+Concept:
+- Display confidence bar/meter for current prediction
+- Show "runner-up" prediction when close
+- Color-code based on confidence (green = certain, yellow = unsure, red = guessing)
+- Show inharmonicity/harmonic debug info optionally
+
+Implementation guidance:
+- File: frontend/app/string-test/page.tsx - already shows basic confidence
+- Enhance with:
+  * Confidence meter visualization
+  * Second-best candidate display
+  * Trend indicator (confidence increasing/decreasing)
+  * Optional detailed feature view for power users
+
+Tradeoffs:
+- Information overload for casual users
+- May undermine confidence in the system if uncertainty is too visible
+- Should be optional/toggleable
+
+
+6.2 FEEDBACK COLLECTION SYSTEM
+------------------------------
+What: Allow users to correct misclassifications and use that data for improvement.
+
+Why: Users know the ground truth of what they played. This feedback can improve the algorithm.
+
+Concept:
+- When prediction is wrong, user can tap "wrong" and select correct string
+- Store: features at time of error, wrong prediction, correct prediction
+- Use for:
+  * Immediate calibration update
+  * Analytics to identify systematic problems
+  * Training data for ML approaches
+
+Implementation guidance:
+- Add correction UI to string-test page
+- Store corrections in calibration data or separate feedback store
+- Analyze patterns in corrections (which string pairs are confused most?)
+- Option to share anonymized feedback for global improvement
+
+Tradeoffs:
+- Requires user effort
+- Users may make mistakes in corrections
+- Privacy considerations for data collection
+
+
+6.3 CALIBRATION GUIDANCE
+------------------------
+What: Improve the calibration UX with better guidance and feedback.
+
+Why: Poor calibration leads to poor detection. Users may not understand what constitutes a good calibration sample.
+
+Concept:
+- Real-time feedback during calibration:
+  * "Play louder" if signal is weak
+  * "Play cleaner" if clarity is low
+  * "Hold longer" if note is too short
+  * "Wait for silence" if there's bleed from previous note
+- Visual pitch indicator to help user play correct note
+- Sample quality indicator
+
+Implementation guidance:
+- File: frontend/app/string-test/page.tsx calibration UI
+- File: frontend/hooks/useStringCalibration.ts
+- Add real-time quality checks during sample collection
+- Display warnings/tips based on current audio characteristics
+- Show expected note frequency and deviation
+
+Tradeoffs:
+- More complex calibration UI
+- May frustrate users with too many warnings
+- Needs careful UX design
+
+
+================================================================================
+SECTION 7: QUICK WINS (LOW EFFORT, POTENTIALLY HIGH IMPACT)
+================================================================================
+
+7.1 INCREASE FFT SIZE FOR LOW STRINGS - DONE
+-------------------------------------
+What: Use larger FFT size when detecting low-frequency notes for better resolution.
+
+Why: Low E string (82 Hz) has poor frequency resolution at 8192 FFT with 44.1kHz sample rate:
+- Bin width = 44100/8192 ≈ 5.38 Hz
+- At 82 Hz, this is ~6.5% frequency resolution
+- Higher FFT size improves this at cost of temporal resolution
+
+Concept:
+- Detect when pitch < 150 Hz, use larger FFT (16384)
+- Or use two parallel analyzers with different FFT sizes
+
+Implementation guidance:
+- File: frontend/hooks/useStringDetection.ts
+- Make fftSize dynamic based on detected pitch range
+- Or run dual FFT and select appropriate one per frame
+
+Tradeoffs:
+- Higher latency for low notes
+- More memory usage
+- Complexity of managing multiple FFT sizes
+
+
+7.2 ADJUST CLARITY THRESHOLD DYNAMICALLY
+----------------------------------------
+What: Lower clarity threshold for high-confidence historical matches.
+
+Why: Fixed 0.9 clarity may reject valid frames. If recent frames were consistently one string, lower threshold is acceptable.
+
+Concept:
+- When recent history shows consistent string detection, accept frames with clarity 0.8
+- When uncertain, require full 0.9 clarity
+- Adaptive threshold based on prediction stability
+
+Implementation guidance:
+- File: frontend/hooks/useStringDetection.ts
+- Track clarity and prediction consistency over time
+- Calculate adaptive threshold: minClarity = 0.85 + 0.05 * recentVariance
+
+Tradeoffs:
+- May accept noisy frames and cause instability
+- Needs careful tuning
+
+
+7.3 PRE-FILTER CANDIDATE SCORES - DONE
+-------------------------------
+What: Before detailed scoring, quickly eliminate unlikely candidates.
+
+Why: Some candidates can be ruled out with simple checks, saving computation.
+
+Concept:
+- If pitch is very close to one candidate's expected frequency, prioritize it
+- If measured inharmonicity is extremely different from candidate's expected, deprioritize
+- Quick checks before full scoring
+
+Implementation guidance:
+- File: frontend/lib/audio/string-classifier.ts, function classifyString()
+- Add early filtering step after getting candidates
+- Remove candidates where abs(expected - actual inharmonicity) > 3x typical variation
+
+Tradeoffs:
+- Risk of incorrectly filtering correct candidate
+- Minimal computational savings unless many candidates
+
+
+7.4 HARMONIC PEAK QUALITY WEIGHTING 
+-----------------------------------
+What: Weight harmonic peaks by their quality/confidence in the pattern scoring.
+
+Why: Not all detected harmonic peaks are equally reliable. Strong peaks should count more than weak, uncertain ones.
+
+Concept:
+- Weight each harmonic's contribution by its amplitude relative to noise floor
+- Harmonics barely above threshold contribute less to pattern matching
+- Well-defined harmonics contribute more
+
+Implementation guidance:
+- File: frontend/lib/audio/string-classifier.ts, function scoreCalibratedHarmonicPattern()
+- Weight the difference calculation by amplitude:
+  weightedDiff = (diff * amplitude) / maxAmplitude
+- Sum weighted differences
+
+Tradeoffs:
+- Changes meaning of harmonic pattern score
+- Needs recalibration of overall weights
+
+
+================================================================================
+SECTION 8: DEBUGGING AND DEVELOPMENT TOOLS
+================================================================================
+
+8.1 COMPREHENSIVE LOGGING SYSTEM
+--------------------------------
+What: Add detailed logging of classification decisions for debugging.
+
+Why: Currently hard to understand why misclassifications occur without seeing intermediate values.
+
+Concept:
+- Log all features: pitch, inharmonicity, spectral, harmonics
+- Log all candidate scores and individual components
+- Log final decision and confidence
+- Make logging toggleable for performance
+
+Implementation guidance:
+- Add debug mode flag to useStringDetection options
+- When enabled, log to console or accumulate in buffer
+- Create visualization tool for logged data
+- Consider structured logging for analysis
+
+Tradeoffs:
+- Performance impact when logging enabled
+- Console noise during development
+- Storage for historical logs
+
+
+8.2 A/B TESTING FRAMEWORK
+-------------------------
+What: Create framework to compare algorithm variants.
+
+Why: To know if changes are improvements, need controlled comparison.
+
+Concept:
+- Run two algorithm variants simultaneously
+- Compare predictions against ground truth
+- Report accuracy metrics for each variant
+- User can provide ground truth via feedback
+
+Implementation guidance:
+- Create algorithm variant abstraction
+- Run both on same audio frames
+- Accumulate accuracy statistics
+- UI to show comparison results
+
+Tradeoffs:
+- Doubled computational cost
+- Needs ground truth collection
+- Development effort for framework
+
+
+8.3 SYNTHETIC TEST DATA GENERATOR
+---------------------------------
+What: Create synthetic guitar audio for algorithm testing.
+
+Why: Real recordings with ground truth labels are hard to obtain. Synthetic data provides unlimited test cases.
+
+Concept:
+- Generate guitar-like waveforms with known parameters
+- Control: fundamental frequency, inharmonicity, harmonic profile, envelope
+- Create test cases covering edge cases
+- Automated regression testing
+
+Implementation guidance:
+- Create synthetic audio generator (JavaScript or external tool)
+- Generate test suite covering:
+  * All strings at various frets
+  * Wound vs unwound G string
+  * Various noise levels
+  * Edge cases (very low/high confidence scenarios)
+- Automated tests that run classifier on synthetic data
+
+Tradeoffs:
+- Synthetic data may not capture real-world complexity
+- Time investment to build generator
+- Tests may pass on synthetic, fail on real
+
+
+================================================================================
+PRIORITY RECOMMENDATIONS
+================================================================================
+
+Based on the issues described (overall accuracy, G string problems, prediction stability), here are the recommended priorities:
+
+HIGH PRIORITY (address the core issues):
+1. 1.1 Temporal Smoothing with Hysteresis - directly addresses stability
+2. 1.3 Onset Detection and Decision Locking - addresses stability
+3. 2.1 G String Wound/Unwound Detection - addresses G string accuracy
+4. 2.2 G String Inharmonicity Adjustment - addresses G string accuracy
+5. 7.2 Adjust Clarity Threshold Dynamically - quick win for stability
+
+MEDIUM PRIORITY (significant improvements):
+6. 3.1 Spectral Centroid Scoring Re-enablement - improve overall accuracy
+7. 3.4 Dynamic Feature Weighting - improve overall accuracy
+8. 1.2 Confidence-Based Filtering - improve stability
+9. 4.1 Calibration Quality Metrics - improve calibrated accuracy
+10. 3.6 Pitch Tracking Improvements - foundation for all other improvements
+
+LOWER PRIORITY (nice to have):
+11-20. Remaining items based on development capacity
+
+================================================================================
+END OF IMPROVEMENT SUGGESTIONS
+================================================================================

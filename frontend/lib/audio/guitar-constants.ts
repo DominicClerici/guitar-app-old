@@ -10,6 +10,8 @@ export interface StringProfile {
   maxFreq: number
   typicalInharmonicity: number
   isWound: boolean
+  typicalCentroidRange: { min: number; max: number }
+  centroidFretCoefficient: number
 }
 
 export interface StringCandidate {
@@ -33,15 +35,29 @@ export interface SpectralFeatures {
   flatness: number
 }
 
+export interface CandidateScoreInfo {
+  stringNumber: number
+  fretNumber: number
+  totalScore: number
+  inharmonicityScore: number
+  spectralScore: number
+  harmonicScore: number
+}
+
 export interface StringDetectionResult {
   stringNumber: number
   fretNumber: number
   confidence: number
+  scoreDifference: number
   secondBest?: {
     stringNumber: number
     fretNumber: number
     confidence: number
   }
+  allCandidateScores: CandidateScoreInfo[]
+  measuredInharmonicity: number
+  spectralCentroid: number
+  expectedInharmonicity: number
 }
 
 export const STANDARD_TUNING_STRINGS: StringProfile[] = [
@@ -55,6 +71,8 @@ export const STANDARD_TUNING_STRINGS: StringProfile[] = [
     maxFreq: 329.63,
     typicalInharmonicity: 0.00012,
     isWound: true,
+    typicalCentroidRange: { min: 300, max: 600 },
+    centroidFretCoefficient: 15,
   },
   {
     stringNumber: 5,
@@ -66,6 +84,8 @@ export const STANDARD_TUNING_STRINGS: StringProfile[] = [
     maxFreq: 440.0,
     typicalInharmonicity: 0.00008,
     isWound: true,
+    typicalCentroidRange: { min: 400, max: 750 },
+    centroidFretCoefficient: 18,
   },
   {
     stringNumber: 4,
@@ -77,6 +97,8 @@ export const STANDARD_TUNING_STRINGS: StringProfile[] = [
     maxFreq: 587.33,
     typicalInharmonicity: 0.00005,
     isWound: true,
+    typicalCentroidRange: { min: 500, max: 900 },
+    centroidFretCoefficient: 22,
   },
   {
     stringNumber: 3,
@@ -88,6 +110,8 @@ export const STANDARD_TUNING_STRINGS: StringProfile[] = [
     maxFreq: 783.99,
     typicalInharmonicity: 0.00003,
     isWound: false,
+    typicalCentroidRange: { min: 700, max: 1200 },
+    centroidFretCoefficient: 30,
   },
   {
     stringNumber: 2,
@@ -99,6 +123,8 @@ export const STANDARD_TUNING_STRINGS: StringProfile[] = [
     maxFreq: 987.77,
     typicalInharmonicity: 0.00002,
     isWound: false,
+    typicalCentroidRange: { min: 900, max: 1500 },
+    centroidFretCoefficient: 35,
   },
   {
     stringNumber: 1,
@@ -110,6 +136,8 @@ export const STANDARD_TUNING_STRINGS: StringProfile[] = [
     maxFreq: 1318.51,
     typicalInharmonicity: 0.00001,
     isWound: false,
+    typicalCentroidRange: { min: 1100, max: 1800 },
+    centroidFretCoefficient: 40,
   },
 ]
 

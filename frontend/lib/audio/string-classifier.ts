@@ -1,31 +1,29 @@
 "use client"
 
+import type { AttackFeatures } from "./attack-analysis"
 import type {
   CalibratedStringProfile,
   FretProfile,
   GuitarCalibrationData,
   TemporalProfile,
 } from "./calibration-types"
-import type {
-  SpectralFeatures,
-  StringCandidate,
-  StringDetectionResult,
-} from "./guitar-constants"
-import {
-  getCandidateStrings,
-  getStringProfile,
-  STANDARD_TUNING_STRINGS,
-} from "./guitar-constants"
+import type { SpectralFeatures, StringCandidate, StringDetectionResult } from "./guitar-constants"
+import { getCandidateStrings, getStringProfile, STANDARD_TUNING_STRINGS } from "./guitar-constants"
 
 const ATTACK_SUSTAIN_TRANSITION_START_MS = 100
 const ATTACK_SUSTAIN_TRANSITION_END_MS = 200
 
-interface CandidateScore {
+export interface CandidateScore {
   candidate: StringCandidate
   inharmonicityScore: number
   spectralScore: number
   harmonicScore: number
   totalScore: number
+}
+
+interface PreFilterResult {
+  candidate: StringCandidate
+  preFilterScore: number
 }
 
 let activeCalibration: GuitarCalibrationData | null = null
@@ -41,6 +39,17 @@ export function getActiveCalibrationProfile(): GuitarCalibrationData | null {
 function getCalibratedProfile(stringNumber: number): CalibratedStringProfile | undefined {
   if (!activeCalibration) return undefined
   return activeCalibration.strings.find((s) => s.stringNumber === stringNumber)
+}
+
+function isStringWound(stringNumber: number): boolean {
+  const profile = getStringProfile(stringNumber)
+  const defaultIsWound = profile?.isWound ?? false
+
+  if (stringNumber === 3 && activeCalibration?.isGStringWound !== undefined) {
+    return activeCalibration.isGStringWound
+  }
+
+  return defaultIsWound
 }
 
 function hasTemporalProfiles(profile: CalibratedStringProfile): boolean {
@@ -111,8 +120,7 @@ function interpolateTemporalProfiles(
   t: number,
 ): TemporalProfile {
   return {
-    measuredInharmonicity:
-      lower.measuredInharmonicity * (1 - t) + upper.measuredInharmonicity * t,
+    measuredInharmonicity: lower.measuredInharmonicity * (1 - t) + upper.measuredInharmonicity * t,
     spectralCentroidRange: {
       min: lower.spectralCentroidRange.min * (1 - t) + upper.spectralCentroidRange.min * t,
       max: lower.spectralCentroidRange.max * (1 - t) + upper.spectralCentroidRange.max * t,
@@ -204,8 +212,7 @@ function getInterpolatedProfile(
 
       const extraFrets = fret - highest.fret
       return {
-        measuredInharmonicity:
-          upperTemp.measuredInharmonicity + slope.inharmonicity * extraFrets,
+        measuredInharmonicity: upperTemp.measuredInharmonicity + slope.inharmonicity * extraFrets,
         spectralCentroidRange: {
           min: upperTemp.spectralCentroidRange.min + slope.centroidMin * extraFrets,
           max: upperTemp.spectralCentroidRange.max + slope.centroidMax * extraFrets,
@@ -229,9 +236,25 @@ function getInterpolatedProfile(
   return getTemporalProfile(calibrated, timeSinceOnsetMs)
 }
 
-const INHARMONICITY_WEIGHT = 0.5
-const SPECTRAL_WEIGHT = 0.3
-const HARMONIC_WEIGHT = 0.2
+const BASE_INHARMONICITY_WEIGHT = 0.35
+const BASE_SPECTRAL_WEIGHT = 0.1
+const BASE_HARMONIC_WEIGHT = 0.55
+
+function calculateDynamicWeights(spectralConfidence: number): {
+  inharmonicityWeight: number
+  spectralWeight: number
+  harmonicWeight: number
+} {
+  const adjustedSpectralWeight = BASE_SPECTRAL_WEIGHT * spectralConfidence
+  const remainingWeight = 1 - adjustedSpectralWeight
+  const totalOtherBase = BASE_INHARMONICITY_WEIGHT + BASE_HARMONIC_WEIGHT
+
+  return {
+    inharmonicityWeight: (BASE_INHARMONICITY_WEIGHT / totalOtherBase) * remainingWeight,
+    spectralWeight: adjustedSpectralWeight,
+    harmonicWeight: (BASE_HARMONIC_WEIGHT / totalOtherBase) * remainingWeight,
+  }
+}
 
 function calculateExpectedInharmonicity(
   stringNumber: number,
@@ -253,6 +276,47 @@ function calculateExpectedInharmonicity(
   return profile.typicalInharmonicity * fretFactor
 }
 
+function getExpectedPitch(stringNumber: number, fretNumber: number): number {
+  const stringProfile = STANDARD_TUNING_STRINGS.find((s) => s.stringNumber === stringNumber)
+  if (!stringProfile) return 0
+  return stringProfile.openFreq * Math.pow(2, fretNumber / 12)
+}
+
+function preFilterCandidates(
+  candidates: StringCandidate[],
+  detectedPitch: number,
+  measuredInharmonicity: number,
+  timeSinceOnsetMs?: number,
+): PreFilterResult[] {
+  return candidates.map((candidate) => {
+    let preFilterScore = 1.0
+
+    const expectedInharmonicity = calculateExpectedInharmonicity(
+      candidate.stringNumber,
+      candidate.fretNumber,
+      timeSinceOnsetMs,
+    )
+    if (expectedInharmonicity > 0 && measuredInharmonicity > 0) {
+      const inharmonicityRatio = measuredInharmonicity / expectedInharmonicity
+      if (inharmonicityRatio > 3 || inharmonicityRatio < 0.33) {
+        preFilterScore *= 0.5
+      }
+    }
+
+    const expectedPitch = getExpectedPitch(candidate.stringNumber, candidate.fretNumber)
+    if (expectedPitch > 0) {
+      const centsDiff = Math.abs(1200 * Math.log2(detectedPitch / expectedPitch))
+      if (centsDiff > 30) {
+        preFilterScore *= 0.7
+      } else if (centsDiff < 5) {
+        preFilterScore *= 1.2
+      }
+    }
+
+    return { candidate, preFilterScore }
+  })
+}
+
 function scoreInharmonicity(
   measuredB: number,
   candidate: StringCandidate,
@@ -272,42 +336,59 @@ function scoreInharmonicity(
   return Math.exp(-logRatio * logRatio * 2)
 }
 
+interface ExpectedCentroidResult {
+  min: number
+  max: number
+  isCalibrated: boolean
+  confidence: number
+}
+
 function getExpectedCentroidRange(
   stringNumber: number,
   fret: number,
   timeSinceOnsetMs?: number,
-): { min: number; max: number } {
+): ExpectedCentroidResult {
   const calibrated = getCalibratedProfile(stringNumber)
   if (calibrated && calibrated.sampleCount > 0) {
     const interpolatedProfile = getInterpolatedProfile(calibrated, fret, timeSinceOnsetMs)
     if (interpolatedProfile) {
-      const margin =
-        (interpolatedProfile.spectralCentroidRange.max -
-          interpolatedProfile.spectralCentroidRange.min) *
-        0.2
+      const rangeWidth =
+        interpolatedProfile.spectralCentroidRange.max -
+        interpolatedProfile.spectralCentroidRange.min
+      const margin = Math.min(rangeWidth * 0.15, 150)
+      const sampleConfidence = Math.min(1, calibrated.sampleCount / 10)
       return {
         min: interpolatedProfile.spectralCentroidRange.min - margin,
         max: interpolatedProfile.spectralCentroidRange.max + margin,
+        isCalibrated: true,
+        confidence: sampleConfidence,
       }
     }
   }
 
   const profile = getStringProfile(stringNumber)
-  if (!profile) return { min: 0, max: 10000 }
+  if (!profile) return { min: 0, max: 10000, isCalibrated: false, confidence: 0.3 }
 
-  if (profile.isWound) {
-    return { min: 200, max: 800 }
-  } else {
-    return { min: 600, max: 2000 }
+  const fretAdjustment = fret * profile.centroidFretCoefficient
+  return {
+    min: profile.typicalCentroidRange.min + fretAdjustment,
+    max: profile.typicalCentroidRange.max + fretAdjustment,
+    isCalibrated: false,
+    confidence: 0.5,
   }
+}
+
+interface SpectralScoreResult {
+  score: number
+  confidence: number
 }
 
 function scoreSpectralFeatures(
   features: SpectralFeatures,
   candidate: StringCandidate,
   timeSinceOnsetMs?: number,
-): number {
-  const centroidRange = getExpectedCentroidRange(
+): SpectralScoreResult {
+  const centroidResult = getExpectedCentroidRange(
     candidate.stringNumber,
     candidate.fretNumber,
     timeSinceOnsetMs,
@@ -315,48 +396,88 @@ function scoreSpectralFeatures(
   const profile = getStringProfile(candidate.stringNumber)
 
   let centroidScore = 0
-  if (features.centroid >= centroidRange.min && features.centroid <= centroidRange.max) {
-    const rangeCenter = (centroidRange.min + centroidRange.max) / 2
-    const rangeWidth = centroidRange.max - centroidRange.min
-    const distance = Math.abs(features.centroid - rangeCenter) / rangeWidth
-    centroidScore = Math.exp(-distance * distance * 2)
+  const rangeCenter = (centroidResult.min + centroidResult.max) / 2
+  const rangeWidth = centroidResult.max - centroidResult.min
+
+  if (features.centroid >= centroidResult.min && features.centroid <= centroidResult.max) {
+    const normalizedDistance = Math.abs(features.centroid - rangeCenter) / (rangeWidth / 2)
+    centroidScore = Math.exp(-normalizedDistance * normalizedDistance)
   } else {
-    const distanceOutside = Math.min(
-      Math.abs(features.centroid - centroidRange.min),
-      Math.abs(features.centroid - centroidRange.max),
-    )
-    centroidScore = Math.exp(-distanceOutside / 200)
+    const distanceOutside =
+      features.centroid < centroidResult.min
+        ? centroidResult.min - features.centroid
+        : features.centroid - centroidResult.max
+    const penaltyFactor = centroidResult.isCalibrated ? 100 : 200
+    centroidScore = Math.exp(-distanceOutside / penaltyFactor) * 0.5
   }
 
   let flatnessScore = 0.5
   if (profile) {
-    if (profile.isWound) {
-      flatnessScore = features.flatness < 0.3 ? 0.8 : 0.4
+    const isWound = isStringWound(candidate.stringNumber)
+    if (isWound) {
+      if (features.flatness < 0.15) {
+        flatnessScore = 0.9
+      } else if (features.flatness < 0.25) {
+        flatnessScore = 0.7
+      } else if (features.flatness < 0.35) {
+        flatnessScore = 0.5
+      } else {
+        flatnessScore = 0.3
+      }
     } else {
-      flatnessScore = features.flatness >= 0.2 ? 0.8 : 0.4
+      if (features.flatness >= 0.25) {
+        flatnessScore = 0.85
+      } else if (features.flatness >= 0.15) {
+        flatnessScore = 0.7
+      } else if (features.flatness >= 0.08) {
+        flatnessScore = 0.5
+      } else {
+        flatnessScore = 0.35
+      }
     }
   }
 
-  return centroidScore * 0.7 + flatnessScore * 0.3
+  let rolloffScore = 0.5
+  if (profile) {
+    const expectedRolloff = rangeCenter * 2
+    const rolloffRatio = features.rolloff / expectedRolloff
+    if (rolloffRatio >= 0.7 && rolloffRatio <= 1.5) {
+      rolloffScore = 0.8
+    } else if (rolloffRatio >= 0.5 && rolloffRatio <= 2.0) {
+      rolloffScore = 0.6
+    } else {
+      rolloffScore = 0.4
+    }
+  }
+
+  const baseScore = centroidScore * 0.6 + flatnessScore * 0.25 + rolloffScore * 0.15
+
+  return {
+    score: baseScore,
+    confidence: centroidResult.confidence,
+  }
 }
 
 function scoreCalibratedHarmonicPattern(
   normalizedAmplitudes: number[],
   calibratedProfile: number[],
 ): number {
-  let sumSquaredDiff = 0
-  let count = 0
+  let weightedSumSquaredDiff = 0
+  let totalWeight = 0
 
-  for (let i = 0; i < Math.min(normalizedAmplitudes.length, calibratedProfile.length); i++) {
+  const compareLength = Math.min(normalizedAmplitudes.length, calibratedProfile.length)
+  for (let i = 0; i < compareLength; i++) {
+    const harmonicNumber = i + 1
+    const weight = 1 / harmonicNumber
     const diff = normalizedAmplitudes[i] - calibratedProfile[i]
-    sumSquaredDiff += diff * diff
-    count++
+    weightedSumSquaredDiff += weight * diff * diff
+    totalWeight += weight
   }
 
-  if (count === 0) return 0.5
+  if (totalWeight === 0) return 0.5
 
-  const rmsDiff = Math.sqrt(sumSquaredDiff / count)
-  return Math.exp(-rmsDiff * 2)
+  const weightedRmsDiff = Math.sqrt(weightedSumSquaredDiff / totalWeight)
+  return Math.exp(-weightedRmsDiff * 2)
 }
 
 function scoreHarmonicPattern(
@@ -379,8 +500,7 @@ function scoreHarmonicPattern(
     }
   }
 
-  const profile = getStringProfile(candidate.stringNumber)
-  if (!profile) return 0.5
+  if (!getStringProfile(candidate.stringNumber)) return 0.5
 
   let oddSum = 0
   let evenSum = 0
@@ -401,7 +521,7 @@ function scoreHarmonicPattern(
 
   let score = 0.5
 
-  if (profile.isWound) {
+  if (isStringWound(candidate.stringNumber)) {
     if (higherHarmonicStrength < 1.5) {
       score += 0.2
     }
@@ -426,6 +546,7 @@ export function classifyString(
   spectralFeatures: SpectralFeatures,
   normalizedHarmonics: number[],
   timeSinceOnsetMs?: number,
+  _attackFeatures?: AttackFeatures,
 ): StringDetectionResult | null {
   const candidates = getCandidateStrings(pitch)
 
@@ -434,22 +555,70 @@ export function classifyString(
   }
 
   if (candidates.length === 1) {
+    const candidate = candidates[0]
+    const expectedInharmonicity = calculateExpectedInharmonicity(
+      candidate.stringNumber,
+      candidate.fretNumber,
+      timeSinceOnsetMs,
+    )
     return {
-      stringNumber: candidates[0].stringNumber,
-      fretNumber: candidates[0].fretNumber,
+      stringNumber: candidate.stringNumber,
+      fretNumber: candidate.fretNumber,
       confidence: 0.95,
+      scoreDifference: 1,
+      allCandidateScores: [
+        {
+          stringNumber: candidate.stringNumber,
+          fretNumber: candidate.fretNumber,
+          totalScore: 1,
+          inharmonicityScore: 1,
+          spectralScore: 1,
+          harmonicScore: 1,
+        },
+      ],
+      measuredInharmonicity,
+      spectralCentroid: spectralFeatures.centroid,
+      expectedInharmonicity,
     }
   }
 
-  const scores: CandidateScore[] = candidates.map((candidate) => {
-    const inharmonicityScore = scoreInharmonicity(measuredInharmonicity, candidate, timeSinceOnsetMs)
-    const spectralScore = scoreSpectralFeatures(spectralFeatures, candidate, timeSinceOnsetMs)
+  const preFilterResults = preFilterCandidates(
+    candidates,
+    pitch,
+    measuredInharmonicity,
+    timeSinceOnsetMs,
+  )
+
+  const preFilterMap = new Map<StringCandidate, number>()
+  for (const result of preFilterResults) {
+    preFilterMap.set(result.candidate, result.preFilterScore)
+  }
+
+  const spectralResults = candidates.map((candidate) =>
+    scoreSpectralFeatures(spectralFeatures, candidate, timeSinceOnsetMs),
+  )
+  const avgSpectralConfidence =
+    spectralResults.reduce((sum, r) => sum + r.confidence, 0) / spectralResults.length
+
+  const weights = calculateDynamicWeights(avgSpectralConfidence)
+
+  const scores: CandidateScore[] = candidates.map((candidate, idx) => {
+    const inharmonicityScore = scoreInharmonicity(
+      measuredInharmonicity,
+      candidate,
+      timeSinceOnsetMs,
+    )
+    const spectralResult = spectralResults[idx]
+    const spectralScore = spectralResult.score
     const harmonicScore = scoreHarmonicPattern(normalizedHarmonics, candidate, timeSinceOnsetMs)
 
-    const totalScore =
-      inharmonicityScore * INHARMONICITY_WEIGHT +
-      spectralScore * SPECTRAL_WEIGHT +
-      harmonicScore * HARMONIC_WEIGHT
+    const baseScore =
+      inharmonicityScore * weights.inharmonicityWeight +
+      spectralScore * weights.spectralWeight +
+      harmonicScore * weights.harmonicWeight
+
+    const preFilterScore = preFilterMap.get(candidate) ?? 1.0
+    const totalScore = baseScore * preFilterScore
 
     return {
       candidate,
@@ -468,10 +637,30 @@ export function classifyString(
   const scoreDifference = secondBest ? best.totalScore - secondBest.totalScore : 1
   const confidence = Math.min(0.95, 0.5 + scoreDifference * 2)
 
+  const allCandidateScores = scores.map((s) => ({
+    stringNumber: s.candidate.stringNumber,
+    fretNumber: s.candidate.fretNumber,
+    totalScore: s.totalScore,
+    inharmonicityScore: s.inharmonicityScore,
+    spectralScore: s.spectralScore,
+    harmonicScore: s.harmonicScore,
+  }))
+
+  const expectedInharmonicity = calculateExpectedInharmonicity(
+    best.candidate.stringNumber,
+    best.candidate.fretNumber,
+    timeSinceOnsetMs,
+  )
+
   const result: StringDetectionResult = {
     stringNumber: best.candidate.stringNumber,
     fretNumber: best.candidate.fretNumber,
     confidence,
+    scoreDifference,
+    allCandidateScores,
+    measuredInharmonicity,
+    spectralCentroid: spectralFeatures.centroid,
+    expectedInharmonicity,
   }
 
   if (secondBest && secondBest.totalScore > 0.3) {
