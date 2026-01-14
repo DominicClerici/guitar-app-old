@@ -38,8 +38,8 @@ export function ScreenContainer({
             flex: 1,
             paddingTop: edges.includes("top") ? insets.top : 0,
             paddingBottom: edges.includes("bottom") ? insets.bottom : 0,
-            paddingLeft: edges.includes("left") ? "2.5%" : 0,
-            paddingRight: edges.includes("right") ? "2.5%" : 0,
+            paddingLeft: edges.includes("left") ? "5%" : 0,
+            paddingRight: edges.includes("right") ? "5%" : 0,
           },
           contentStyle,
         ]}

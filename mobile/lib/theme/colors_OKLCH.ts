@@ -7,7 +7,7 @@ const COLORS = {
     cardForeground: "oklch(0.985 0 0)",
     popover: "oklch(0.205 0 0)",
     popoverForeground: "oklch(0.985 0 0)",
-    primary: "oklch(0.922 0 0)",
+    primary: "oklch(0.5745 0.2215 279.33)",
     primaryForeground: "oklch(0.205 0 0)",
     secondary: "oklch(0.269 0 0)",
     secondaryForeground: "oklch(0.985 0 0)",

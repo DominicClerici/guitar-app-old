@@ -1,7 +1,4 @@
-import { HomeTopBar } from "@/components/navigation/home-top-bar"
-import { ScreenContainer } from "@/components/ScreenContainer"
 import { buttonVariants } from "@/components/ui/button"
-import DarkSelector from "@/components/ui/dark-selector"
 import { useAuth } from "@/lib/auth/AuthContext"
 import { ThemeColors, useColors } from "@/lib/theme/ThemeContext"
 import { trpc } from "@/lib/trpc/react"
@@ -30,29 +27,35 @@ export default function HomeScreen() {
   }
 
   return (
-    <ScreenContainer>
-      <HomeTopBar />
+    <>
       <View style={styles.container}>
-        <Text style={styles.title}>Hello World</Text>
-        <DarkSelector />
-        {user ? (
-          <>
-            <Text style={styles.subtitle}>
-              Username: {userInfoLoading ? "Loading..." : userInfo?.name || "No name"}
-            </Text>
+        <Text style={styles.title}>
+          {userInfo?.name ? (
+            <>
+              Hello, {`\n`}
+              <Text style={{ color: colors.primary }}>{userInfo?.name}</Text>
+            </>
+          ) : (
+            <>
+              Welcome to <Text style={{ color: colors.primary }}>GuitarFlow</Text>
+            </>
+          )}
+        </Text>
+        <Link style={styles.tunerButton} href="/tuner">
+          <Text style={styles.tunerButtonText}>Tuner</Text>
+        </Link>
 
-            <Pressable
-              style={buttonVariants(colors, { variant: "outline", size: "lg" }).button}
-              onPress={handleSignOut}
-            >
-              <Text style={buttonVariants(colors, { variant: "outline", size: "lg" }).text}>
-                Sign Out
-              </Text>
-            </Pressable>
-          </>
+        {user ? (
+          <Pressable
+            style={buttonVariants(colors, { variant: "outline", size: "lg" }).button}
+            onPress={handleSignOut}
+          >
+            <Text style={buttonVariants(colors, { variant: "outline", size: "lg" }).text}>
+              Sign Out
+            </Text>
+          </Pressable>
         ) : (
           <>
-            <Text style={styles.subtitle}>You are logged out</Text>
             <Link
               href="/login"
               style={buttonVariants(colors, { variant: "outline", size: "lg" }).button}
@@ -71,12 +74,7 @@ export default function HomeScreen() {
             </Link>
           </>
         )}
-        <Link
-          style={buttonVariants(colors, { variant: "outline", size: "lg" }).button}
-          href="/tuner"
-        >
-          <Text style={buttonVariants(colors, { variant: "outline", size: "lg" }).text}>Tuner</Text>
-        </Link>
+
         <Link
           style={buttonVariants(colors, { variant: "outline", size: "lg" }).button}
           href="/scales"
@@ -84,7 +82,7 @@ export default function HomeScreen() {
           <Text style={buttonVariants(colors, { variant: "outline", size: "lg" }).text}>Tuner</Text>
         </Link>
       </View>
-    </ScreenContainer>
+    </>
   )
 }
 
@@ -93,11 +91,12 @@ const createStyles = (colors: ThemeColors) =>
     container: {
       flex: 1,
       backgroundColor: colors.background,
-      alignItems: "center",
-      justifyContent: "center",
+      paddingTop: "25%",
+      gap: 16,
     },
     title: {
-      fontSize: 28,
+      color: colors.foreground,
+      fontSize: 38,
       fontWeight: "bold",
       marginBottom: 10,
     },
@@ -105,5 +104,21 @@ const createStyles = (colors: ThemeColors) =>
       fontSize: 16,
       color: colors.mutedForeground,
       marginBottom: 30,
+    },
+    tunerButton: {
+      marginTop: "20%",
+      height: "25%",
+      backgroundColor: colors.backgroundElevated,
+      borderRadius: 8,
+      paddingHorizontal: 20,
+      paddingVertical: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    tunerButtonText: {
+      color: colors.foreground,
+      fontSize: 32,
+      fontWeight: "bold",
+      textAlign: "right",
     },
   })

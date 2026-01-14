@@ -1,8 +1,11 @@
 import { ThemeColors, useColors } from "@/lib/theme/ThemeContext"
+import { usePathname, useRouter } from "expo-router"
 import { BarChartIcon, HomeIcon, PlayIcon, SettingsIcon } from "lucide-react-native"
-import React, { useState } from "react"
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native"
+import React, { useRef, useState } from "react"
+import { StyleSheet, Text, View } from "react-native"
+import { Gesture, GestureDetector } from "react-native-gesture-handler"
 import Animated, {
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
@@ -22,15 +25,15 @@ const ICON_SIZE = 24
 function TabItem({
   tab,
   isActive,
-  onPress,
   colors,
   styles,
+  onLayout,
 }: {
   tab: Tab
   isActive: boolean
-  onPress: () => void
   colors: ThemeColors
   styles: ReturnType<typeof createStyles>
+  onLayout?: (layout: { x: number; width: number }) => void
 }) {
   const textWidth = useSharedValue(0)
 
@@ -40,7 +43,13 @@ function TabItem({
   }))
 
   return (
-    <TouchableOpacity style={styles.tab} onPress={onPress}>
+    <View
+      style={styles.tab}
+      onLayout={(e) => {
+        const { x, width } = e.nativeEvent.layout
+        onLayout?.({ x, width })
+      }}
+    >
       <tab.icon
         size={ICON_SIZE}
         color={isActive ? colors.primaryForeground : colors.foreground}
@@ -68,7 +77,7 @@ function TabItem({
           {tab.label}
         </Animated.Text>
       </Animated.View>
-    </TouchableOpacity>
+    </View>
   )
 }
 
@@ -111,34 +120,41 @@ const TABS: Tab[] = [
   {
     label: "Home",
     icon: HomeIcon,
-    href: "/home",
+    href: "/(bottomNav)",
   },
   {
     label: "Stats",
     icon: BarChartIcon,
-    href: "/stats",
+    href: "/(bottomNav)/stats",
   },
   {
     label: "Practice",
     icon: PlayIcon,
-    href: "/practice",
+    href: "/(bottomNav)/practice",
   },
   {
     label: "Settings",
     icon: SettingsIcon,
-    href: "/settings",
+    href: "/(bottomNav)/settings",
   },
 ]
 
 export default function MainBottomBar() {
   const colors = useColors()
   const styles = createStyles(colors)
-  //   const router = useRouter()
-  //   const pathname = usePathname()
-  const [activeIndex, setActiveIndex] = useState(0)
+  const router = useRouter()
+  const pathname = usePathname()
+  const [activeIndex, setActiveIndex] = useState(
+    TABS.findIndex((tab) => tab.href === pathname) ?? 0,
+  )
+  const [draggingIndex, setDraggingIndex] = useState<number | null>(null)
+
+  const tabLayouts = useRef<{ x: number; width: number }[]>([])
 
   const indicatorX = useSharedValue(0)
   const indicatorWidth = useSharedValue(0)
+
+  const displayIndex = draggingIndex ?? activeIndex
 
   const animatedIndicatorStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: withSpring(indicatorX.value, { damping: 93, stiffness: 1000 }) }],
@@ -146,41 +162,90 @@ export default function MainBottomBar() {
   }))
 
   const handleMeasure = (index: number, layout: IndicatorLayout) => {
-    if (index === activeIndex) {
+    if (index === displayIndex) {
       indicatorX.value = layout.x
       indicatorWidth.value = layout.width
     }
   }
 
-  const handleTabPress = (index: number) => {
-    setActiveIndex(index)
+  const handleTabLayout = (index: number, layout: { x: number; width: number }) => {
+    tabLayouts.current[index] = layout
   }
+
+  const getTabIndexFromX = (x: number): number => {
+    for (let i = 0; i < tabLayouts.current.length; i++) {
+      const tab = tabLayouts.current[i]
+      if (tab && x >= tab.x && x < tab.x + tab.width) {
+        return i
+      }
+    }
+    if (x < 0) return 0
+    return TABS.length - 1
+  }
+
+  const handleDragUpdate = (x: number) => {
+    const tabIndex = getTabIndexFromX(x)
+    setDraggingIndex(tabIndex)
+  }
+
+  const handleDragEnd = (x: number) => {
+    const tabIndex = getTabIndexFromX(x)
+    setActiveIndex(tabIndex)
+    setDraggingIndex(null)
+    router.replace(TABS[tabIndex].href as any)
+  }
+
+  const handleDragCancel = () => {
+    setDraggingIndex(null)
+  }
+
+  const panGesture = Gesture.Pan()
+    .onStart((e: { x: number }) => {
+      runOnJS(handleDragUpdate)(e.x)
+    })
+    .onUpdate((e: { x: number }) => {
+      runOnJS(handleDragUpdate)(e.x)
+    })
+    .onEnd((e: { x: number }) => {
+      runOnJS(handleDragEnd)(e.x)
+    })
+    .onFinalize(() => {
+      runOnJS(handleDragCancel)()
+    })
+
+  const tapGesture = Gesture.Tap().onEnd((e: { x: number }) => {
+    runOnJS(handleDragEnd)(e.x)
+  })
+
+  const composedGesture = Gesture.Race(panGesture, tapGesture)
 
   return (
     <View style={styles.container}>
       <HiddenMeasureTabs
         tabs={TABS}
-        activeIndex={activeIndex}
+        activeIndex={displayIndex}
         onMeasure={handleMeasure}
         colors={colors}
         styles={styles}
       />
-      <View style={styles.tabContainer}>
-        <Animated.View style={[styles.indicator, animatedIndicatorStyle]} />
-        {TABS.map((tab, index) => {
-          const isActive = index === activeIndex
-          return (
-            <TabItem
-              key={tab.href}
-              tab={tab}
-              isActive={isActive}
-              onPress={() => handleTabPress(index)}
-              colors={colors}
-              styles={styles}
-            />
-          )
-        })}
-      </View>
+      <GestureDetector gesture={composedGesture}>
+        <Animated.View style={styles.tabContainer}>
+          <Animated.View style={[styles.indicator, animatedIndicatorStyle]} />
+          {TABS.map((tab, index) => {
+            const isActive = index === displayIndex
+            return (
+              <TabItem
+                key={tab.href}
+                tab={tab}
+                isActive={isActive}
+                colors={colors}
+                styles={styles}
+                onLayout={(layout) => handleTabLayout(index, layout)}
+              />
+            )
+          })}
+        </Animated.View>
+      </GestureDetector>
     </View>
   )
 }
