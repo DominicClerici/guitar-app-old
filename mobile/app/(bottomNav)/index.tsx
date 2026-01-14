@@ -2,7 +2,7 @@ import { buttonVariants } from "@/components/ui/button"
 import { useAuth } from "@/lib/auth/AuthContext"
 import { ThemeColors, useColors } from "@/lib/theme/ThemeContext"
 import { trpc } from "@/lib/trpc/react"
-import { Link, useRouter } from "expo-router"
+import { useRouter } from "expo-router"
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native"
 
 export default function HomeScreen() {
@@ -57,31 +57,33 @@ export default function HomeScreen() {
           </Pressable>
         ) : (
           <>
-            <Link
-              href="/login"
+            <Pressable
+              onPress={() => router.push("/login")}
               style={buttonVariants(colors, { variant: "outline", size: "lg" }).button}
             >
               <Text style={buttonVariants(colors, { variant: "outline", size: "lg" }).text}>
                 Login
               </Text>
-            </Link>
-            <Link
-              href="/sign-up"
+            </Pressable>
+            <Pressable
+              onPress={() => router.push("/sign-up")}
               style={buttonVariants(colors, { variant: "outline", size: "lg" }).button}
             >
               <Text style={buttonVariants(colors, { variant: "outline", size: "lg" }).text}>
                 Sign Up
               </Text>
-            </Link>
+            </Pressable>
           </>
         )}
 
-        <Link
+        <Pressable
           style={buttonVariants(colors, { variant: "outline", size: "lg" }).button}
-          href="/scales"
+          onPress={() => router.push("/scales")}
         >
-          <Text style={buttonVariants(colors, { variant: "outline", size: "lg" }).text}>Tuner</Text>
-        </Link>
+          <Text style={buttonVariants(colors, { variant: "outline", size: "lg" }).text}>
+            Scales
+          </Text>
+        </Pressable>
       </View>
     </>
   )
