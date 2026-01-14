@@ -6,6 +6,17 @@ const DEFAULT_NUM_HARMONICS = 10
 const HARMONIC_SEARCH_RANGE = 0.03
 const MIN_PEAK_AMPLITUDE = 0.001
 
+// Inharmonicity calculation tuning parameters
+// Minimum amplitude ratio relative to fundamental to include a harmonic in regression
+// Lower values include more harmonics (better for unwound strings with weaker upper harmonics)
+const INHARMONICITY_MIN_AMPLITUDE_RATIO = 0.01
+// Weight exponent for amplitude weighting (higher = stronger harmonics weighted more)
+// Using 1.0 gives linear weighting, 2.0 gives quadratic, 0.5 gives sqrt
+// Lower values (like 0.5) reduce the penalty for weaker harmonics
+const INHARMONICITY_AMPLITUDE_WEIGHT_EXPONENT = 0.5
+// Minimum number of valid harmonics required for inharmonicity calculation
+const INHARMONICITY_MIN_HARMONICS = 2
+
 export function getOptimalHarmonicCount(fundamentalFreq: number, sampleRate: number): number {
   const nyquist = sampleRate / 2
   const maxUsableHarmonic = Math.floor(nyquist / fundamentalFreq)
@@ -176,13 +187,27 @@ export function calculateSpectralFeatures(
 export function calculateInharmonicityCoefficient(peaks: HarmonicPeak[]): number {
   if (peaks.length < 3) return 0
 
-  const validPeaks = peaks.filter((p) => p.harmonicNumber >= 2 && Math.abs(p.deviationCents) < 100)
-  if (validPeaks.length < 2) return 0
+  const fundamental = peaks.find((p) => p.harmonicNumber === 1)
+  if (!fundamental || fundamental.amplitude < MIN_PEAK_AMPLITUDE) return 0
 
-  let sumX = 0
-  let sumY = 0
-  let sumXY = 0
-  let sumXX = 0
+  const validPeaks = peaks.filter((p) => {
+    if (p.harmonicNumber < 2) return false
+    if (Math.abs(p.deviationCents) >= 100) return false
+    const amplitudeRatio = p.amplitude / fundamental.amplitude
+    if (amplitudeRatio < INHARMONICITY_MIN_AMPLITUDE_RATIO) return false
+    return true
+  })
+
+  if (validPeaks.length < INHARMONICITY_MIN_HARMONICS) return 0
+
+  // Weighted linear regression: minimize sum(w_i * (y_i - (a + b*x_i))^2)
+  // For inharmonicity: y = ratio^2 - 1, x = n^2 - 1, and we want slope B
+  // Weight by amplitude ratio raised to the exponent
+  let sumW = 0
+  let sumWX = 0
+  let sumWY = 0
+  let sumWXY = 0
+  let sumWXX = 0
 
   for (const peak of validPeaks) {
     const n = peak.harmonicNumber
@@ -190,17 +215,20 @@ export function calculateInharmonicityCoefficient(peaks: HarmonicPeak[]): number
     const ratio = peak.actualFreq / peak.expectedFreq
     const y = ratio * ratio - 1
 
-    sumX += x
-    sumY += y
-    sumXY += x * y
-    sumXX += x * x
+    const amplitudeRatio = peak.amplitude / fundamental.amplitude
+    const weight = Math.pow(amplitudeRatio, INHARMONICITY_AMPLITUDE_WEIGHT_EXPONENT)
+
+    sumW += weight
+    sumWX += weight * x
+    sumWY += weight * y
+    sumWXY += weight * x * y
+    sumWXX += weight * x * x
   }
 
-  const n = validPeaks.length
-  const denominator = n * sumXX - sumX * sumX
+  const denominator = sumW * sumWXX - sumWX * sumWX
   if (Math.abs(denominator) < 1e-10) return 0
 
-  const B = (n * sumXY - sumX * sumY) / denominator
+  const B = (sumW * sumWXY - sumWX * sumWY) / denominator
   return Math.max(0, B)
 }
 
