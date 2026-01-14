@@ -50,11 +50,7 @@ function TabItem({
         onLayout?.({ x, width })
       }}
     >
-      <tab.icon
-        size={ICON_SIZE}
-        color={isActive ? colors.primaryForeground : colors.foreground}
-        style={styles.tabIcon}
-      />
+      <tab.icon size={ICON_SIZE} color={colors.foreground} style={styles.tabIcon} />
       <View style={styles.hiddenMeasure} pointerEvents="none">
         <Animated.Text
           style={[styles.tabLabel]}
@@ -66,14 +62,7 @@ function TabItem({
         </Animated.Text>
       </View>
       <Animated.View style={[styles.labelContainer, animatedContainerStyle]}>
-        <Animated.Text
-          ellipsizeMode="clip"
-          numberOfLines={1}
-          style={[
-            styles.tabLabel,
-            { color: isActive ? colors.primaryForeground : colors.foreground },
-          ]}
-        >
+        <Animated.Text ellipsizeMode="clip" numberOfLines={1} style={styles.tabLabel}>
           {tab.label}
         </Animated.Text>
       </Animated.View>
@@ -185,6 +174,7 @@ export default function MainBottomBar() {
 
   const handleDragUpdate = (x: number) => {
     const tabIndex = getTabIndexFromX(x)
+    if (tabIndex === draggingIndex) return
     setDraggingIndex(tabIndex)
   }
 
@@ -257,13 +247,15 @@ const createStyles = (colors: ThemeColors) =>
       backgroundColor: colors.backgroundElevated,
       borderWidth: 1,
       borderColor: colors.border,
-      padding: 8,
       borderRadius: 32,
+      paddingHorizontal: 8,
       position: "absolute",
       bottom: 16,
       left: 16,
       right: 16,
       zIndex: 1000,
+      alignItems: "center",
+      flexDirection: "row",
     },
     hiddenTabContainer: {
       position: "absolute",
@@ -275,22 +267,22 @@ const createStyles = (colors: ThemeColors) =>
       opacity: 0,
     },
     tabContainer: {
-      flexDirection: "row",
       alignItems: "center",
+      flexDirection: "row",
     },
     tab: {
       flexGrow: 1,
+      flexDirection: "row",
       justifyContent: "center",
       alignItems: "center",
       height: 48,
       paddingHorizontal: 12,
       borderRadius: 24,
-      flexDirection: "row",
     },
     indicator: {
       position: "absolute",
       height: 48,
-      backgroundColor: colors.primary,
+      backgroundColor: colors.accent,
       borderRadius: 24,
     },
     tabFrame: {

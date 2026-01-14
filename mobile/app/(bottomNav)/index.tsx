@@ -2,12 +2,13 @@ import { buttonVariants } from "@/components/ui/button"
 import { useAuth } from "@/lib/auth/AuthContext"
 import { ThemeColors, useColors } from "@/lib/theme/ThemeContext"
 import { trpc } from "@/lib/trpc/react"
-import { Link } from "expo-router"
+import { Link, useRouter } from "expo-router"
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native"
 
 export default function HomeScreen() {
   const colors = useColors()
   const styles = createStyles(colors)
+  const router = useRouter()
   const { user, signOut, isLoading: authLoading } = useAuth()
 
   const { data: userInfo, isLoading: userInfoLoading } = trpc.user.getUserInfo.useQuery(undefined, {
@@ -41,9 +42,9 @@ export default function HomeScreen() {
             </>
           )}
         </Text>
-        <Link style={styles.tunerButton} href="/tuner">
+        <Pressable style={styles.tunerButton} onPress={() => router.push("/tuner")}>
           <Text style={styles.tunerButtonText}>Tuner</Text>
-        </Link>
+        </Pressable>
 
         {user ? (
           <Pressable
@@ -114,11 +115,12 @@ const createStyles = (colors: ThemeColors) =>
       paddingVertical: 12,
       borderWidth: 1,
       borderColor: colors.border,
+      justifyContent: "flex-end",
+      alignItems: "flex-end",
     },
     tunerButtonText: {
       color: colors.foreground,
       fontSize: 32,
       fontWeight: "bold",
-      textAlign: "right",
     },
   })
