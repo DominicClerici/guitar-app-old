@@ -22,6 +22,7 @@ const RECORDING_DURATION_MS = 750
 const SILENCE_WAIT_MS = 200
 const COUNTDOWN_SECONDS = 2
 const SILENCE_THRESHOLD = 0.01
+const PRE_ATTACK_MS = 10
 
 type RecordingState =
   | "idle"
@@ -85,6 +86,7 @@ export default function RecorderUtilityPage() {
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
   const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null)
   const recordingBufferRef = useRef<Float32Array[]>([])
+  const preBufferRef = useRef<Float32Array[]>([])
   const isRecordingRef = useRef<boolean>(false)
   const silenceCheckIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const sampleUrlsRef = useRef<string[]>([])
@@ -142,7 +144,8 @@ export default function RecorderUtilityPage() {
   }, [])
 
   const startRecordingChunk = useCallback(() => {
-    recordingBufferRef.current = []
+    recordingBufferRef.current = [...preBufferRef.current]
+    preBufferRef.current = []
     isRecordingRef.current = true
   }, [])
 
@@ -241,10 +244,19 @@ export default function RecorderUtilityPage() {
       source.connect(analyser)
 
       const scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1)
+      const preBufferSamples = Math.ceil((PRE_ATTACK_MS / 1000) * audioContext.sampleRate)
+      const preBufferChunks = Math.ceil(preBufferSamples / 4096)
+
       scriptProcessor.onaudioprocess = (event) => {
+        const inputData = new Float32Array(event.inputBuffer.getChannelData(0))
+
         if (isRecordingRef.current) {
-          const inputData = event.inputBuffer.getChannelData(0)
-          recordingBufferRef.current.push(new Float32Array(inputData))
+          recordingBufferRef.current.push(inputData)
+        } else {
+          preBufferRef.current.push(inputData)
+          if (preBufferRef.current.length > preBufferChunks) {
+            preBufferRef.current.shift()
+          }
         }
       }
       scriptProcessorRef.current = scriptProcessor
