@@ -6,7 +6,7 @@ import SessionReview, { formatTime } from "@/components/scale-trainer/session-re
 import AnimatedUnmount from "@/components/ui/animated-unmount"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
-import { useNoteDetection } from "@/hooks/useNoteDetection"
+import { type PitchData, useNoteDetection } from "@/hooks/useNoteDetection"
 import { NOTE_NAMES, type NoteName } from "@/lib/audio/utils"
 import { type ScaleType } from "@/lib/constants"
 import {
@@ -153,16 +153,36 @@ export default function ScaleTrainerPage() {
   const sessionRef = useRef<ScalePracticeSession | null>(null)
   const shapeStartTimeRef = useRef<number>(0)
   const isTransitioningRef = useRef(false)
+  const shapeNotesRef = useRef<ScaleNote[]>([])
+  const playedNotesRef = useRef<Set<string>>(new Set())
+  const sessionStateRef = useRef<SessionState>("idle")
+
+  const handlePitchDetected = useCallback((data: PitchData) => {
+    if (sessionStateRef.current !== "active" || data.pitch <= 0 || isTransitioningRef.current) return
+
+    for (const note of shapeNotesRef.current) {
+      const noteKey = createNoteKey(note.stringIndex, note.fretIndex)
+      if (playedNotesRef.current.has(noteKey)) continue
+
+      if (isFrequencyMatch(data.pitch, note.targetFrequency)) {
+        setPlayedNotes((prev) => {
+          const next = new Set(prev).add(noteKey)
+          playedNotesRef.current = next
+          return next
+        })
+        break
+      }
+    }
+  }, [])
 
   const {
     status: micStatus,
-    pitch,
     startListening,
     stopListening,
   } = useNoteDetection({
     minClarity: 0.9,
-    updateIntervalMs: 50,
     bufferSize: 2048,
+    onPitchDetected: handlePitchDetected,
   })
 
   const isListening = micStatus === "recording"
@@ -311,18 +331,12 @@ export default function ScaleTrainerPage() {
   }, [sessionState, timerMs, practiceMode, finalizeSession])
 
   useEffect(() => {
-    if (sessionState !== "active" || pitch <= 0 || isTransitioningRef.current) return
+    shapeNotesRef.current = shapeNotes
+  }, [shapeNotes])
 
-    for (const note of shapeNotes) {
-      const noteKey = createNoteKey(note.stringIndex, note.fretIndex)
-      if (playedNotes.has(noteKey)) continue
-
-      if (isFrequencyMatch(pitch, note.targetFrequency)) {
-        setPlayedNotes((prev) => new Set(prev).add(noteKey))
-        break
-      }
-    }
-  }, [sessionState, pitch, shapeNotes, playedNotes])
+  useEffect(() => {
+    sessionStateRef.current = sessionState
+  }, [sessionState])
 
   useEffect(() => {
     if (sessionState !== "active") return
