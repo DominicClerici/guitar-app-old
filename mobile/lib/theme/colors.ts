@@ -7,7 +7,7 @@ const COLORS = {
     cardForeground: "#fafafa",
     popover: "#171717",
     popoverForeground: "#fafafa",
-    primary: "#e5e5e5",
+    primary: "#655cf6",
     primaryForeground: "#171717",
     secondary: "#262626",
     secondaryForeground: "#fafafa",

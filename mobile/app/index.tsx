@@ -1,2 +1,5 @@
-import HomeScreen from "@/app/home"
-export default HomeScreen
+import { Redirect } from "expo-router"
+
+export default function Index() {
+  return <Redirect href="/(bottomNav)" />
+}
