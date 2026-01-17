@@ -50,7 +50,7 @@ export class KNNClassifier {
       this.featureCount = features.length
     } else if (features.length !== this.featureCount) {
       throw new Error(
-        `Feature count mismatch: expected ${this.featureCount}, got ${features.length}`
+        `Feature count mismatch: expected ${this.featureCount}, got ${features.length}`,
       )
     }
 
@@ -110,9 +110,7 @@ export class KNNClassifier {
       return features
     }
 
-    return features.map(
-      (f, i) => (f - this.normalization!.means[i]) / this.normalization!.stds[i]
-    )
+    return features.map((f, i) => (f - this.normalization!.means[i]) / this.normalization!.stds[i])
   }
 
   train(): void {
@@ -138,7 +136,7 @@ export class KNNClassifier {
 
     if (features.length !== this.featureCount) {
       throw new Error(
-        `Feature count mismatch: expected ${this.featureCount}, got ${features.length}`
+        `Feature count mismatch: expected ${this.featureCount}, got ${features.length}`,
       )
     }
 
@@ -304,7 +302,10 @@ export class KNNClassifier {
     localStorage.removeItem(STORAGE_KEY)
   }
 
-  crossValidate(folds: number = 5): { accuracy: number; confusionMatrix: Map<number, Map<number, number>> } {
+  crossValidate(folds: number = 5): {
+    accuracy: number
+    confusionMatrix: Map<number, Map<number, number>>
+  } {
     if (this.samples.length < folds) {
       throw new Error(`Not enough samples for ${folds}-fold cross-validation`)
     }
@@ -325,7 +326,7 @@ export class KNNClassifier {
 
       const tempClassifier = new KNNClassifier(this.k)
       tempClassifier.addSamples(
-        trainSet.map((s) => ({ features: s.features, label: s.label, fret: s.metadata?.fret }))
+        trainSet.map((s) => ({ features: s.features, label: s.label, fret: s.metadata?.fret })),
       )
       tempClassifier.train()
 
@@ -378,7 +379,7 @@ export class KNNClassifier {
         } else {
           distanceMatrix[i][j] = this.euclideanDistance(
             normalizedSamples[i].features,
-            normalizedSamples[j].features
+            normalizedSamples[j].features,
           )
         }
       }
@@ -419,7 +420,10 @@ export class KNNClassifier {
     let bestK = 1
     let bestAccuracy = 0
     for (const [k, accuracy] of accuracies) {
-      if (accuracy > bestAccuracy || (accuracy === bestAccuracy && k % 2 === 1 && bestK % 2 === 0)) {
+      if (
+        accuracy > bestAccuracy ||
+        (accuracy === bestAccuracy && k % 2 === 1 && bestK % 2 === 0)
+      ) {
         bestAccuracy = accuracy
         bestK = k
       }

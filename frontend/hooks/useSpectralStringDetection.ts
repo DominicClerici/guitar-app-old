@@ -1,24 +1,24 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
-import { PitchDetector } from "pitchy"
 import {
-  extractSpectralFeatures,
-  featuresToVector,
-  extractMultiWindowFeatures,
-  type SpectralFeatures,
-  type FeatureExtractionConfig,
-} from "@/lib/audio/spectral-features"
+  getCandidateStrings,
+  getStringProfile,
+  type StringCandidate,
+} from "@/lib/audio/guitar-constants"
 import {
   KNNClassifier,
   type ClassificationResult,
   type KNNModelData,
 } from "@/lib/audio/knn-classifier"
 import {
-  getCandidateStrings,
-  getStringProfile,
-  type StringCandidate,
-} from "@/lib/audio/guitar-constants"
+  extractMultiWindowFeatures,
+  extractSpectralFeatures,
+  featuresToVector,
+  type FeatureExtractionConfig,
+  type SpectralFeatures,
+} from "@/lib/audio/spectral-features"
+import { PitchDetector } from "pitchy"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 export type SpectralDetectionStatus = "idle" | "requesting" | "recording" | "training" | "error"
 
@@ -70,7 +70,10 @@ interface UseSpectralStringDetectionResult {
   exportModel: () => KNNModelData | null
   importModel: (data: KNNModelData) => void
   setK: (k: number) => void
-  crossValidate: () => { accuracy: number; confusionMatrix: Map<number, Map<number, number>> } | null
+  crossValidate: () => {
+    accuracy: number
+    confusionMatrix: Map<number, Map<number, number>>
+  } | null
   optimizeK: () => { bestK: number; accuracies: Map<number, number> } | null
 }
 
@@ -80,7 +83,7 @@ const DEFAULT_K = 5
 const AUDIO_BUFFER_DURATION_MS = 400
 
 export function useSpectralStringDetection(
-  options: UseSpectralStringDetectionOptions = {}
+  options: UseSpectralStringDetectionOptions = {},
 ): UseSpectralStringDetectionResult {
   const [status, setStatus] = useState<SpectralDetectionStatus>("idle")
   const [error, setError] = useState<string | null>(null)
@@ -142,7 +145,7 @@ export function useSpectralStringDetection(
   const classifyWithCandidateFiltering = useCallback(
     (
       features: number[],
-      candidates: StringCandidate[]
+      candidates: StringCandidate[],
     ): { result: ClassificationResult | null; detection: SpectralStringDetectionResult | null } => {
       const classifier = classifierRef.current
       if (classifier.getSampleCount() === 0) {
@@ -187,7 +190,7 @@ export function useSpectralStringDetection(
 
       return { result, detection }
     },
-    []
+    [],
   )
 
   const processAudio = useCallback(() => {
@@ -208,7 +211,7 @@ export function useSpectralStringDetection(
 
       audioBufferRef.current.push(new Float32Array(timeDomainBuffer))
       const maxBufferChunks = Math.ceil(
-        (AUDIO_BUFFER_DURATION_MS / 1000) * audioContext.sampleRate / fftSizeRef.current
+        ((AUDIO_BUFFER_DURATION_MS / 1000) * audioContext.sampleRate) / fftSizeRef.current,
       )
       while (audioBufferRef.current.length > maxBufferChunks) {
         audioBufferRef.current.shift()
@@ -216,7 +219,7 @@ export function useSpectralStringDetection(
 
       const [detectedPitch, detectedClarity] = detector.findPitch(
         timeDomainBuffer,
-        audioContext.sampleRate
+        audioContext.sampleRate,
       )
 
       const isNewNote =
@@ -230,11 +233,7 @@ export function useSpectralStringDetection(
         noteOnsetTimeRef.current = now
       }
 
-      if (
-        detectedClarity >= minClarityRef.current &&
-        detectedPitch > 60 &&
-        detectedPitch < 1500
-      ) {
+      if (detectedClarity >= minClarityRef.current && detectedPitch > 60 && detectedPitch < 1500) {
         const featureConfig: Partial<FeatureExtractionConfig> = {
           sampleRate: audioContext.sampleRate,
           fftSize: fftSizeRef.current,
@@ -244,7 +243,7 @@ export function useSpectralStringDetection(
           timeDomainBuffer,
           detectedPitch,
           featureConfig,
-          previousMagnitudesRef.current
+          previousMagnitudesRef.current,
         )
 
         const singleWindowFeatureVector = featuresToVector(features)
@@ -266,7 +265,8 @@ export function useSpectralStringDetection(
           }
 
           const onsetSampleOffset = Math.floor(
-            ((totalLength / audioContext.sampleRate) * 1000 - timeSinceOnset) / 1000 * audioContext.sampleRate
+            (((totalLength / audioContext.sampleRate) * 1000 - timeSinceOnset) / 1000) *
+              audioContext.sampleRate,
           )
           const relevantStart = Math.max(0, onsetSampleOffset)
           const relevantBuffer = combinedBuffer.slice(relevantStart)
@@ -276,7 +276,7 @@ export function useSpectralStringDetection(
               relevantBuffer,
               detectedPitch,
               audioContext.sampleRate,
-              fftSizeRef.current
+              fftSizeRef.current,
             )
           } else {
             classificationFeatureVector = [
@@ -297,7 +297,10 @@ export function useSpectralStringDetection(
 
         lastFeaturesRef.current = classificationFeatureVector
 
-        const { result, detection } = classifyWithCandidateFiltering(classificationFeatureVector, candidates)
+        const { result, detection } = classifyWithCandidateFiltering(
+          classificationFeatureVector,
+          candidates,
+        )
 
         const newData: SpectralDetectionData = {
           pitch: detectedPitch,
@@ -400,7 +403,7 @@ export function useSpectralStringDetection(
         setError(err instanceof Error ? err.message : "Failed to add training sample")
       }
     },
-    [updateTrainingStats]
+    [updateTrainingStats],
   )
 
   const optimizeK = useCallback((): { bestK: number; accuracies: Map<number, number> } | null => {
@@ -413,7 +416,10 @@ export function useSpectralStringDetection(
       const result = classifierRef.current.optimizeK(15)
       classifierRef.current.setK(result.bestK)
       classifierRef.current.saveToStorage()
-      setTrainingStats((prev) => ({ ...prev, accuracy: result.accuracies.get(result.bestK) ?? null }))
+      setTrainingStats((prev) => ({
+        ...prev,
+        accuracy: result.accuracies.get(result.bestK) ?? null,
+      }))
       return result
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to optimize K")
@@ -451,7 +457,7 @@ export function useSpectralStringDetection(
       classifierRef.current.importModel(modelData)
       updateTrainingStats()
     },
-    [updateTrainingStats]
+    [updateTrainingStats],
   )
 
   const setK = useCallback((k: number) => {

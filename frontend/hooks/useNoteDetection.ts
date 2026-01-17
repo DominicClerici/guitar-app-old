@@ -33,7 +33,7 @@ export function useNoteDetection(options: UseNoteDetectionOptions = {}): UseNote
   const [error, setError] = useState<string | null>(null)
   const [sampleRate, setSampleRate] = useState<number>(44100)
   const [bufferDurationMs, setBufferDurationMs] = useState<number>(
-    (DEFAULT_BUFFER_SIZE / 44100) * 1000
+    (DEFAULT_BUFFER_SIZE / 44100) * 1000,
   )
 
   const bufferSizeRef = useRef(options.bufferSize ?? DEFAULT_BUFFER_SIZE)

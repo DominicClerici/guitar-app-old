@@ -158,7 +158,8 @@ export default function ScaleTrainerPage() {
   const sessionStateRef = useRef<SessionState>("idle")
 
   const handlePitchDetected = useCallback((data: PitchData) => {
-    if (sessionStateRef.current !== "active" || data.pitch <= 0 || isTransitioningRef.current) return
+    if (sessionStateRef.current !== "active" || data.pitch <= 0 || isTransitioningRef.current)
+      return
 
     for (const note of shapeNotesRef.current) {
       const noteKey = createNoteKey(note.stringIndex, note.fretIndex)

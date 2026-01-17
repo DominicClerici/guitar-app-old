@@ -118,7 +118,7 @@ function createDCTMatrix(numMfccs: number, numFilters: number): Float32Array[] {
 
 export function computeMFCCs(
   magnitudes: Float32Array,
-  config: FeatureExtractionConfig = DEFAULT_CONFIG
+  config: FeatureExtractionConfig = DEFAULT_CONFIG,
 ): number[] {
   const filterbank = createMelFilterbank(config)
   const dctMatrix = createDCTMatrix(config.numMfccs, config.numMelFilters)
@@ -147,7 +147,7 @@ export function computeMFCCs(
 export function computeSpectralCentroid(
   magnitudes: Float32Array,
   sampleRate: number,
-  fftSize: number
+  fftSize: number,
 ): number {
   const binResolution = sampleRate / fftSize
   let weightedSum = 0
@@ -166,7 +166,7 @@ export function computeSpectralRolloff(
   magnitudes: Float32Array,
   sampleRate: number,
   fftSize: number,
-  threshold: number = 0.85
+  threshold: number = 0.85,
 ): number {
   const binResolution = sampleRate / fftSize
   let totalEnergy = 0
@@ -192,7 +192,7 @@ export function computeSpectralSpread(
   magnitudes: Float32Array,
   centroid: number,
   sampleRate: number,
-  fftSize: number
+  fftSize: number,
 ): number {
   const binResolution = sampleRate / fftSize
   let weightedVariance = 0
@@ -234,7 +234,7 @@ let previousMagnitudes: Float32Array | null = null
 
 export function computeSpectralFlux(
   magnitudes: Float32Array,
-  previousMags: Float32Array | null = null
+  previousMags: Float32Array | null = null,
 ): number {
   const prev = previousMags ?? previousMagnitudes
   previousMagnitudes = new Float32Array(magnitudes)
@@ -269,7 +269,7 @@ export function computeHarmonicRatios(
   magnitudes: Float32Array,
   fundamental: number,
   sampleRate: number,
-  fftSize: number
+  fftSize: number,
 ): { h2h1: number; h3h1: number; evenOddRatio: number } {
   const binResolution = sampleRate / fftSize
 
@@ -311,14 +311,20 @@ export function measureInharmonicity(
   magnitudes: Float32Array,
   fundamentalFreq: number,
   sampleRate: number,
-  fftSize: number
+  fftSize: number,
 ): number {
   if (fundamentalFreq <= 0) return 0
 
   const harmonicsToMeasure = [2, 3, 4, 5]
   const bEstimates: number[] = []
 
-  const fundamentalPeak = findPeakNearFrequency(magnitudes, fundamentalFreq, sampleRate, fftSize, 50)
+  const fundamentalPeak = findPeakNearFrequency(
+    magnitudes,
+    fundamentalFreq,
+    sampleRate,
+    fftSize,
+    50,
+  )
   if (!fundamentalPeak || fundamentalPeak.amplitude < 1e-6) return 0
 
   for (const n of harmonicsToMeasure) {
@@ -356,7 +362,7 @@ export function extractSpectralFeatures(
   timeDomainData: Float32Array,
   fundamental: number | null,
   config: Partial<FeatureExtractionConfig> = {},
-  previousMags: Float32Array | null = null
+  previousMags: Float32Array | null = null,
 ): SpectralFeatures {
   const fullConfig: FeatureExtractionConfig = { ...DEFAULT_CONFIG, ...config }
 
@@ -366,18 +372,18 @@ export function extractSpectralFeatures(
   const spectralCentroid = computeSpectralCentroid(
     magnitudes,
     fullConfig.sampleRate,
-    fullConfig.fftSize
+    fullConfig.fftSize,
   )
   const spectralRolloff = computeSpectralRolloff(
     magnitudes,
     fullConfig.sampleRate,
-    fullConfig.fftSize
+    fullConfig.fftSize,
   )
   const spectralSpread = computeSpectralSpread(
     magnitudes,
     spectralCentroid,
     fullConfig.sampleRate,
-    fullConfig.fftSize
+    fullConfig.fftSize,
   )
   const spectralFlatness = computeSpectralFlatness(magnitudes)
   const spectralFlux = computeSpectralFlux(magnitudes, previousMags)
@@ -462,7 +468,7 @@ export function extractMultiWindowFeatures(
   pitch: number,
   sampleRate: number,
   fftSize: number,
-  windowConfig: MultiWindowConfig = DEFAULT_MULTI_WINDOW_CONFIG
+  windowConfig: MultiWindowConfig = DEFAULT_MULTI_WINDOW_CONFIG,
 ): number[] {
   const featureConfig: Partial<FeatureExtractionConfig> = { sampleRate, fftSize }
 
@@ -502,15 +508,15 @@ export function extractMultiWindowFeatures(
 
   const attackChunk = extractWindowChunk(
     windowConfig.attackWindowMs[0],
-    windowConfig.attackWindowMs[1]
+    windowConfig.attackWindowMs[1],
   )
   const sustainChunk = extractWindowChunk(
     windowConfig.sustainWindowMs[0],
-    windowConfig.sustainWindowMs[1]
+    windowConfig.sustainWindowMs[1],
   )
   const decayChunk = extractWindowChunk(
     windowConfig.decayWindowMs[0],
-    windowConfig.decayWindowMs[1]
+    windowConfig.decayWindowMs[1],
   )
 
   const attackFeatures = extractWindowFeatures(attackChunk)

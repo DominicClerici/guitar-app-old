@@ -244,46 +244,45 @@ export default function RecorderUtilityPage() {
     })
   }, [getAudioLevel])
 
-  const recordSingleSample = useCallback(async (fretForSample: number, freqForSample: number): Promise<{
-    sample: RecordedSample | null
-    training: TrainingSample | null
-  }> => {
-    setRecordingState("waiting-for-pluck")
-    await waitForPluck()
+  const recordSingleSample = useCallback(
+    async (
+      fretForSample: number,
+      freqForSample: number,
+    ): Promise<{
+      sample: RecordedSample | null
+      training: TrainingSample | null
+    }> => {
+      setRecordingState("waiting-for-pluck")
+      await waitForPluck()
 
-    setRecordingState("recording")
-    startRecordingChunk()
-    await new Promise((resolve) => setTimeout(resolve, RECORDING_DURATION_MS))
-    const { sample, rawData } = stopRecordingChunk()
+      setRecordingState("recording")
+      startRecordingChunk()
+      await new Promise((resolve) => setTimeout(resolve, RECORDING_DURATION_MS))
+      const { sample, rawData } = stopRecordingChunk()
 
-    setRecordingState("waiting-for-silence")
-    await waitForSilence()
+      setRecordingState("waiting-for-silence")
+      await waitForSilence()
 
-    let training: TrainingSample | null = null
-    if (mode === "training" && rawData && rawData.length >= FFT_SIZE) {
-      const features = extractMultiWindowFeatures(
-        rawData,
-        freqForSample,
-        sampleRateRef.current,
-        FFT_SIZE
-      )
+      let training: TrainingSample | null = null
+      if (mode === "training" && rawData && rawData.length >= FFT_SIZE) {
+        const features = extractMultiWindowFeatures(
+          rawData,
+          freqForSample,
+          sampleRateRef.current,
+          FFT_SIZE,
+        )
 
-      training = {
-        features,
-        stringNumber: selectedString,
-        fret: fretForSample,
+        training = {
+          features,
+          stringNumber: selectedString,
+          fret: fretForSample,
+        }
       }
-    }
 
-    return { sample, training }
-  }, [
-    waitForPluck,
-    startRecordingChunk,
-    stopRecordingChunk,
-    waitForSilence,
-    mode,
-    selectedString,
-  ])
+      return { sample, training }
+    },
+    [waitForPluck, startRecordingChunk, stopRecordingChunk, waitForSilence, mode, selectedString],
+  )
 
   const startRecording = useCallback(async () => {
     setError(null)
@@ -396,7 +395,15 @@ export default function RecorderUtilityPage() {
       setRecordingState("idle")
       cleanup()
     }
-  }, [recordSingleSample, cleanup, mode, autoFretProgression, stringProfile, selectedFret, noteFreq])
+  }, [
+    recordSingleSample,
+    cleanup,
+    mode,
+    autoFretProgression,
+    stringProfile,
+    selectedFret,
+    noteFreq,
+  ])
 
   const resetRecording = useCallback(() => {
     sampleUrlsRef.current.forEach((url) => URL.revokeObjectURL(url))
@@ -657,20 +664,28 @@ export default function RecorderUtilityPage() {
 
           <div className="py-4 text-center">
             <p className="text-lg font-medium">{getStatusMessage()}</p>
-            {recordingState !== "idle" && recordingState !== "complete" && recordingState !== "fret-transition" && (
-              <p className="text-muted-foreground mt-2">
-                {mode === "training" && autoFretProgression ? (
-                  <>
-                    Fret {TRAINING_FRETS[currentTrainingFretIndex] === 0 ? "Open" : TRAINING_FRETS[currentTrainingFretIndex]} - Sample {currentSampleIndex + 1} of {TRAINING_SAMPLES_PER_FRET}
-                    <span className="ml-2 text-xs">
-                      ({currentTrainingFretIndex + 1}/{TRAINING_FRETS.length} positions)
-                    </span>
-                  </>
-                ) : (
-                  <>Sample {currentSampleIndex + 1} of {SAMPLE_COUNT}</>
-                )}
-              </p>
-            )}
+            {recordingState !== "idle" &&
+              recordingState !== "complete" &&
+              recordingState !== "fret-transition" && (
+                <p className="text-muted-foreground mt-2">
+                  {mode === "training" && autoFretProgression ? (
+                    <>
+                      Fret{" "}
+                      {TRAINING_FRETS[currentTrainingFretIndex] === 0
+                        ? "Open"
+                        : TRAINING_FRETS[currentTrainingFretIndex]}{" "}
+                      - Sample {currentSampleIndex + 1} of {TRAINING_SAMPLES_PER_FRET}
+                      <span className="ml-2 text-xs">
+                        ({currentTrainingFretIndex + 1}/{TRAINING_FRETS.length} positions)
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      Sample {currentSampleIndex + 1} of {SAMPLE_COUNT}
+                    </>
+                  )}
+                </p>
+              )}
           </div>
 
           <div className="flex justify-center gap-4">
