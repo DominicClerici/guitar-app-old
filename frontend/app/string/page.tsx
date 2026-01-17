@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -11,6 +11,7 @@ import { useInharmonicityDetection } from "@/hooks/useInharmonicityDetection"
 import { useSpectralStringDetection } from "@/hooks/useSpectralStringDetection"
 import { getClosestNoteName } from "@/lib/audio/utils"
 import { STANDARD_TUNING_STRINGS } from "@/lib/audio/guitar-constants"
+import { Fretboard, type Marker } from "@/components/fretboard/fretboard"
 
 type DetectionMethod = "inharmonicity" | "spectral"
 
@@ -92,6 +93,20 @@ export default function StringDetectionPage() {
     method === "inharmonicity" ? inharmonicity.data?.clarity : spectral.data?.clarity
   const candidates =
     method === "inharmonicity" ? inharmonicity.data?.candidates : spectral.data?.candidates
+
+  const fretboardMarkers: Marker[] = useMemo(() => {
+    if (!detection || detection.confidence < 0.3) return []
+
+    const stringIndex = 6 - detection.stringNumber
+    return [
+      {
+        stringIndex,
+        fretIndex: detection.fretNumber,
+        type: "played",
+        label: detection.stringName,
+      },
+    ]
+  }, [detection])
 
   return (
     <div className="container mx-auto max-w-6xl p-6">
@@ -226,7 +241,17 @@ export default function StringDetectionPage() {
       )}
 
       {(method === "inharmonicity" ? inharmonicity.data : spectral.data) ? (
-        <div className="grid gap-6 md:grid-cols-2">
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Fretboard</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Fretboard markers={fretboardMarkers} className="w-full" />
+            </CardContent>
+          </Card>
+
+          <div className="grid gap-6 md:grid-cols-2">
           <Card>
             <CardHeader>
               <CardTitle>String Detection</CardTitle>
@@ -514,6 +539,7 @@ export default function StringDetectionPage() {
               </CardContent>
             </Card>
           )}
+          </div>
         </div>
       ) : (
         <Card>

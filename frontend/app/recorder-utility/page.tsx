@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { STANDARD_TUNING_STRINGS, midiToFreq } from "@/lib/audio/guitar-constants"
 import { KNNClassifier, type KNNModelData } from "@/lib/audio/knn-classifier"
@@ -26,9 +27,12 @@ type SampleCounts = Record<string, Record<string, number>>
 type RecordingMode = "audio" | "training"
 
 const SAMPLE_COUNT = 5
+const TRAINING_SAMPLES_PER_FRET = 6
+const TRAINING_FRETS = [0, 3, 5, 7, 9, 12]
 const RECORDING_DURATION_MS = 750
 const SILENCE_WAIT_MS = 200
 const COUNTDOWN_SECONDS = 2
+const FRET_TRANSITION_SECONDS = 3
 const SILENCE_THRESHOLD = 0.005
 const PRE_ATTACK_MS = 10
 const FFT_SIZE = 4096
@@ -39,6 +43,7 @@ type RecordingState =
   | "waiting-for-pluck"
   | "recording"
   | "waiting-for-silence"
+  | "fret-transition"
   | "complete"
 
 interface RecordedSample {
@@ -88,11 +93,14 @@ function encodeWav(samples: Float32Array, sampleRate: number): Blob {
 
 export default function RecorderUtilityPage() {
   const [mode, setMode] = useState<RecordingMode>("training")
+  const [autoFretProgression, setAutoFretProgression] = useState<boolean>(true)
   const [selectedString, setSelectedString] = useState<number>(6)
   const [selectedFret, setSelectedFret] = useState<number>(0)
   const [recordingState, setRecordingState] = useState<RecordingState>("idle")
   const [countdown, setCountdown] = useState<number>(COUNTDOWN_SECONDS)
   const [currentSampleIndex, setCurrentSampleIndex] = useState<number>(0)
+  const [currentTrainingFretIndex, setCurrentTrainingFretIndex] = useState<number>(0)
+  const [transitionCountdown, setTransitionCountdown] = useState<number>(FRET_TRANSITION_SECONDS)
   const [samples, setSamples] = useState<RecordedSample[]>([])
   const [trainingSamples, setTrainingSamples] = useState<TrainingSample[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -116,7 +124,8 @@ export default function RecorderUtilityPage() {
   })
 
   const stringProfile = STANDARD_TUNING_STRINGS.find((s) => s.stringNumber === selectedString)
-  const noteMidi = stringProfile ? stringProfile.openMidi + selectedFret : 40
+  const currentFret = mode === "training" ? TRAINING_FRETS[currentTrainingFretIndex] : selectedFret
+  const noteMidi = stringProfile ? stringProfile.openMidi + currentFret : 40
   const noteName = midiToNoteName(noteMidi)
   const noteFreq = midiToFreq(noteMidi)
 
@@ -239,28 +248,7 @@ export default function RecorderUtilityPage() {
     })
   }, [getAudioLevel])
 
-  const extractFeaturesFromAudio = useCallback(
-    (audioData: Float32Array, sampleRate: number): number[] => {
-      const fftSize = FFT_SIZE
-      const analysisStart = Math.min(Math.floor(sampleRate * 0.05), audioData.length - fftSize)
-      const analysisChunk = audioData.slice(analysisStart, analysisStart + fftSize)
-
-      if (analysisChunk.length < fftSize) {
-        const padded = new Float32Array(fftSize)
-        padded.set(analysisChunk)
-        const config: Partial<FeatureExtractionConfig> = { sampleRate, fftSize }
-        const features = extractSpectralFeatures(padded, noteFreq, config)
-        return featuresToVector(features)
-      }
-
-      const config: Partial<FeatureExtractionConfig> = { sampleRate, fftSize }
-      const features = extractSpectralFeatures(analysisChunk, noteFreq, config)
-      return featuresToVector(features)
-    },
-    [noteFreq],
-  )
-
-  const recordSingleSample = useCallback(async (): Promise<{
+  const recordSingleSample = useCallback(async (fretForSample: number, freqForSample: number): Promise<{
     sample: RecordedSample | null
     training: TrainingSample | null
   }> => {
@@ -277,11 +265,27 @@ export default function RecorderUtilityPage() {
 
     let training: TrainingSample | null = null
     if (mode === "training" && rawData && rawData.length >= FFT_SIZE) {
-      const features = extractFeaturesFromAudio(rawData, sampleRateRef.current)
+      const fftSize = FFT_SIZE
+      const analysisStart = Math.min(Math.floor(sampleRateRef.current * 0.05), rawData.length - fftSize)
+      const analysisChunk = rawData.slice(analysisStart, analysisStart + fftSize)
+
+      let features: number[]
+      if (analysisChunk.length < fftSize) {
+        const padded = new Float32Array(fftSize)
+        padded.set(analysisChunk)
+        const config: Partial<FeatureExtractionConfig> = { sampleRate: sampleRateRef.current, fftSize }
+        const extractedFeatures = extractSpectralFeatures(padded, freqForSample, config)
+        features = featuresToVector(extractedFeatures)
+      } else {
+        const config: Partial<FeatureExtractionConfig> = { sampleRate: sampleRateRef.current, fftSize }
+        const extractedFeatures = extractSpectralFeatures(analysisChunk, freqForSample, config)
+        features = featuresToVector(extractedFeatures)
+      }
+
       training = {
         features,
         stringNumber: selectedString,
-        fret: selectedFret,
+        fret: fretForSample,
       }
     }
 
@@ -292,9 +296,7 @@ export default function RecorderUtilityPage() {
     stopRecordingChunk,
     waitForSilence,
     mode,
-    extractFeaturesFromAudio,
     selectedString,
-    selectedFret,
   ])
 
   const startRecording = useCallback(async () => {
@@ -304,6 +306,7 @@ export default function RecorderUtilityPage() {
     setSamples([])
     setTrainingSamples([])
     setCurrentSampleIndex(0)
+    setCurrentTrainingFretIndex(0)
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -356,16 +359,47 @@ export default function RecorderUtilityPage() {
       const recordedSamples: RecordedSample[] = []
       const recordedTraining: TrainingSample[] = []
 
-      for (let i = 0; i < SAMPLE_COUNT; i++) {
-        setCurrentSampleIndex(i)
-        const { sample, training } = await recordSingleSample()
-        if (sample) {
-          recordedSamples.push(sample)
-          setSamples([...recordedSamples])
+      if (mode === "training" && autoFretProgression) {
+        for (let fretIdx = 0; fretIdx < TRAINING_FRETS.length; fretIdx++) {
+          const fret = TRAINING_FRETS[fretIdx]
+          setCurrentTrainingFretIndex(fretIdx)
+
+          const fretMidi = stringProfile ? stringProfile.openMidi + fret : 40
+          const fretFreq = midiToFreq(fretMidi)
+
+          for (let i = 0; i < TRAINING_SAMPLES_PER_FRET; i++) {
+            setCurrentSampleIndex(i)
+            const { sample, training } = await recordSingleSample(fret, fretFreq)
+            if (sample) {
+              recordedSamples.push(sample)
+              setSamples([...recordedSamples])
+            }
+            if (training) {
+              recordedTraining.push(training)
+              setTrainingSamples([...recordedTraining])
+            }
+          }
+
+          if (fretIdx < TRAINING_FRETS.length - 1) {
+            setRecordingState("fret-transition")
+            for (let t = FRET_TRANSITION_SECONDS; t > 0; t--) {
+              setTransitionCountdown(t)
+              await new Promise((resolve) => setTimeout(resolve, 1000))
+            }
+          }
         }
-        if (training) {
-          recordedTraining.push(training)
-          setTrainingSamples([...recordedTraining])
+      } else {
+        for (let i = 0; i < SAMPLE_COUNT; i++) {
+          setCurrentSampleIndex(i)
+          const { sample, training } = await recordSingleSample(selectedFret, noteFreq)
+          if (sample) {
+            recordedSamples.push(sample)
+            setSamples([...recordedSamples])
+          }
+          if (training) {
+            recordedTraining.push(training)
+            setTrainingSamples([...recordedTraining])
+          }
         }
       }
 
@@ -376,7 +410,7 @@ export default function RecorderUtilityPage() {
       setRecordingState("idle")
       cleanup()
     }
-  }, [recordSingleSample, cleanup])
+  }, [recordSingleSample, cleanup, mode, autoFretProgression, stringProfile, selectedFret, noteFreq])
 
   const resetRecording = useCallback(() => {
     sampleUrlsRef.current.forEach((url) => URL.revokeObjectURL(url))
@@ -530,7 +564,9 @@ export default function RecorderUtilityPage() {
   const getStatusMessage = () => {
     switch (recordingState) {
       case "idle":
-        return "Select a string and fret, then press Start"
+        return mode === "training" && autoFretProgression
+          ? "Select a string, then press Start"
+          : "Select a string and fret, then press Start"
       case "countdown":
         return `Starting in ${countdown}...`
       case "waiting-for-pluck":
@@ -539,6 +575,10 @@ export default function RecorderUtilityPage() {
         return "Recording..."
       case "waiting-for-silence":
         return "Mute the string"
+      case "fret-transition": {
+        const nextFret = TRAINING_FRETS[currentTrainingFretIndex + 1]
+        return `Move to fret ${nextFret === 0 ? "Open" : nextFret} in ${transitionCountdown}...`
+      }
       case "complete":
         return "Recording complete! Review your samples below."
       default:
@@ -581,26 +621,42 @@ export default function RecorderUtilityPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex-1">
-              <label className="mb-2 block text-sm font-medium">Fret</label>
-              <Select
-                value={selectedFret.toString()}
-                onValueChange={(v) => setSelectedFret(parseInt(v))}
-                disabled={recordingState !== "idle" && recordingState !== "complete"}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Array.from({ length: 25 }, (_, i) => (
-                    <SelectItem key={i} value={i.toString()}>
-                      {i === 0 ? "Open" : `Fret ${i}`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {(mode === "audio" || !autoFretProgression) && (
+              <div className="flex-1">
+                <label className="mb-2 block text-sm font-medium">Fret</label>
+                <Select
+                  value={selectedFret.toString()}
+                  onValueChange={(v) => setSelectedFret(parseInt(v))}
+                  disabled={recordingState !== "idle" && recordingState !== "complete"}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 25 }, (_, i) => (
+                      <SelectItem key={i} value={i.toString()}>
+                        {i === 0 ? "Open" : `Fret ${i}`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
+
+          {mode === "training" && (
+            <div className="flex items-center gap-3">
+              <Switch
+                id="auto-fret"
+                checked={autoFretProgression}
+                onCheckedChange={setAutoFretProgression}
+                disabled={recordingState !== "idle" && recordingState !== "complete"}
+              />
+              <label htmlFor="auto-fret" className="text-sm">
+                Auto fret progression (records at frets {TRAINING_FRETS.join(", ")})
+              </label>
+            </div>
+          )}
 
           <div className="flex items-center justify-center gap-4 py-4">
             <Badge variant="secondary" className="px-4 py-2 text-2xl">
@@ -615,9 +671,18 @@ export default function RecorderUtilityPage() {
 
           <div className="py-4 text-center">
             <p className="text-lg font-medium">{getStatusMessage()}</p>
-            {recordingState !== "idle" && recordingState !== "complete" && (
+            {recordingState !== "idle" && recordingState !== "complete" && recordingState !== "fret-transition" && (
               <p className="text-muted-foreground mt-2">
-                Sample {currentSampleIndex + 1} of {SAMPLE_COUNT}
+                {mode === "training" && autoFretProgression ? (
+                  <>
+                    Fret {TRAINING_FRETS[currentTrainingFretIndex] === 0 ? "Open" : TRAINING_FRETS[currentTrainingFretIndex]} - Sample {currentSampleIndex + 1} of {TRAINING_SAMPLES_PER_FRET}
+                    <span className="ml-2 text-xs">
+                      ({currentTrainingFretIndex + 1}/{TRAINING_FRETS.length} positions)
+                    </span>
+                  </>
+                ) : (
+                  <>Sample {currentSampleIndex + 1} of {SAMPLE_COUNT}</>
+                )}
               </p>
             )}
           </div>
