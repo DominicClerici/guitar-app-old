@@ -11,18 +11,27 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { STANDARD_TUNING_STRINGS, midiToFreq } from "@/lib/audio/guitar-constants"
+import { KNNClassifier, type KNNModelData } from "@/lib/audio/knn-classifier"
+import {
+  extractSpectralFeatures,
+  featuresToVector,
+  type FeatureExtractionConfig,
+} from "@/lib/audio/spectral-features"
 import { midiToNoteName } from "@/lib/audio/utils"
 import { useCallback, useEffect, useRef, useState } from "react"
 
 type SampleCounts = Record<string, Record<string, number>>
+type RecordingMode = "audio" | "training"
 
 const SAMPLE_COUNT = 5
 const RECORDING_DURATION_MS = 750
 const SILENCE_WAIT_MS = 200
 const COUNTDOWN_SECONDS = 2
-const SILENCE_THRESHOLD = 0.01
+const SILENCE_THRESHOLD = 0.005
 const PRE_ATTACK_MS = 10
+const FFT_SIZE = 4096
 
 type RecordingState =
   | "idle"
@@ -35,6 +44,12 @@ type RecordingState =
 interface RecordedSample {
   blob: Blob
   url: string
+}
+
+interface TrainingSample {
+  features: number[]
+  stringNumber: number
+  fret: number
 }
 
 function encodeWav(samples: Float32Array, sampleRate: number): Blob {
@@ -72,12 +87,14 @@ function encodeWav(samples: Float32Array, sampleRate: number): Blob {
 }
 
 export default function RecorderUtilityPage() {
+  const [mode, setMode] = useState<RecordingMode>("training")
   const [selectedString, setSelectedString] = useState<number>(6)
   const [selectedFret, setSelectedFret] = useState<number>(0)
   const [recordingState, setRecordingState] = useState<RecordingState>("idle")
   const [countdown, setCountdown] = useState<number>(COUNTDOWN_SECONDS)
   const [currentSampleIndex, setCurrentSampleIndex] = useState<number>(0)
   const [samples, setSamples] = useState<RecordedSample[]>([])
+  const [trainingSamples, setTrainingSamples] = useState<TrainingSample[]>([])
   const [error, setError] = useState<string | null>(null)
 
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -92,10 +109,30 @@ export default function RecorderUtilityPage() {
   const sampleUrlsRef = useRef<string[]>([])
   const sampleRateRef = useRef<number>(44100)
 
+  const classifierRef = useRef<KNNClassifier>(new KNNClassifier(5))
+  const [modelStats, setModelStats] = useState({
+    totalSamples: 0,
+    samplesPerString: new Map<number, number>(),
+  })
+
   const stringProfile = STANDARD_TUNING_STRINGS.find((s) => s.stringNumber === selectedString)
   const noteMidi = stringProfile ? stringProfile.openMidi + selectedFret : 40
   const noteName = midiToNoteName(noteMidi)
   const noteFreq = midiToFreq(noteMidi)
+
+  useEffect(() => {
+    const loaded = classifierRef.current.loadFromStorage()
+    if (loaded) {
+      updateModelStats()
+    }
+  }, [])
+
+  const updateModelStats = useCallback(() => {
+    setModelStats({
+      totalSamples: classifierRef.current.getSampleCount(),
+      samplesPerString: classifierRef.current.getSampleCountByClass(),
+    })
+  }, [])
 
   const cleanup = useCallback(() => {
     if (silenceCheckIntervalRef.current) {
@@ -149,9 +186,12 @@ export default function RecorderUtilityPage() {
     isRecordingRef.current = true
   }, [])
 
-  const stopRecordingChunk = useCallback((): RecordedSample | null => {
+  const stopRecordingChunk = useCallback((): {
+    sample: RecordedSample | null
+    rawData: Float32Array | null
+  } => {
     isRecordingRef.current = false
-    if (recordingBufferRef.current.length === 0) return null
+    if (recordingBufferRef.current.length === 0) return { sample: null, rawData: null }
 
     const totalLength = recordingBufferRef.current.reduce((acc, chunk) => acc + chunk.length, 0)
     const combined = new Float32Array(totalLength)
@@ -164,7 +204,7 @@ export default function RecorderUtilityPage() {
     const blob = encodeWav(combined, sampleRateRef.current)
     const url = URL.createObjectURL(blob)
     sampleUrlsRef.current.push(url)
-    return { blob, url }
+    return { sample: { blob, url }, rawData: combined }
   }, [])
 
   const waitForSilence = useCallback((): Promise<void> => {
@@ -199,26 +239,70 @@ export default function RecorderUtilityPage() {
     })
   }, [getAudioLevel])
 
-  const recordSingleSample = useCallback(async (): Promise<RecordedSample | null> => {
+  const extractFeaturesFromAudio = useCallback(
+    (audioData: Float32Array, sampleRate: number): number[] => {
+      const fftSize = FFT_SIZE
+      const analysisStart = Math.min(Math.floor(sampleRate * 0.05), audioData.length - fftSize)
+      const analysisChunk = audioData.slice(analysisStart, analysisStart + fftSize)
+
+      if (analysisChunk.length < fftSize) {
+        const padded = new Float32Array(fftSize)
+        padded.set(analysisChunk)
+        const config: Partial<FeatureExtractionConfig> = { sampleRate, fftSize }
+        const features = extractSpectralFeatures(padded, noteFreq, config)
+        return featuresToVector(features)
+      }
+
+      const config: Partial<FeatureExtractionConfig> = { sampleRate, fftSize }
+      const features = extractSpectralFeatures(analysisChunk, noteFreq, config)
+      return featuresToVector(features)
+    },
+    [noteFreq],
+  )
+
+  const recordSingleSample = useCallback(async (): Promise<{
+    sample: RecordedSample | null
+    training: TrainingSample | null
+  }> => {
     setRecordingState("waiting-for-pluck")
     await waitForPluck()
 
     setRecordingState("recording")
     startRecordingChunk()
     await new Promise((resolve) => setTimeout(resolve, RECORDING_DURATION_MS))
-    const sample = stopRecordingChunk()
+    const { sample, rawData } = stopRecordingChunk()
 
     setRecordingState("waiting-for-silence")
     await waitForSilence()
 
-    return sample
-  }, [waitForPluck, startRecordingChunk, stopRecordingChunk, waitForSilence])
+    let training: TrainingSample | null = null
+    if (mode === "training" && rawData && rawData.length >= FFT_SIZE) {
+      const features = extractFeaturesFromAudio(rawData, sampleRateRef.current)
+      training = {
+        features,
+        stringNumber: selectedString,
+        fret: selectedFret,
+      }
+    }
+
+    return { sample, training }
+  }, [
+    waitForPluck,
+    startRecordingChunk,
+    stopRecordingChunk,
+    waitForSilence,
+    mode,
+    extractFeaturesFromAudio,
+    selectedString,
+    selectedFret,
+  ])
 
   const startRecording = useCallback(async () => {
     setError(null)
     sampleUrlsRef.current.forEach((url) => URL.revokeObjectURL(url))
     sampleUrlsRef.current = []
     setSamples([])
+    setTrainingSamples([])
     setCurrentSampleIndex(0)
 
     try {
@@ -270,12 +354,18 @@ export default function RecorderUtilityPage() {
       }
 
       const recordedSamples: RecordedSample[] = []
+      const recordedTraining: TrainingSample[] = []
+
       for (let i = 0; i < SAMPLE_COUNT; i++) {
         setCurrentSampleIndex(i)
-        const sample = await recordSingleSample()
+        const { sample, training } = await recordSingleSample()
         if (sample) {
           recordedSamples.push(sample)
           setSamples([...recordedSamples])
+        }
+        if (training) {
+          recordedTraining.push(training)
+          setTrainingSamples([...recordedTraining])
         }
       }
 
@@ -292,6 +382,7 @@ export default function RecorderUtilityPage() {
     sampleUrlsRef.current.forEach((url) => URL.revokeObjectURL(url))
     sampleUrlsRef.current = []
     setSamples([])
+    setTrainingSamples([])
     setCurrentSampleIndex(0)
     setRecordingState("idle")
     setError(null)
@@ -316,7 +407,7 @@ export default function RecorderUtilityPage() {
     fetchSampleCounts()
   }, [fetchSampleCounts])
 
-  const handleSubmit = useCallback(async () => {
+  const handleSubmitAudio = useCallback(async () => {
     if (samples.length === 0 || isSubmitting) return
 
     setIsSubmitting(true)
@@ -349,7 +440,70 @@ export default function RecorderUtilityPage() {
     } finally {
       setIsSubmitting(false)
     }
-  }, [selectedString, selectedFret, samples, isSubmitting, resetRecording])
+  }, [selectedString, selectedFret, samples, isSubmitting, resetRecording, fetchSampleCounts])
+
+  const handleSubmitTraining = useCallback(() => {
+    if (trainingSamples.length === 0) return
+
+    for (const sample of trainingSamples) {
+      classifierRef.current.addSample(sample.features, sample.stringNumber, {
+        fret: sample.fret,
+      })
+    }
+
+    classifierRef.current.train()
+    classifierRef.current.saveToStorage()
+    updateModelStats()
+    resetRecording()
+  }, [trainingSamples, updateModelStats, resetRecording])
+
+  const handleExportModel = useCallback(() => {
+    const modelData = classifierRef.current.exportModel()
+    const json = JSON.stringify(modelData, null, 2)
+    const blob = new Blob([json], { type: "application/json" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = "string-detection-model.json"
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [])
+
+  const handleImportModel = useCallback(() => {
+    const input = document.createElement("input")
+    input.type = "file"
+    input.accept = ".json"
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0]
+      if (!file) return
+
+      try {
+        const text = await file.text()
+        const modelData: KNNModelData = JSON.parse(text)
+        classifierRef.current.importModel(modelData)
+        classifierRef.current.saveToStorage()
+        updateModelStats()
+      } catch (err) {
+        setError("Failed to import model")
+      }
+    }
+    input.click()
+  }, [updateModelStats])
+
+  const handleClearModel = useCallback(() => {
+    classifierRef.current.clearSamples()
+    KNNClassifier.clearStorage()
+    updateModelStats()
+  }, [updateModelStats])
+
+  const handleCrossValidate = useCallback(() => {
+    try {
+      const result = classifierRef.current.crossValidate(5)
+      alert(`Cross-validation accuracy: ${(result.accuracy * 100).toFixed(1)}%`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Cross-validation failed")
+    }
+  }, [])
 
   const sampleCountMarkers: Marker[] = Object.entries(sampleCounts).flatMap(([stringNum, frets]) =>
     Object.entries(frets).map(([fretNum, count]) => ({
@@ -360,6 +514,19 @@ export default function RecorderUtilityPage() {
     })),
   )
 
+  const trainingMarkers: Marker[] = STANDARD_TUNING_STRINGS.flatMap((s) => {
+    const count = modelStats.samplesPerString.get(s.stringNumber) ?? 0
+    if (count === 0) return []
+    return [
+      {
+        stringIndex: 6 - s.stringNumber,
+        fretIndex: 0,
+        type: "note" as const,
+        label: count.toString(),
+      },
+    ]
+  })
+
   const getStatusMessage = () => {
     switch (recordingState) {
       case "idle":
@@ -367,13 +534,13 @@ export default function RecorderUtilityPage() {
       case "countdown":
         return `Starting in ${countdown}...`
       case "waiting-for-pluck":
-        return "🎸 Pluck the string now!"
+        return "Pluck the string now!"
       case "recording":
-        return "🔴 Recording..."
+        return "Recording..."
       case "waiting-for-silence":
-        return "✋ Mute the string"
+        return "Mute the string"
       case "complete":
-        return "✅ Recording complete! Review your samples below."
+        return "Recording complete! Review your samples below."
       default:
         return ""
     }
@@ -381,9 +548,17 @@ export default function RecorderUtilityPage() {
 
   return (
     <div className="max-w-8xl container mx-auto grid grid-cols-2 gap-4 p-6">
-      <Card>
+      <Card className="col-span-2">
         <CardHeader>
-          <CardTitle>Sample Recorder</CardTitle>
+          <CardTitle className="flex items-center justify-between">
+            <span>Sample Recorder</span>
+            <Tabs value={mode} onValueChange={(v) => setMode(v as RecordingMode)}>
+              <TabsList>
+                <TabsTrigger value="training">ML Training</TabsTrigger>
+                <TabsTrigger value="audio">Audio Files</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="flex gap-4">
@@ -458,22 +633,28 @@ export default function RecorderUtilityPage() {
                 <Button variant="outline" onClick={resetRecording}>
                   Record Again
                 </Button>
-                <Button onClick={handleSubmit} disabled={isSubmitting}>
-                  {isSubmitting ? "Submitting..." : "Submit Samples"}
-                </Button>
+                {mode === "audio" ? (
+                  <Button onClick={handleSubmitAudio} disabled={isSubmitting}>
+                    {isSubmitting ? "Submitting..." : "Submit Audio Files"}
+                  </Button>
+                ) : (
+                  <Button onClick={handleSubmitTraining} disabled={trainingSamples.length === 0}>
+                    Add to Training Model ({trainingSamples.length} samples)
+                  </Button>
+                )}
               </>
             )}
           </div>
         </CardContent>
       </Card>
+
       <Card>
         <CardHeader>
           <CardTitle>Recorded Samples</CardTitle>
         </CardHeader>
         <CardContent>
-          {samples.length > 0 && (
-            <div className="space-y-3 border-t pt-4">
-              <h3 className="font-medium">Recorded Samples</h3>
+          {samples.length > 0 ? (
+            <div className="space-y-3">
               <div className="grid gap-2">
                 {samples.map((sample, index) => (
                   <div key={index} className="bg-muted/50 flex items-center gap-3 rounded-md p-2">
@@ -481,21 +662,90 @@ export default function RecorderUtilityPage() {
                       {index + 1}
                     </Badge>
                     <audio controls src={sample.url} className="h-8 flex-1" />
+                    {mode === "training" && trainingSamples[index] && (
+                      <Badge variant="secondary" className="text-xs">
+                        Features extracted
+                      </Badge>
+                    )}
                   </div>
                 ))}
               </div>
             </div>
+          ) : (
+            <p className="text-muted-foreground py-8 text-center">No samples recorded yet</p>
           )}
         </CardContent>
       </Card>
-      <Card className="col-span-2">
+
+      <Card>
         <CardHeader>
-          <CardTitle>Saved Samples</CardTitle>
+          <CardTitle>ML Model Stats</CardTitle>
         </CardHeader>
-        <CardContent>
-          <Fretboard markers={sampleCountMarkers} />
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="outline">Total: {modelStats.totalSamples} samples</Badge>
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {STANDARD_TUNING_STRINGS.map((s) => (
+              <Badge
+                key={s.stringNumber}
+                variant={
+                  (modelStats.samplesPerString.get(s.stringNumber) ?? 0) > 0 ? "default" : "outline"
+                }
+                className="text-xs"
+              >
+                {s.name}: {modelStats.samplesPerString.get(s.stringNumber) ?? 0}
+              </Badge>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap gap-2 border-t pt-4">
+            <Button size="sm" variant="outline" onClick={handleExportModel}>
+              Export Model
+            </Button>
+            <Button size="sm" variant="outline" onClick={handleImportModel}>
+              Import Model
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleCrossValidate}
+              disabled={modelStats.totalSamples < 10}
+            >
+              Cross-Validate
+            </Button>
+            <Button size="sm" variant="destructive" onClick={handleClearModel}>
+              Clear Model
+            </Button>
+          </div>
         </CardContent>
       </Card>
+
+      {mode === "audio" && (
+        <Card className="col-span-2">
+          <CardHeader>
+            <CardTitle>Saved Audio Samples</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Fretboard markers={sampleCountMarkers} />
+          </CardContent>
+        </Card>
+      )}
+
+      {mode === "training" && (
+        <Card className="col-span-2">
+          <CardHeader>
+            <CardTitle>Training Data Coverage</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Fretboard markers={trainingMarkers} />
+            <p className="text-muted-foreground mt-4 text-sm">
+              For best results, record samples at multiple fret positions (0, 3, 5, 7, 9, 12) for
+              each string. Aim for 10-20 samples per string with varied dynamics.
+            </p>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }
