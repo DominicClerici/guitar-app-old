@@ -9,6 +9,88 @@ const CENTS_RANGE = 50
 const DEFAULT_SMOOTHING = 0.2
 const IN_TUNE_CENTS = 8
 
+const GRADIENT_ID = "tuner-gradient"
+
+function generateTunerGradientStops(): { offset: string; color: string }[] {
+  const stops: { offset: number; color: string }[] = []
+
+  const outOfTune = "var(--out-of-tune)"
+  const slightOutOfTune = "var(--slight-out-of-tune)"
+  const inTune = "var(--in-tune)"
+
+  const inTunePercent = 4
+  const slightOutPercent = 15
+
+  const easeInOutCubic = (t: number): number => {
+    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
+  }
+
+  const interpolateColor = (from: string, to: string, t: number): string => {
+    // For CSS variable interpolation, we use color-mix
+    const eased = easeInOutCubic(t)
+    const toPercent = Math.round(eased * 100)
+    return `color-mix(in oklch, ${to} ${toPercent}%, ${from})`
+  }
+
+  // Left side: 0% to 50%
+  // 0% - pure out-of-tune
+  stops.push({ offset: 0, color: outOfTune })
+
+  // Out-of-tune stays solid until 12%, then transitions to slight-out-of-tune
+  const outOfTuneEnd = 12
+  stops.push({ offset: outOfTuneEnd, color: outOfTune })
+
+  // Transition from out-of-tune to slight-out-of-tune (12% to 35%)
+  const slightStart = 50 - slightOutPercent // 35%
+  const numTransitionStops = 4
+  for (let i = 1; i <= numTransitionStops; i++) {
+    const t = i / (numTransitionStops + 1)
+    const offset = outOfTuneEnd + t * (slightStart - outOfTuneEnd)
+    stops.push({ offset, color: interpolateColor(outOfTune, slightOutOfTune, t) })
+  }
+  stops.push({ offset: slightStart, color: slightOutOfTune })
+
+  // Transition from slight-out-of-tune to in-tune (35% to 46%)
+  const inTuneStart = 50 - inTunePercent // 46%
+  for (let i = 1; i <= numTransitionStops; i++) {
+    const t = i / (numTransitionStops + 1)
+    const offset = slightStart + t * (inTuneStart - slightStart)
+    stops.push({ offset, color: interpolateColor(slightOutOfTune, inTune, t) })
+  }
+  stops.push({ offset: inTuneStart, color: inTune })
+
+  // Center: in-tune zone (46% to 54%)
+  stops.push({ offset: 50, color: inTune })
+  const inTuneEnd = 50 + inTunePercent // 54%
+  stops.push({ offset: inTuneEnd, color: inTune })
+
+  // Right side mirrors left: 50% to 100%
+  // Transition from in-tune to slight-out-of-tune (54% to 65%)
+  const slightEnd = 50 + slightOutPercent // 65%
+  for (let i = 1; i <= numTransitionStops; i++) {
+    const t = i / (numTransitionStops + 1)
+    const offset = inTuneEnd + t * (slightEnd - inTuneEnd)
+    stops.push({ offset, color: interpolateColor(inTune, slightOutOfTune, t) })
+  }
+  stops.push({ offset: slightEnd, color: slightOutOfTune })
+
+  // Transition from slight-out-of-tune to out-of-tune (65% to 88%)
+  const outOfTuneStart = 100 - outOfTuneEnd // 88%
+  for (let i = 1; i <= numTransitionStops; i++) {
+    const t = i / (numTransitionStops + 1)
+    const offset = slightEnd + t * (outOfTuneStart - slightEnd)
+    stops.push({ offset, color: interpolateColor(slightOutOfTune, outOfTune, t) })
+  }
+  stops.push({ offset: outOfTuneStart, color: outOfTune })
+
+  // Out-of-tune stays solid from 88% to 100%
+  stops.push({ offset: 100, color: outOfTune })
+
+  return stops.map((s) => ({ offset: `${s.offset}%`, color: s.color }))
+}
+
+const GRADIENT_STOPS = generateTunerGradientStops()
+
 interface DataPoint {
   cents: number
   isActive: boolean
@@ -57,13 +139,6 @@ class CircularBuffer {
   }
 }
 
-function getColorForCents(cents: number): string {
-  const absCents = Math.abs(cents)
-  if (absCents > IN_TUNE_CENTS * 3) return "#f87171"
-  if (absCents > IN_TUNE_CENTS) return "#fbbf24"
-  return "#4ade80"
-}
-
 function centsToX(cents: number, chartWidth: number): number {
   const clamped = Math.max(-CENTS_RANGE, Math.min(CENTS_RANGE, cents))
   return ((clamped + CENTS_RANGE) / (CENTS_RANGE * 2)) * chartWidth
@@ -90,6 +165,16 @@ function SeismographChart({
   inTune,
   bufferDurationMs,
 }: SeismographChartProps) {
+  const dimensions = useMemo(
+    () => ({
+      fullOutOfTuneXLeft: (chartWidth * (50 - IN_TUNE_CENTS * 3)) / 100,
+      fullOutOfTuneXRight: (chartWidth * (50 + IN_TUNE_CENTS * 3)) / 100,
+      fullInTuneXLeft: (chartWidth * (50 - IN_TUNE_CENTS)) / 100,
+      fullInTuneXRight: (chartWidth * (50 + IN_TUNE_CENTS)) / 100,
+    }),
+    [chartWidth],
+  )
+
   const indicatorX = useMemo(() => {
     if (currentCents === null) return chartWidth / 2
     const clamped = Math.max(-CENTS_RANGE, Math.min(CENTS_RANGE, currentCents))
@@ -97,17 +182,15 @@ function SeismographChart({
   }, [currentCents, chartWidth])
 
   const pathSegments = useMemo(() => {
-    const segments: Array<{ d: string; color: string }> = []
+    const segments: string[] = []
     const segmentHeight = chartHeight / MAX_POINTS
 
     interface PointData {
       x: number
       y: number
-      cents: number
     }
 
     let currentPoints: PointData[] = []
-    let currentColor = ""
 
     const buildSmoothPath = (points: PointData[]): string => {
       if (points.length < 2) return ""
@@ -135,11 +218,10 @@ function SeismographChart({
     }
 
     const flushSegment = () => {
-      if (currentPoints.length >= 2 && currentColor) {
-        segments.push({ d: buildSmoothPath(currentPoints), color: currentColor })
+      if (currentPoints.length >= 2) {
+        segments.push(buildSmoothPath(currentPoints))
       }
       currentPoints = []
-      currentColor = ""
     }
 
     for (let i = 0; i < buffer.capacity; i++) {
@@ -154,27 +236,14 @@ function SeismographChart({
         if (point.isActive) {
           const x = centsToX(point.cents, chartWidth)
           const y = (MAX_POINTS - i) * segmentHeight
-          currentPoints = [{ x, y, cents: point.cents }]
-          currentColor = getColorForCents(point.cents)
+          currentPoints = [{ x, y }]
         }
         continue
       }
 
       const x = centsToX(point.cents, chartWidth)
       const y = (MAX_POINTS - i) * segmentHeight
-      const color = getColorForCents(point.cents)
-
-      if (color !== currentColor && currentPoints.length > 0) {
-        const lastPoint = currentPoints[currentPoints.length - 1]
-        flushSegment()
-        currentPoints = [lastPoint, { x, y, cents: point.cents }]
-        currentColor = color
-      } else {
-        if (currentPoints.length === 0) {
-          currentColor = color
-        }
-        currentPoints.push({ x, y, cents: point.cents })
-      }
+      currentPoints.push({ x, y })
     }
 
     flushSegment()
@@ -191,10 +260,6 @@ function SeismographChart({
       </div>
 
       <div className="relative w-full" style={{ height: chartHeight }}>
-        <div className="absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 bg-green-400/25" />
-        <div className="absolute inset-y-0 left-1/4 w-px bg-white/10" />
-        <div className="absolute inset-y-0 left-3/4 w-px bg-white/10" />
-
         <svg
           width={chartWidth}
           height={chartHeight}
@@ -204,56 +269,75 @@ function SeismographChart({
           preserveAspectRatio="none"
         >
           {/* in tune lines */}
+
           <rect
-            x={(chartWidth * (50 - IN_TUNE_CENTS)) / 100}
+            x={dimensions.fullInTuneXLeft}
             y={0}
-            width={(chartWidth * IN_TUNE_CENTS * 2) / 100}
+            width={dimensions.fullInTuneXRight - dimensions.fullInTuneXLeft}
             height={chartHeight}
-            className="fill-green-400/10"
+            className="fill-[hsl(150deg_96%_45%)]/10"
           />
           <line
             x1={chartWidth / 2}
             y1={0}
             x2={chartWidth / 2}
             y2={chartHeight}
-            className="stroke-green-400"
+            className="stroke-[hsl(150deg_96%_45%)]"
             strokeWidth={1}
           />
 
           <line
-            x1={(chartWidth * (50 - IN_TUNE_CENTS * 3)) / 100}
+            x1={dimensions.fullOutOfTuneXLeft}
             y1={0}
-            x2={(chartWidth * (50 - IN_TUNE_CENTS * 3)) / 100}
+            x2={dimensions.fullOutOfTuneXLeft}
             y2={chartHeight}
             className="stroke-border"
             strokeWidth={1}
           />
           <line
-            x1={(chartWidth * (50 + IN_TUNE_CENTS * 3)) / 100}
+            x1={dimensions.fullOutOfTuneXRight}
             y1={0}
-            x2={(chartWidth * (50 + IN_TUNE_CENTS * 3)) / 100}
+            x2={dimensions.fullOutOfTuneXRight}
             y2={chartHeight}
             className="stroke-border"
             strokeWidth={1}
           />
-          {pathSegments.map((seg, idx) => (
-            <path
-              key={idx}
-              d={seg.d}
-              stroke={seg.color}
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              fill="none"
-            />
-          ))}
+          <defs>
+            <linearGradient id={GRADIENT_ID} x1="0%" y1="0%" x2="100%" y2="0%">
+              {GRADIENT_STOPS.map((stop, idx) => (
+                <stop key={idx} offset={stop.offset} stopColor={stop.color} />
+              ))}
+            </linearGradient>
+            <mask id="tuner-line-mask">
+              {pathSegments.map((d, idx) => (
+                <path
+                  key={idx}
+                  d={d}
+                  stroke="white"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  fill="none"
+                />
+              ))}
+            </mask>
+          </defs>
+
+          <rect
+            x={0}
+            y={0}
+            width={chartWidth}
+            height={chartHeight}
+            fill={`url(#${GRADIENT_ID})`}
+            mask="url(#tuner-line-mask)"
+          />
 
           {currentCents !== null && (
             <circle
               cx={0}
               cy={7}
               r={6}
-              className={`transition-all ${inTune ? "fill-green-400 stroke-green-700" : "fill-background stroke-border"}`}
+              className={`transition-all ${inTune ? "fill-[hsl(150deg_96%_45%)] stroke-[hsl(150deg_98%_32%)]" : "fill-background stroke-border"}`}
               style={{
                 transform: `translate(${indicatorX}px, 0)`,
                 transitionTimingFunction: "linear",
