@@ -2,21 +2,6 @@
 
 import FFT from "fft.js"
 
-export interface DetectedPartial {
-  harmonicNumber: number
-  expectedFreq: number
-  actualFreq: number
-  amplitude: number
-  bEstimate: number
-}
-
-export interface FFTAnalysisResult {
-  partials: DetectedPartial[]
-  estimatedB: number
-  confidence: number
-  spectralCentroid: number
-}
-
 const fftCache = new Map<number, FFT>()
 
 function getFFT(size: number): FFT {
@@ -57,7 +42,7 @@ export function parabolicInterpolation(
   magnitudes: Float32Array,
   peakIndex: number,
   sampleRate: number,
-  fftSize: number
+  fftSize: number,
 ): { frequency: number; amplitude: number } {
   if (peakIndex <= 0 || peakIndex >= magnitudes.length - 1) {
     return {
@@ -93,7 +78,7 @@ export function findPeakNearFrequency(
   targetFreq: number,
   sampleRate: number,
   fftSize: number,
-  searchRangeCents: number = 100
+  searchRangeCents: number = 100,
 ): { peakIndex: number; amplitude: number } | null {
   const binResolution = sampleRate / fftSize
   const targetBin = targetFreq / binResolution
@@ -133,7 +118,7 @@ export function findPeakNearFrequency(
 export function calculateInharmonicityFromPartial(
   actualFreq: number,
   fundamental: number,
-  harmonicNumber: number
+  harmonicNumber: number,
 ): number {
   const idealFreq = harmonicNumber * fundamental
   const ratio = actualFreq / idealFreq
@@ -142,88 +127,10 @@ export function calculateInharmonicityFromPartial(
   return Math.max(0, b)
 }
 
-export function analyzeInharmonicity(
-  timeDomainData: Float32Array,
-  fundamental: number,
-  sampleRate: number,
-  maxHarmonic: number = 10,
-  minAmplitudeThreshold: number = 0.01
-): FFTAnalysisResult {
-  const windowed = applyHannWindow(timeDomainData)
-  const magnitudes = computeFFTMagnitudes(windowed)
-  const fftSize = timeDomainData.length
-
-  const partials: DetectedPartial[] = []
-  const bEstimates: number[] = []
-
-  const fundamentalPeak = findPeakNearFrequency(magnitudes, fundamental, sampleRate, fftSize, 50)
-  const fundamentalAmplitude = fundamentalPeak?.amplitude ?? 1
-
-  for (let n = 2; n <= maxHarmonic; n++) {
-    const expectedFreq = n * fundamental
-
-    if (expectedFreq > sampleRate / 2 - 100) break
-
-    const peak = findPeakNearFrequency(magnitudes, expectedFreq, sampleRate, fftSize, 80)
-    if (!peak) continue
-
-    const interpolated = parabolicInterpolation(magnitudes, peak.peakIndex, sampleRate, fftSize)
-
-    const relativeAmplitude = interpolated.amplitude / fundamentalAmplitude
-    if (relativeAmplitude < minAmplitudeThreshold) continue
-
-    const bEstimate = calculateInharmonicityFromPartial(interpolated.frequency, fundamental, n)
-
-    if (bEstimate >= 0 && bEstimate < 0.01) {
-      partials.push({
-        harmonicNumber: n,
-        expectedFreq,
-        actualFreq: interpolated.frequency,
-        amplitude: interpolated.amplitude,
-        bEstimate,
-      })
-      bEstimates.push(bEstimate)
-    }
-  }
-
-  let estimatedB = 0
-  let confidence = 0
-
-  if (bEstimates.length > 0) {
-    bEstimates.sort((a, b) => a - b)
-    const trimCount = Math.floor(bEstimates.length * 0.2)
-    const trimmedEstimates =
-      bEstimates.slice(trimCount, bEstimates.length - trimCount || undefined)
-
-    if (trimmedEstimates.length > 0) {
-      estimatedB = trimmedEstimates.reduce((a, b) => a + b, 0) / trimmedEstimates.length
-    } else {
-      estimatedB = bEstimates[Math.floor(bEstimates.length / 2)]
-    }
-
-    const variance =
-      bEstimates.reduce((sum, b) => sum + Math.pow(b - estimatedB, 2), 0) / bEstimates.length
-    const stdDev = Math.sqrt(variance)
-    const coefficientOfVariation = estimatedB > 0 ? stdDev / estimatedB : 1
-
-    confidence = Math.max(0, Math.min(1, 1 - coefficientOfVariation))
-    confidence *= Math.min(1, partials.length / 5)
-  }
-
-  const spectralCentroid = calculateSpectralCentroid(magnitudes, sampleRate, fftSize)
-
-  return {
-    partials,
-    estimatedB,
-    confidence,
-    spectralCentroid,
-  }
-}
-
 export function calculateSpectralCentroid(
   magnitudes: Float32Array,
   sampleRate: number,
-  fftSize: number
+  fftSize: number,
 ): number {
   let weightedSum = 0
   let totalMagnitude = 0

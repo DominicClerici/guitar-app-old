@@ -351,6 +351,82 @@ export class KNNClassifier {
       confusionMatrix,
     }
   }
+
+  optimizeK(maxK: number = 15): { bestK: number; accuracies: Map<number, number> } {
+    if (this.samples.length < 3) {
+      throw new Error("Need at least 3 samples to optimize K")
+    }
+
+    const accuracies = new Map<number, number>()
+    const effectiveMaxK = Math.min(maxK, this.samples.length - 1)
+
+    if (!this.normalization) {
+      this.computeNormalization()
+    }
+
+    const normalizedSamples = this.samples.map((s) => ({
+      features: this.normalize(s.features),
+      label: s.label,
+    }))
+
+    const distanceMatrix: number[][] = []
+    for (let i = 0; i < normalizedSamples.length; i++) {
+      distanceMatrix[i] = []
+      for (let j = 0; j < normalizedSamples.length; j++) {
+        if (i === j) {
+          distanceMatrix[i][j] = Infinity
+        } else {
+          distanceMatrix[i][j] = this.euclideanDistance(
+            normalizedSamples[i].features,
+            normalizedSamples[j].features
+          )
+        }
+      }
+    }
+
+    for (let k = 1; k <= effectiveMaxK; k++) {
+      let correct = 0
+
+      for (let i = 0; i < normalizedSamples.length; i++) {
+        const distances = distanceMatrix[i]
+          .map((d, j) => ({ distance: d, label: normalizedSamples[j].label }))
+          .sort((a, b) => a.distance - b.distance)
+          .slice(0, k)
+
+        const weightedVotes = new Map<number, number>()
+        for (const neighbor of distances) {
+          const weight = 1 / (neighbor.distance + 1e-10)
+          weightedVotes.set(neighbor.label, (weightedVotes.get(neighbor.label) || 0) + weight)
+        }
+
+        let predicted = -1
+        let maxWeight = -Infinity
+        for (const [label, weight] of weightedVotes) {
+          if (weight > maxWeight) {
+            maxWeight = weight
+            predicted = label
+          }
+        }
+
+        if (predicted === normalizedSamples[i].label) {
+          correct++
+        }
+      }
+
+      accuracies.set(k, correct / normalizedSamples.length)
+    }
+
+    let bestK = 1
+    let bestAccuracy = 0
+    for (const [k, accuracy] of accuracies) {
+      if (accuracy > bestAccuracy || (accuracy === bestAccuracy && k % 2 === 1 && bestK % 2 === 0)) {
+        bestAccuracy = accuracy
+        bestK = k
+      }
+    }
+
+    return { bestK, accuracies }
+  }
 }
 
 export function createClassifier(k: number = 5): KNNClassifier {

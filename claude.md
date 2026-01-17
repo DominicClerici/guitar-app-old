@@ -40,3 +40,5 @@ When you need to validate any data, create a zod schema in /packages/schemas and
 In /mobile, you can import from "@/lib/trpc/react" (tanstack react query)
 
 You can type check your solution with `pnpm run type-check`
+
+When typing objects, variables, and functions, only manually specify types if it is needed, otherwise, prefer to just use inferred types.

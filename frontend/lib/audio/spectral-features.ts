@@ -1,6 +1,11 @@
 "use client"
 
-import { applyHannWindow, computeFFTMagnitudes } from "./fft-utils"
+import {
+  applyHannWindow,
+  computeFFTMagnitudes,
+  findPeakNearFrequency,
+  parabolicInterpolation,
+} from "./fft-utils"
 
 export interface SpectralFeatures {
   spectralCentroid: number
@@ -15,6 +20,7 @@ export interface SpectralFeatures {
     h3h1: number
     evenOddRatio: number
   }
+  inharmonicity: number
 }
 
 export interface FeatureExtractionConfig {
@@ -301,6 +307,51 @@ export function computeHarmonicRatios(
   return { h2h1, h3h1, evenOddRatio }
 }
 
+export function measureInharmonicity(
+  magnitudes: Float32Array,
+  fundamentalFreq: number,
+  sampleRate: number,
+  fftSize: number
+): number {
+  if (fundamentalFreq <= 0) return 0
+
+  const harmonicsToMeasure = [2, 3, 4, 5]
+  const bEstimates: number[] = []
+
+  const fundamentalPeak = findPeakNearFrequency(magnitudes, fundamentalFreq, sampleRate, fftSize, 50)
+  if (!fundamentalPeak || fundamentalPeak.amplitude < 1e-6) return 0
+
+  for (const n of harmonicsToMeasure) {
+    const expectedFreq = n * fundamentalFreq
+
+    if (expectedFreq > sampleRate / 2 - 100) break
+
+    const peak = findPeakNearFrequency(magnitudes, expectedFreq, sampleRate, fftSize, 80)
+    if (!peak) continue
+
+    const relativeAmplitude = peak.amplitude / fundamentalPeak.amplitude
+    if (relativeAmplitude < 0.01) continue
+
+    const interpolated = parabolicInterpolation(magnitudes, peak.peakIndex, sampleRate, fftSize)
+    const actualFreq = interpolated.frequency
+
+    const idealFreq = n * fundamentalFreq
+    const ratio = actualFreq / idealFreq
+    const ratioSquared = ratio * ratio
+    const b = (ratioSquared - 1) / (n * n)
+
+    if (b >= 0 && b < 0.001) {
+      bEstimates.push(b)
+    }
+  }
+
+  if (bEstimates.length === 0) return 0
+
+  bEstimates.sort((a, b) => a - b)
+  const median = bEstimates[Math.floor(bEstimates.length / 2)]
+  return median
+}
+
 export function extractSpectralFeatures(
   timeDomainData: Float32Array,
   fundamental: number | null,
@@ -338,6 +389,11 @@ export function extractSpectralFeatures(
       ? computeHarmonicRatios(magnitudes, fundamental, fullConfig.sampleRate, fullConfig.fftSize)
       : { h2h1: 0, h3h1: 0, evenOddRatio: 0 }
 
+  const inharmonicity =
+    fundamental && fundamental > 0
+      ? measureInharmonicity(magnitudes, fundamental, fullConfig.sampleRate, fullConfig.fftSize)
+      : 0
+
   return {
     spectralCentroid,
     spectralRolloff,
@@ -347,6 +403,7 @@ export function extractSpectralFeatures(
     zeroCrossingRate,
     mfccs,
     harmonicRatios,
+    inharmonicity,
   }
 }
 
@@ -365,6 +422,10 @@ export function featuresToVector(features: SpectralFeatures): number[] {
   ]
 }
 
+export function featuresToVectorWithInharmonicity(features: SpectralFeatures): number[] {
+  return [...featuresToVector(features), features.inharmonicity]
+}
+
 export function vectorToFeatures(vector: number[]): SpectralFeatures {
   const numMfccs = vector.length - 9
   return {
@@ -380,5 +441,85 @@ export function vectorToFeatures(vector: number[]): SpectralFeatures {
       h3h1: vector[7 + numMfccs],
       evenOddRatio: vector[8 + numMfccs],
     },
+    inharmonicity: 0,
   }
+}
+
+export interface MultiWindowConfig {
+  attackWindowMs: [number, number]
+  sustainWindowMs: [number, number]
+  decayWindowMs: [number, number]
+}
+
+const DEFAULT_MULTI_WINDOW_CONFIG: MultiWindowConfig = {
+  attackWindowMs: [0, 30],
+  sustainWindowMs: [50, 150],
+  decayWindowMs: [200, 300],
+}
+
+export function extractMultiWindowFeatures(
+  audioData: Float32Array,
+  pitch: number,
+  sampleRate: number,
+  fftSize: number,
+  windowConfig: MultiWindowConfig = DEFAULT_MULTI_WINDOW_CONFIG
+): number[] {
+  const featureConfig: Partial<FeatureExtractionConfig> = { sampleRate, fftSize }
+
+  const extractWindowChunk = (startMs: number, endMs: number): Float32Array => {
+    const startSample = Math.floor((startMs / 1000) * sampleRate)
+    const endSample = Math.floor((endMs / 1000) * sampleRate)
+    const windowCenter = Math.floor((startSample + endSample) / 2)
+    const halfFft = Math.floor(fftSize / 2)
+
+    let chunkStart = windowCenter - halfFft
+    let chunkEnd = windowCenter + halfFft
+
+    if (chunkStart < 0) {
+      chunkStart = 0
+      chunkEnd = fftSize
+    }
+    if (chunkEnd > audioData.length) {
+      chunkEnd = audioData.length
+      chunkStart = Math.max(0, chunkEnd - fftSize)
+    }
+
+    const chunk = audioData.slice(chunkStart, chunkEnd)
+
+    if (chunk.length < fftSize) {
+      const padded = new Float32Array(fftSize)
+      padded.set(chunk)
+      return padded
+    }
+
+    return chunk
+  }
+
+  const extractWindowFeatures = (chunk: Float32Array): number[] => {
+    const features = extractSpectralFeatures(chunk, pitch, featureConfig)
+    return featuresToVector(features)
+  }
+
+  const attackChunk = extractWindowChunk(
+    windowConfig.attackWindowMs[0],
+    windowConfig.attackWindowMs[1]
+  )
+  const sustainChunk = extractWindowChunk(
+    windowConfig.sustainWindowMs[0],
+    windowConfig.sustainWindowMs[1]
+  )
+  const decayChunk = extractWindowChunk(
+    windowConfig.decayWindowMs[0],
+    windowConfig.decayWindowMs[1]
+  )
+
+  const attackFeatures = extractWindowFeatures(attackChunk)
+  const sustainFeatures = extractWindowFeatures(sustainChunk)
+  const decayFeatures = extractWindowFeatures(decayChunk)
+
+  const sustainWindowed = applyHannWindow(sustainChunk)
+  const sustainMagnitudes = computeFFTMagnitudes(sustainWindowed)
+  const inharmonicity = measureInharmonicity(sustainMagnitudes, pitch, sampleRate, fftSize)
+
+  return [...attackFeatures, ...sustainFeatures, ...decayFeatures, inharmonicity]
 }

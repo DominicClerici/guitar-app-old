@@ -15,11 +15,7 @@ import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { STANDARD_TUNING_STRINGS, midiToFreq } from "@/lib/audio/guitar-constants"
 import { KNNClassifier, type KNNModelData } from "@/lib/audio/knn-classifier"
-import {
-  extractSpectralFeatures,
-  featuresToVector,
-  type FeatureExtractionConfig,
-} from "@/lib/audio/spectral-features"
+import { extractMultiWindowFeatures } from "@/lib/audio/spectral-features"
 import { midiToNoteName } from "@/lib/audio/utils"
 import { useCallback, useEffect, useRef, useState } from "react"
 
@@ -265,22 +261,12 @@ export default function RecorderUtilityPage() {
 
     let training: TrainingSample | null = null
     if (mode === "training" && rawData && rawData.length >= FFT_SIZE) {
-      const fftSize = FFT_SIZE
-      const analysisStart = Math.min(Math.floor(sampleRateRef.current * 0.05), rawData.length - fftSize)
-      const analysisChunk = rawData.slice(analysisStart, analysisStart + fftSize)
-
-      let features: number[]
-      if (analysisChunk.length < fftSize) {
-        const padded = new Float32Array(fftSize)
-        padded.set(analysisChunk)
-        const config: Partial<FeatureExtractionConfig> = { sampleRate: sampleRateRef.current, fftSize }
-        const extractedFeatures = extractSpectralFeatures(padded, freqForSample, config)
-        features = featuresToVector(extractedFeatures)
-      } else {
-        const config: Partial<FeatureExtractionConfig> = { sampleRate: sampleRateRef.current, fftSize }
-        const extractedFeatures = extractSpectralFeatures(analysisChunk, freqForSample, config)
-        features = featuresToVector(extractedFeatures)
-      }
+      const features = extractMultiWindowFeatures(
+        rawData,
+        freqForSample,
+        sampleRateRef.current,
+        FFT_SIZE
+      )
 
       training = {
         features,
