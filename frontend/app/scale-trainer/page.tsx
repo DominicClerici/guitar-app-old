@@ -19,12 +19,10 @@ import {
   convertToMinorPentatonic,
   convertToMixolydian,
   convertToPhrygian,
-  findBestFretPosition,
   getMajorScale,
   getShapeNotes,
   type ScaleNote,
 } from "@/lib/scales/major-scale"
-import { freqToMidi } from "@/lib/audio/utils"
 import { X } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 

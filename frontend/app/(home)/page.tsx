@@ -21,11 +21,8 @@ export default async function Home() {
               Dashboard
             </Link>
           )}
-          <Link
-            className={buttonVariants({ variant: "outline", size: "lg" })}
-            href="/microphone-test"
-          >
-            Microphone Test
+          <Link className={buttonVariants({ variant: "outline", size: "lg" })} href="/tuner">
+            Tuner
           </Link>
           <Link
             className={buttonVariants({ variant: "outline", size: "lg" })}

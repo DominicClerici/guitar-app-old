@@ -109,7 +109,7 @@ export default function LoginForm() {
         Login
       </Button>
 
-      <div className="flex items-center gap-4 my-4">
+      <div className="my-4 flex items-center gap-4">
         <Separator className="flex-1" />
         <span className="text-muted-foreground text-sm">or</span>
         <Separator className="flex-1" />
@@ -122,7 +122,7 @@ export default function LoginForm() {
         onClick={handleGoogleSignIn}
         disabled={isGoogleLoading}
       >
-        <GoogleIcon className="w-5 h-5 mr-2" />
+        <GoogleIcon className="mr-2 h-5 w-5" />
         Continue with Google
       </Button>
     </>

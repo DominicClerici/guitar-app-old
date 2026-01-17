@@ -30,10 +30,7 @@ function amplitudeToDb(amplitude: number): number {
   return 20 * Math.log10(Math.max(amplitude, 1e-10))
 }
 
-function findOnsetIndex(
-  rmsEnvelope: number[],
-  noiseFloor: number
-): number {
+function findOnsetIndex(rmsEnvelope: number[], noiseFloor: number): number {
   const threshold = Math.max(noiseFloor * ONSET_THRESHOLD_MULTIPLIER, MIN_RMS_THRESHOLD)
 
   for (let i = 0; i < rmsEnvelope.length; i++) {
@@ -45,11 +42,7 @@ function findOnsetIndex(
   return 0
 }
 
-function findPeakIndex(
-  rmsEnvelope: number[],
-  onsetIndex: number,
-  maxSearchIndex: number
-): number {
+function findPeakIndex(rmsEnvelope: number[], onsetIndex: number, maxSearchIndex: number): number {
   let peakIndex = onsetIndex
   let peakValue = rmsEnvelope[onsetIndex] ?? 0
 
@@ -78,7 +71,7 @@ function estimateNoiseRatio(
   audioBuffer: Float32Array,
   sampleRate: number,
   fundamentalFreq: number,
-  attackDurationSamples: number
+  attackDurationSamples: number,
 ): number {
   const attackSamples = audioBuffer.slice(0, attackDurationSamples)
   if (attackSamples.length === 0) return 0.5
@@ -136,8 +129,8 @@ function fftInPlace(real: Float32Array, imag: Float32Array): void {
   let j = 0
   for (let i = 0; i < n - 1; i++) {
     if (i < j) {
-      [real[i], real[j]] = [real[j], real[i]];
-      [imag[i], imag[j]] = [imag[j], imag[i]]
+      ;[real[i], real[j]] = [real[j], real[i]]
+      ;[imag[i], imag[j]] = [imag[j], imag[i]]
     }
     let k = n >> 1
     while (k <= j) {
@@ -148,7 +141,7 @@ function fftInPlace(real: Float32Array, imag: Float32Array): void {
   }
 
   for (let len = 2; len <= n; len <<= 1) {
-    const angle = -2 * Math.PI / len
+    const angle = (-2 * Math.PI) / len
     const wReal = Math.cos(angle)
     const wImag = Math.sin(angle)
 
@@ -179,7 +172,7 @@ function fftInPlace(real: Float32Array, imag: Float32Array): void {
 function calculateTransientSharpness(
   rmsEnvelope: number[],
   onsetIndex: number,
-  peakIndex: number
+  peakIndex: number,
 ): number {
   if (peakIndex <= onsetIndex) return 0.5
 
@@ -201,9 +194,7 @@ function calculateTransientSharpness(
     maxSecondDerivative = Math.max(maxSecondDerivative, secondDerivative)
   }
 
-  const normalizedCurvature = amplitudeRange > 0
-    ? maxSecondDerivative / amplitudeRange
-    : 0
+  const normalizedCurvature = amplitudeRange > 0 ? maxSecondDerivative / amplitudeRange : 0
 
   const quickRiseFactor = Math.exp(-riseTime / 10)
   const sharpness = quickRiseFactor * 0.5 + Math.min(normalizedCurvature * 5, 0.5)
@@ -214,7 +205,7 @@ function calculateTransientSharpness(
 export function analyzeAttackTransient(
   audioBuffer: Float32Array,
   sampleRate: number,
-  fundamentalFreq: number
+  fundamentalFreq: number,
 ): AttackFeatures {
   const attackWindowSamples = Math.floor((ATTACK_WINDOW_MS / 1000) * sampleRate)
   const rmsWindowSamples = Math.floor((RMS_WINDOW_MS / 1000) * sampleRate)
@@ -256,14 +247,10 @@ export function analyzeAttackTransient(
     audioBuffer,
     sampleRate,
     fundamentalFreq,
-    attackDurationSamples
+    attackDurationSamples,
   )
 
-  const transientSharpness = calculateTransientSharpness(
-    rmsEnvelope,
-    onsetIndex,
-    peakIndex
-  )
+  const transientSharpness = calculateTransientSharpness(rmsEnvelope, onsetIndex, peakIndex)
 
   return {
     attackSlope: Math.max(0, attackSlope),

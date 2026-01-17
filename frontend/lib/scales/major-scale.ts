@@ -1,4 +1,4 @@
-import { midiToFreq, NOTE_NAMES } from "@/lib/audio/utils"
+import { midiToFreq } from "@/lib/audio/utils"
 
 export type ScaleNote = {
   fretIndex: number
@@ -119,7 +119,11 @@ export function getMajorScale(rootNoteIndex: number): ScaleNote[] {
   return transposeScale(A_MAJOR_SCALE, shift)
 }
 
-function applyModeTransform(scale: ScaleNote[], lowerDegrees: number[], raiseDegrees: number[] = []): ScaleNote[] {
+function applyModeTransform(
+  scale: ScaleNote[],
+  lowerDegrees: number[],
+  raiseDegrees: number[] = [],
+): ScaleNote[] {
   return scale.map((note) => {
     let shift = 0
     if (lowerDegrees.includes(note.degree)) shift = -1

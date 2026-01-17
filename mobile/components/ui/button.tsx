@@ -183,7 +183,7 @@ interface ButtonVariantStyles {
 
 function buttonVariants(
   colors: ThemeColors,
-  options: ButtonVariantOptions = {}
+  options: ButtonVariantOptions = {},
 ): ButtonVariantStyles {
   const { variant = "default", size = "default" } = options
   const variantStyle = variantStyles[variant](colors)
@@ -241,5 +241,5 @@ function Button({
   )
 }
 
-export { Button as default, buttonVariants }
-export type { ButtonVariant, ButtonSize, ButtonVariantOptions, ButtonVariantStyles }
+export { buttonVariants, Button as default }
+export type { ButtonSize, ButtonVariant, ButtonVariantOptions, ButtonVariantStyles }

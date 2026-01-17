@@ -59,7 +59,10 @@ function checkMissingData(data: GuitarCalibrationData, warnings: CalibrationWarn
   }
 }
 
-function checkInharmonicityOrder(data: GuitarCalibrationData, warnings: CalibrationWarning[]): void {
+function checkInharmonicityOrder(
+  data: GuitarCalibrationData,
+  warnings: CalibrationWarning[],
+): void {
   const stringsWithData = data.strings.filter(
     (s) => s.sampleCount > 0 && s.attackProfile.measuredInharmonicity > 0,
   )
@@ -102,10 +105,12 @@ function getMedianAbsoluteDeviation(values: number[], median: number): number {
 }
 
 function checkCentroidOrder(data: GuitarCalibrationData, warnings: CalibrationWarning[]): void {
-  const woundStrings = data.strings
-    .filter((s) => [6, 5, 4].includes(s.stringNumber) && s.sampleCount > 0)
-  const unwoundStrings = data.strings
-    .filter((s) => [3, 2, 1].includes(s.stringNumber) && s.sampleCount > 0)
+  const woundStrings = data.strings.filter(
+    (s) => [6, 5, 4].includes(s.stringNumber) && s.sampleCount > 0,
+  )
+  const unwoundStrings = data.strings.filter(
+    (s) => [3, 2, 1].includes(s.stringNumber) && s.sampleCount > 0,
+  )
 
   if (woundStrings.length === 0 || unwoundStrings.length === 0) return
 

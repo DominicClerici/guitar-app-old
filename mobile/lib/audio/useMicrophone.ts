@@ -1,12 +1,12 @@
-import { useState, useCallback, useRef, useEffect } from "react"
 import {
-  useAudioRecorder,
   AudioModule,
   RecordingPresets,
   setAudioModeAsync,
+  useAudioRecorder,
   useAudioRecorderState,
 } from "expo-audio"
 import { useFocusEffect } from "expo-router"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 export type MicrophoneStatus = "idle" | "requesting" | "recording" | "error"
 
@@ -31,10 +31,7 @@ export function useMicrophone(): UseMicrophoneResult {
   })
 
   // Poll recorder state for metering values
-  const recorderState = useAudioRecorderState(
-    audioRecorder,
-    METERING_UPDATE_INTERVAL_MS
-  )
+  const recorderState = useAudioRecorderState(audioRecorder, METERING_UPDATE_INTERVAL_MS)
 
   // Convert metering from 0-1 to dB scale (-160 to 0) for compatibility
   const meteringLevel =
@@ -59,8 +56,7 @@ export function useMicrophone(): UseMicrophoneResult {
       setError(null)
 
       // Request permissions
-      const permissionStatus =
-        await AudioModule.requestRecordingPermissionsAsync()
+      const permissionStatus = await AudioModule.requestRecordingPermissionsAsync()
       if (!permissionStatus.granted) {
         setError("Microphone permission denied")
         setStatus("error")
@@ -108,7 +104,7 @@ export function useMicrophone(): UseMicrophoneResult {
       return () => {
         stopRecording()
       }
-    }, [startRecording, stopRecording])
+    }, [startRecording, stopRecording]),
   )
 
   return {

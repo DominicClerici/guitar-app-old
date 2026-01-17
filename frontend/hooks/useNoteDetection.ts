@@ -8,7 +8,6 @@ export type NoteDetectionStatus = "idle" | "requesting" | "recording" | "error"
 interface UseNoteDetectionOptions {
   bufferSize?: number
   minClarity?: number
-  updateIntervalMs?: number
 }
 
 interface UseNoteDetectionResult {
@@ -24,7 +23,6 @@ interface UseNoteDetectionResult {
 const DEFAULT_OPTIONS: Required<UseNoteDetectionOptions> = {
   bufferSize: 2048,
   minClarity: 0.9,
-  updateIntervalMs: 50,
 }
 
 export function useNoteDetection(options: UseNoteDetectionOptions = {}): UseNoteDetectionResult {
@@ -56,7 +54,8 @@ export function useNoteDetection(options: UseNoteDetectionOptions = {}): UseNote
     if (!analyser || !detector || !input || !audioContext) return
 
     const now = Date.now()
-    if (now - lastUpdateRef.current >= optionsRef.current.updateIntervalMs) {
+    const bufferDurationMs = (optionsRef.current.bufferSize / audioContext.sampleRate) * 1000
+    if (now - lastUpdateRef.current >= bufferDurationMs) {
       lastUpdateRef.current = now
 
       analyser.getFloatTimeDomainData(input)

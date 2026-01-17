@@ -9,6 +9,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -22,15 +23,18 @@ import {
 import { useStringCalibration } from "@/hooks/useStringCalibration"
 import { useStringDetection } from "@/hooks/useStringDetection"
 import {
+  clearActiveCalibration,
   deleteCalibration,
   getActiveCalibration,
   listCalibrations,
-  clearActiveCalibration,
   setActiveCalibration,
 } from "@/lib/audio/calibration-storage"
-import type { CalibrationPhase, CalibrationValidationResult, CalibrationWarning } from "@/lib/audio/calibration-types"
+import type {
+  CalibrationPhase,
+  CalibrationValidationResult,
+  CalibrationWarning,
+} from "@/lib/audio/calibration-types"
 import { STANDARD_TUNING_STRINGS } from "@/lib/audio/guitar-constants"
-import { Badge } from "@/components/ui/badge"
 
 const PHASE_LABELS: Record<CalibrationPhase, string> = {
   open: "Open Strings",
@@ -51,15 +55,32 @@ function getFretLabel(fret: number): string {
 
 function QualityBadge({ quality }: { quality: "good" | "acceptable" | "poor" }) {
   const variants: Record<typeof quality, { className: string; label: string }> = {
-    good: { className: "bg-green-500/20 text-green-700 dark:text-green-400 border-green-500/50", label: "Good" },
-    acceptable: { className: "bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 border-yellow-500/50", label: "Acceptable" },
-    poor: { className: "bg-red-500/20 text-red-700 dark:text-red-400 border-red-500/50", label: "Poor" },
+    good: {
+      className: "bg-green-500/20 text-green-700 dark:text-green-400 border-green-500/50",
+      label: "Good",
+    },
+    acceptable: {
+      className: "bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 border-yellow-500/50",
+      label: "Acceptable",
+    },
+    poor: {
+      className: "bg-red-500/20 text-red-700 dark:text-red-400 border-red-500/50",
+      label: "Poor",
+    },
   }
   const { className, label } = variants[quality]
-  return <Badge variant="outline" className={className}>{label}</Badge>
+  return (
+    <Badge variant="outline" className={className}>
+      {label}
+    </Badge>
+  )
 }
 
-function ValidationWarnings({ validationResult }: { validationResult: CalibrationValidationResult }) {
+function ValidationWarnings({
+  validationResult,
+}: {
+  validationResult: CalibrationValidationResult
+}) {
   const getSeverityStyles = (severity: CalibrationWarning["severity"]) => {
     switch (severity) {
       case "error":
@@ -237,11 +258,7 @@ export default function StringTestPage() {
       <Card className="space-y-4 p-4">
         <div className="flex items-center justify-between">
           <h2 className="font-semibold">Guitar Calibration</h2>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowCalibration(!showCalibration)}
-          >
+          <Button variant="ghost" size="sm" onClick={() => setShowCalibration(!showCalibration)}>
             {showCalibration ? "Hide" : "Show"}
           </Button>
         </div>
@@ -288,10 +305,7 @@ export default function StringTestPage() {
                     onChange={(e) => setGuitarName(e.target.value)}
                     className="max-w-[250px]"
                   />
-                  <Button
-                    onClick={handleStartCalibration}
-                    disabled={!guitarName.trim()}
-                  >
+                  <Button onClick={handleStartCalibration} disabled={!guitarName.trim()}>
                     Start Calibration
                   </Button>
                 </div>
@@ -306,7 +320,7 @@ export default function StringTestPage() {
                     </Button>
                   </div>
 
-                  <div className="rounded-lg bg-muted/50 p-3">
+                  <div className="bg-muted/50 rounded-lg p-3">
                     <div className="text-center text-lg font-semibold">
                       Phase {PHASE_NUMBERS[currentPhase]}/3: {PHASE_LABELS[currentPhase]}
                     </div>
@@ -317,9 +331,9 @@ export default function StringTestPage() {
                       <span>Overall Progress</span>
                       <span>{progress}%</span>
                     </div>
-                    <div className="h-2 overflow-hidden rounded-full bg-muted">
+                    <div className="bg-muted h-2 overflow-hidden rounded-full">
                       <div
-                        className="h-full bg-primary transition-all"
+                        className="bg-primary h-full transition-all"
                         style={{ width: `${progress}%` }}
                       />
                     </div>
@@ -331,9 +345,10 @@ export default function StringTestPage() {
                         <div className="flex items-center justify-between">
                           <div>
                             <h4 className="font-medium">
-                              Play: {getStringNameForNumber(currentStep.stringNumber)} - {getFretLabel(currentStep.fret)}
+                              Play: {getStringNameForNumber(currentStep.stringNumber)} -{" "}
+                              {getFretLabel(currentStep.fret)}
                             </h4>
-                            <p className="text-xs text-muted-foreground">
+                            <p className="text-muted-foreground text-xs">
                               Pluck {currentStep.currentPluck} of {currentStep.totalPlucks}
                             </p>
                           </div>
@@ -348,15 +363,19 @@ export default function StringTestPage() {
                             </Button>
                           </div>
                         </div>
-                        <p className="text-sm text-muted-foreground">
-                          Play the string{currentStep.fret > 0 ? ` at fret ${currentStep.fret}` : ""} and let it ring for at least half a second.
-                          Then mute and play again. You need to do this {plucksRequired} times.
+                        <p className="text-muted-foreground text-sm">
+                          Play the string
+                          {currentStep.fret > 0 ? ` at fret ${currentStep.fret}` : ""} and let it
+                          ring for at least half a second. Then mute and play again. You need to do
+                          this {plucksRequired} times.
                         </p>
 
                         <div className="space-y-1">
                           <div className="flex justify-between text-xs">
                             <span>Pluck Progress</span>
-                            <span>{currentStep.currentPluck} / {currentStep.totalPlucks}</span>
+                            <span>
+                              {currentStep.currentPluck} / {currentStep.totalPlucks}
+                            </span>
                           </div>
                           <div className="flex gap-1">
                             {Array.from({ length: plucksRequired }).map((_, i) => (
@@ -374,29 +393,39 @@ export default function StringTestPage() {
                           </div>
                         </div>
 
-                        <div className="space-y-2 rounded-md bg-muted/50 p-3">
-                          <div className="text-xs font-medium text-muted-foreground">Current Pluck Samples</div>
+                        <div className="bg-muted/50 space-y-2 rounded-md p-3">
+                          <div className="text-muted-foreground text-xs font-medium">
+                            Current Pluck Samples
+                          </div>
                           <div className="space-y-1">
                             <div className="flex justify-between text-xs">
                               <span>Attack (0-100ms)</span>
-                              <span>{currentStep.attackSamples} / {attackSamplesRequired}</span>
+                              <span>
+                                {currentStep.attackSamples} / {attackSamplesRequired}
+                              </span>
                             </div>
-                            <div className="h-2 overflow-hidden rounded-full bg-muted">
+                            <div className="bg-muted h-2 overflow-hidden rounded-full">
                               <div
                                 className="h-full bg-orange-500 transition-all"
-                                style={{ width: `${(currentStep.attackSamples / attackSamplesRequired) * 100}%` }}
+                                style={{
+                                  width: `${(currentStep.attackSamples / attackSamplesRequired) * 100}%`,
+                                }}
                               />
                             </div>
                           </div>
                           <div className="space-y-1">
                             <div className="flex justify-between text-xs">
                               <span>Sustain (300-500ms)</span>
-                              <span>{currentStep.sustainSamples} / {sustainSamplesRequired}</span>
+                              <span>
+                                {currentStep.sustainSamples} / {sustainSamplesRequired}
+                              </span>
                             </div>
-                            <div className="h-2 overflow-hidden rounded-full bg-muted">
+                            <div className="bg-muted h-2 overflow-hidden rounded-full">
                               <div
                                 className="h-full bg-blue-500 transition-all"
-                                style={{ width: `${(currentStep.sustainSamples / sustainSamplesRequired) * 100}%` }}
+                                style={{
+                                  width: `${(currentStep.sustainSamples / sustainSamplesRequired) * 100}%`,
+                                }}
                               />
                             </div>
                           </div>
@@ -408,7 +437,8 @@ export default function StringTestPage() {
                   {currentStep.type === "pluck-complete" && (
                     <Card className="border-blue-500 bg-blue-500/10 p-4">
                       <p className="text-sm text-blue-700 dark:text-blue-400">
-                        Pluck {currentStep.pluckNumber} of {currentStep.totalPlucks} complete! Mute the string and pluck again...
+                        Pluck {currentStep.pluckNumber} of {currentStep.totalPlucks} complete! Mute
+                        the string and pluck again...
                       </p>
                     </Card>
                   )}
@@ -416,7 +446,8 @@ export default function StringTestPage() {
                   {currentStep.type === "complete" && (
                     <Card className="border-green-500 bg-green-500/10 p-4">
                       <p className="text-sm text-green-700 dark:text-green-400">
-                        {getStringNameForNumber(currentStep.stringNumber)} ({getFretLabel(currentStep.fret)}) calibrated! Moving to next...
+                        {getStringNameForNumber(currentStep.stringNumber)} (
+                        {getFretLabel(currentStep.fret)}) calibrated! Moving to next...
                       </p>
                     </Card>
                   )}
@@ -426,7 +457,7 @@ export default function StringTestPage() {
                       <p className="text-sm font-medium text-green-700 dark:text-green-400">
                         Phase complete: {PHASE_LABELS[currentStep.phase]}
                       </p>
-                      <p className="text-xs text-green-600 dark:text-green-500 mt-1">
+                      <p className="mt-1 text-xs text-green-600 dark:text-green-500">
                         Moving to next phase...
                       </p>
                     </Card>
@@ -434,12 +465,12 @@ export default function StringTestPage() {
 
                   {currentStep.type === "error" && (
                     <Card className="border-destructive bg-destructive/10 p-4">
-                      <p className="text-sm text-destructive">{currentStep.message}</p>
+                      <p className="text-destructive text-sm">{currentStep.message}</p>
                     </Card>
                   )}
 
                   <div className="space-y-3">
-                    <div className="text-xs font-medium text-muted-foreground">
+                    <div className="text-muted-foreground text-xs font-medium">
                       Phase Progress - {PHASE_LABELS[currentPhase]}
                     </div>
                     <div className="grid grid-cols-6 gap-2">
@@ -460,7 +491,9 @@ export default function StringTestPage() {
                             }`}
                           >
                             <div className="font-medium">{stringNum}</div>
-                            <div className="text-muted-foreground">{totalSamples}/{totalSamplesRequired}</div>
+                            <div className="text-muted-foreground">
+                              {totalSamples}/{totalSamplesRequired}
+                            </div>
                           </div>
                         )
                       })}
@@ -481,11 +514,10 @@ export default function StringTestPage() {
                 <Card className="border-green-500 bg-green-500/10 p-4">
                   <div className="flex items-center justify-between">
                     <p className="text-green-700 dark:text-green-400">
-                      Calibration complete! &quot;{calibrationData.name}&quot; has been saved and set as active.
+                      Calibration complete! &quot;{calibrationData.name}&quot; has been saved and
+                      set as active.
                     </p>
-                    {validationResult && (
-                      <QualityBadge quality={validationResult.overallQuality} />
-                    )}
+                    {validationResult && <QualityBadge quality={validationResult.overallQuality} />}
                   </div>
                 </Card>
                 {validationResult && validationResult.warnings.length > 0 && (
@@ -505,7 +537,7 @@ export default function StringTestPage() {
         >
           {isRequesting ? "Requesting..." : isRecording ? "Stop Listening" : "Start Listening"}
         </Button>
-        <span className="text-sm text-muted-foreground">
+        <span className="text-muted-foreground text-sm">
           Status: <span className="font-medium">{status}</span>
           {selectedCalibrationId && (
             <span className="ml-2">
@@ -544,7 +576,7 @@ export default function StringTestPage() {
                 {stringConfidence > 0 ? `${(stringConfidence * 100).toFixed(0)}%` : "—"}
               </span>
             </div>
-            <div className="h-3 rounded-full bg-muted overflow-hidden">
+            <div className="bg-muted h-3 overflow-hidden rounded-full">
               <div
                 className={`h-full transition-all ${
                   stringConfidence >= 0.75
@@ -558,14 +590,14 @@ export default function StringTestPage() {
                 style={{ width: `${Math.min(stringConfidence * 100, 100)}%` }}
               />
             </div>
-            <div className="flex justify-between text-xs text-muted-foreground">
+            <div className="text-muted-foreground flex justify-between text-xs">
               <span>Uncertain</span>
               <span>Confident</span>
             </div>
           </div>
 
           {scoreDifference < 0.15 && secondBestString !== null && stringNumber !== null && (
-            <div className="text-xs text-muted-foreground border-t pt-2">
+            <div className="text-muted-foreground border-t pt-2 text-xs">
               Also possible: String {secondBestString} ({(secondBestConfidence * 100).toFixed(0)}%)
             </div>
           )}
@@ -588,25 +620,25 @@ export default function StringTestPage() {
         <h2 className="font-semibold">Debug Info</h2>
         <div className="grid gap-4 md:grid-cols-3">
           <div>
-            <div className="mb-1 text-xs text-muted-foreground">Clarity Meter</div>
-            <div className="h-2 overflow-hidden rounded-full bg-muted">
+            <div className="text-muted-foreground mb-1 text-xs">Clarity Meter</div>
+            <div className="bg-muted h-2 overflow-hidden rounded-full">
               <div
-                className="h-full bg-primary transition-all"
+                className="bg-primary h-full transition-all"
                 style={{ width: `${Math.min(clarity * 100, 100)}%` }}
               />
             </div>
           </div>
           <div>
-            <div className="mb-1 text-xs text-muted-foreground">String Confidence Meter</div>
-            <div className="h-2 overflow-hidden rounded-full bg-muted">
+            <div className="text-muted-foreground mb-1 text-xs">String Confidence Meter</div>
+            <div className="bg-muted h-2 overflow-hidden rounded-full">
               <div
-                className="h-full bg-primary transition-all"
+                className="bg-primary h-full transition-all"
                 style={{ width: `${Math.min(stringConfidence * 100, 100)}%` }}
               />
             </div>
           </div>
           <div>
-            <div className="mb-1 text-xs text-muted-foreground">Pitch Range</div>
+            <div className="text-muted-foreground mb-1 text-xs">Pitch Range</div>
             <div className="font-mono text-xs">
               {pitch > 0 ? (
                 <>
@@ -625,18 +657,18 @@ export default function StringTestPage() {
 
         <Accordion type="single" collapsible className="w-full">
           <AccordionItem value="detailed-view" className="border-none">
-            <AccordionTrigger className="text-sm py-2 hover:no-underline">
+            <AccordionTrigger className="py-2 text-sm hover:no-underline">
               Detailed Analysis
             </AccordionTrigger>
             <AccordionContent>
               <div className="space-y-4 pt-2">
                 <div className="space-y-2">
-                  <div className="text-xs font-medium text-muted-foreground">Candidate Scores</div>
+                  <div className="text-muted-foreground text-xs font-medium">Candidate Scores</div>
                   <div className="space-y-1">
                     {allCandidateScores.length > 0 ? (
                       allCandidateScores.map((candidate, index) => {
                         const stringProfile = STANDARD_TUNING_STRINGS.find(
-                          (s) => s.stringNumber === candidate.stringNumber
+                          (s) => s.stringNumber === candidate.stringNumber,
                         )
                         const stringLabel = stringProfile
                           ? `${stringProfile.name} (S${candidate.stringNumber})`
@@ -653,7 +685,7 @@ export default function StringTestPage() {
                                 {(candidate.totalScore * 100).toFixed(1)}%
                               </span>
                             </div>
-                            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                            <div className="bg-muted h-1.5 overflow-hidden rounded-full">
                               <div
                                 className={`h-full transition-all ${
                                   index === 0 ? "bg-primary" : "bg-muted-foreground/40"
@@ -665,31 +697,27 @@ export default function StringTestPage() {
                         )
                       })
                     ) : (
-                      <div className="text-xs text-muted-foreground">No candidates detected</div>
+                      <div className="text-muted-foreground text-xs">No candidates detected</div>
                     )}
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4 text-xs">
                   <div className="space-y-2">
-                    <div className="font-medium text-muted-foreground">Inharmonicity</div>
+                    <div className="text-muted-foreground font-medium">Inharmonicity</div>
                     <div className="grid grid-cols-2 gap-1">
                       <span className="text-muted-foreground">Measured:</span>
                       <span className="font-mono">
-                        {measuredInharmonicity > 0
-                          ? measuredInharmonicity.toExponential(2)
-                          : "—"}
+                        {measuredInharmonicity > 0 ? measuredInharmonicity.toExponential(2) : "—"}
                       </span>
                       <span className="text-muted-foreground">Expected:</span>
                       <span className="font-mono">
-                        {expectedInharmonicity > 0
-                          ? expectedInharmonicity.toExponential(2)
-                          : "—"}
+                        {expectedInharmonicity > 0 ? expectedInharmonicity.toExponential(2) : "—"}
                       </span>
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <div className="font-medium text-muted-foreground">Spectral</div>
+                    <div className="text-muted-foreground font-medium">Spectral</div>
                     <div className="grid grid-cols-2 gap-1">
                       <span className="text-muted-foreground">Centroid:</span>
                       <span className="font-mono">

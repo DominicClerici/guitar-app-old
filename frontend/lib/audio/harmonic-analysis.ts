@@ -37,7 +37,7 @@ export function getOptimalHarmonicCount(fundamentalFreq: number, sampleRate: num
 
 export function computeMagnitudeSpectrum(
   analyser: AnalyserNode,
-  fftSize: number
+  fftSize: number,
 ): { frequencies: Float32Array; magnitudes: Float32Array } {
   const frequencyData = new Float32Array(fftSize / 2)
   analyser.getFloatFrequencyData(frequencyData)
@@ -60,7 +60,7 @@ function findPeakInRange(
   frequencies: Float32Array,
   magnitudes: Float32Array,
   targetFreq: number,
-  range: number
+  range: number,
 ): { freq: number; amplitude: number } | null {
   const minFreq = targetFreq * (1 - range)
   const maxFreq = targetFreq * (1 + range)
@@ -86,7 +86,7 @@ function findPeakInRange(
 function parabolicInterpolation(
   frequencies: Float32Array,
   magnitudes: Float32Array,
-  peakIdx: number
+  peakIdx: number,
 ): number {
   if (peakIdx <= 0 || peakIdx >= magnitudes.length - 1) {
     return frequencies[peakIdx]
@@ -101,7 +101,7 @@ function parabolicInterpolation(
     return frequencies[peakIdx]
   }
 
-  const p = 0.5 * (alpha - gamma) / denominator
+  const p = (0.5 * (alpha - gamma)) / denominator
   const freqStep = frequencies[1] - frequencies[0]
   return frequencies[peakIdx] + p * freqStep
 }
@@ -110,7 +110,7 @@ export function detectHarmonicPeaks(
   frequencies: Float32Array,
   magnitudes: Float32Array,
   fundamentalFreq: number,
-  numHarmonics: number = DEFAULT_NUM_HARMONICS
+  numHarmonics: number = DEFAULT_NUM_HARMONICS,
 ): HarmonicPeak[] {
   const peaks: HarmonicPeak[] = []
 
@@ -135,7 +135,7 @@ export function detectHarmonicPeaks(
 
 export function calculateSpectralFeatures(
   frequencies: Float32Array,
-  magnitudes: Float32Array
+  magnitudes: Float32Array,
 ): SpectralFeatures {
   let totalMagnitude = 0
   let weightedSum = 0
@@ -177,9 +177,7 @@ export function calculateSpectralFeatures(
   }
 
   const flatness =
-    count > 0 && arithmeticSum > 0
-      ? Math.exp(geometricSum / count) / (arithmeticSum / count)
-      : 0
+    count > 0 && arithmeticSum > 0 ? Math.exp(geometricSum / count) / (arithmeticSum / count) : 0
 
   return { centroid, rolloff, spread, flatness }
 }
@@ -234,7 +232,7 @@ export function calculateInharmonicityCoefficient(peaks: HarmonicPeak[]): number
 
 export function getNormalizedHarmonicAmplitudes(
   peaks: HarmonicPeak[],
-  numHarmonics: number = DEFAULT_NUM_HARMONICS
+  numHarmonics: number = DEFAULT_NUM_HARMONICS,
 ): number[] {
   const fundamental = peaks.find((p) => p.harmonicNumber === 1)
   if (!fundamental || fundamental.amplitude < MIN_PEAK_AMPLITUDE) {

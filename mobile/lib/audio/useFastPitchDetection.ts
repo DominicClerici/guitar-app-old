@@ -1,10 +1,7 @@
 import { useFocusEffect } from "expo-router"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { PermissionsAndroid, Platform } from "react-native"
-import PitchDetectionModule, {
-  PitchAlgorithm,
-  PitchEvent,
-} from "../../modules/pitch-detection"
+import PitchDetectionModule, { PitchAlgorithm, PitchEvent } from "../../modules/pitch-detection"
 
 export { PitchAlgorithm }
 

@@ -134,13 +134,18 @@ function getAveragedTemporalSamples(multiPluck: MultiPluckSamples): TemporalSamp
       }
     }
     if (samplesAtIndex.length > 0) {
-      const avgInharmonicity = samplesAtIndex.reduce((a, b) => a + b.inharmonicity, 0) / samplesAtIndex.length
+      const avgInharmonicity =
+        samplesAtIndex.reduce((a, b) => a + b.inharmonicity, 0) / samplesAtIndex.length
       const avgCentroid = samplesAtIndex.reduce((a, b) => a + b.centroid, 0) / samplesAtIndex.length
       const avgHarmonics = samplesAtIndex[0].harmonicProfile.map((_, i) => {
         const values = samplesAtIndex.map((s) => s.harmonicProfile[i] ?? 0)
         return values.reduce((a, b) => a + b, 0) / values.length
       })
-      attackSamples.push({ inharmonicity: avgInharmonicity, centroid: avgCentroid, harmonicProfile: avgHarmonics })
+      attackSamples.push({
+        inharmonicity: avgInharmonicity,
+        centroid: avgCentroid,
+        harmonicProfile: avgHarmonics,
+      })
     }
   }
 
@@ -152,13 +157,18 @@ function getAveragedTemporalSamples(multiPluck: MultiPluckSamples): TemporalSamp
       }
     }
     if (samplesAtIndex.length > 0) {
-      const avgInharmonicity = samplesAtIndex.reduce((a, b) => a + b.inharmonicity, 0) / samplesAtIndex.length
+      const avgInharmonicity =
+        samplesAtIndex.reduce((a, b) => a + b.inharmonicity, 0) / samplesAtIndex.length
       const avgCentroid = samplesAtIndex.reduce((a, b) => a + b.centroid, 0) / samplesAtIndex.length
       const avgHarmonics = samplesAtIndex[0].harmonicProfile.map((_, i) => {
         const values = samplesAtIndex.map((s) => s.harmonicProfile[i] ?? 0)
         return values.reduce((a, b) => a + b, 0) / values.length
       })
-      sustainSamples.push({ inharmonicity: avgInharmonicity, centroid: avgCentroid, harmonicProfile: avgHarmonics })
+      sustainSamples.push({
+        inharmonicity: avgInharmonicity,
+        centroid: avgCentroid,
+        harmonicProfile: avgHarmonics,
+      })
     }
   }
 
@@ -373,7 +383,7 @@ export function useStringCalibration(
           if (attackSamples.length > 0 || sustainSamples.length > 0) {
             const totalSampleCount = multiPluckSamples.plucks.reduce(
               (acc, p) => acc + p.attack.length + p.sustain.length,
-              0
+              0,
             )
             fretProfiles.push({
               fret,
@@ -440,7 +450,7 @@ export function useStringCalibration(
       const sustainProfile = buildTemporalProfile(openSustain)
       const totalSampleCount = openMultiPluck.plucks.reduce(
         (acc, p) => acc + p.attack.length + p.sustain.length,
-        0
+        0,
       )
 
       strings.push({
@@ -497,7 +507,10 @@ export function useStringCalibration(
 
     const firstString = STRING_ORDER[0]
     const sampleKey = getSampleKey(firstString, nextFret)
-    samplesRef.current.set(sampleKey, { plucks: [{ attack: [], sustain: [] }], currentPluckIndex: 0 })
+    samplesRef.current.set(sampleKey, {
+      plucks: [{ attack: [], sustain: [] }],
+      currentPluckIndex: 0,
+    })
 
     setCurrentStringNumber(firstString)
     setCurrentStep({
@@ -538,7 +551,10 @@ export function useStringCalibration(
     const nextString = STRING_ORDER[currentStringIndexRef.current]
 
     const sampleKey = getSampleKey(nextString, currentFretValue)
-    samplesRef.current.set(sampleKey, { plucks: [{ attack: [], sustain: [] }], currentPluckIndex: 0 })
+    samplesRef.current.set(sampleKey, {
+      plucks: [{ attack: [], sustain: [] }],
+      currentPluckIndex: 0,
+    })
 
     setCurrentStringNumber(nextString)
     setCurrentStep({
@@ -678,7 +694,7 @@ export function useStringCalibration(
             for (const [key, multiPluck] of samplesRef.current) {
               const totalSamples = multiPluck.plucks.reduce(
                 (acc, p) => acc + p.attack.length + p.sustain.length,
-                0
+                0,
               )
               countsMap.set(key, totalSamples)
             }
@@ -761,7 +777,10 @@ export function useStringCalibration(
         const firstString = STRING_ORDER[0]
 
         const sampleKey = getSampleKey(firstString, firstFret)
-        samplesRef.current.set(sampleKey, { plucks: [{ attack: [], sustain: [] }], currentPluckIndex: 0 })
+        samplesRef.current.set(sampleKey, {
+          plucks: [{ attack: [], sustain: [] }],
+          currentPluckIndex: 0,
+        })
 
         setCurrentPhase(firstPhase)
         setCurrentFret(firstFret)
