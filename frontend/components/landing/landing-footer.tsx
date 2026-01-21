@@ -57,7 +57,7 @@ export default function LandingFooter() {
                 {[...Array(6)].map((_, i) => (
                   <div
                     key={i}
-                    className="bg-foreground hover:bg-landing-accent h-6 transition-all duration-300"
+                    className="bg-foreground hover:bg-primary h-6 transition-all duration-300"
                     style={{
                       width: `${1 + i * 0.3}px`,
                     }}
@@ -81,7 +81,7 @@ export default function LandingFooter() {
                     href={social.href}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="bg-muted/50 text-muted-foreground hover:bg-landing-accent/10 hover:text-landing-accent flex size-9 items-center justify-center rounded-lg transition-colors"
+                    className="bg-muted/50 text-muted-foreground hover:bg-primary/10 hover:text-primary flex size-9 items-center justify-center rounded-lg transition-colors"
                     aria-label={social.label}
                   >
                     <Icon className="size-4" />
@@ -117,7 +117,7 @@ export default function LandingFooter() {
 
           <div className="text-muted-foreground flex items-center gap-2 text-sm">
             <span>Made with</span>
-            <span className="text-landing-accent">♪</span>
+            <span className="text-primary">♪</span>
             <span>for guitarists</span>
           </div>
         </div>

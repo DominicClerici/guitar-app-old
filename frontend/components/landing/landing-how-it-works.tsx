@@ -9,12 +9,12 @@ const steps = [
       "Use your computer's microphone, a USB guitar interface, or even your phone. StringFlow adapts to your setup.",
     visual: (
       <div className="flex items-center justify-center gap-4">
-        <div className="border-landing-accent/30 bg-landing-accent/5 flex size-14 items-center justify-center rounded-xl border-2 border-dashed">
-          <Mic className="text-landing-accent size-6" />
+        <div className="border-primary/30 bg-primary/5 flex size-14 items-center justify-center rounded-xl border-2 border-dashed">
+          <Mic className="text-primary size-6" />
         </div>
         <div className="text-muted-foreground">or</div>
-        <div className="border-landing-accent/30 bg-landing-accent/5 flex size-14 items-center justify-center rounded-xl border-2 border-dashed">
-          <Cable className="text-landing-accent size-6" />
+        <div className="border-primary/30 bg-primary/5 flex size-14 items-center justify-center rounded-xl border-2 border-dashed">
+          <Cable className="text-primary size-6" />
         </div>
       </div>
     ),
@@ -30,7 +30,7 @@ const steps = [
         {["E", "A", "D", "G", "B", "E"].map((note, i) => (
           <div
             key={i}
-            className="bg-landing-accent/10 text-landing-accent flex h-12 w-8 items-center justify-center rounded-lg font-mono text-sm font-bold"
+            className="bg-primary/10 text-primary flex h-12 w-8 items-center justify-center rounded-lg font-mono text-sm font-bold"
           >
             {note}
           </div>
@@ -54,9 +54,9 @@ const steps = [
         </div>
         <div className="flex items-center gap-3">
           <div className="bg-muted h-2 w-32 overflow-hidden rounded-full">
-            <div className="bg-landing-accent h-full w-[92%] rounded-full" />
+            <div className="bg-primary h-full w-[92%] rounded-full" />
           </div>
-          <span className="text-landing-accent text-sm">Pitch</span>
+          <span className="text-primary text-sm">Pitch</span>
         </div>
         <div className="flex items-center gap-3">
           <div className="bg-muted h-2 w-32 overflow-hidden rounded-full">
@@ -76,13 +76,9 @@ const steps = [
     visual: (
       <div className="flex items-end gap-2">
         {[40, 55, 45, 65, 80, 75, 95].map((height, i) => (
-          <div
-            key={i}
-            className="bg-landing-accent/20 w-6 rounded-t-sm"
-            style={{ height: `${height}%` }}
-          >
+          <div key={i} className="bg-primary/20 w-6 rounded-t-sm" style={{ height: `${height}%` }}>
             <div
-              className="bg-landing-accent w-full rounded-t-sm"
+              className="bg-primary w-full rounded-t-sm"
               style={{ height: `${Math.min(100, height + 10)}%` }}
             />
           </div>
@@ -97,13 +93,13 @@ export default function LandingHowItWorks() {
     <section id="how-it-works" className="relative py-24 lg:py-32">
       <div className="mx-auto max-w-7xl px-6 lg:px-8">
         <div className="mx-auto max-w-2xl text-center">
-          <div className="border-landing-accent/20 bg-landing-accent/5 text-muted-foreground mb-4 inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm">
-            <span className="bg-landing-accent size-1.5 rounded-full" />
+          <div className="border-primary/20 bg-primary/5 text-muted-foreground mb-4 inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm">
+            <span className="bg-primary size-1.5 rounded-full" />
             How It Works
           </div>
 
-          <h2 className="text-3xl font-bold tracking-tight sm:text-4xl lg:text-5xl">
-            Start playing in <span className="text-landing-accent">minutes</span>
+          <h2 className="font-display text-3xl font-bold tracking-tight sm:text-4xl lg:text-5xl">
+            Start playing in <span className="text-primary">minutes</span>
           </h2>
 
           <p className="text-muted-foreground mt-6 text-lg leading-relaxed">
@@ -113,7 +109,7 @@ export default function LandingHowItWorks() {
 
         <div className="mt-20">
           <div className="relative">
-            <div className="via-landing-accent/30 absolute top-0 left-8 hidden h-full w-px bg-gradient-to-b from-transparent to-transparent lg:left-1/2 lg:block" />
+            <div className="via-primary/30 absolute top-0 left-8 hidden h-full w-px bg-gradient-to-b from-transparent to-transparent lg:left-1/2 lg:block" />
 
             <div className="space-y-12 lg:space-y-24">
               {steps.map((step, index) => {
@@ -131,9 +127,7 @@ export default function LandingHowItWorks() {
                         <div
                           className={`inline-flex items-center gap-3 ${isEven ? "lg:flex-row-reverse" : ""}`}
                         >
-                          <span className="text-landing-accent font-mono text-sm">
-                            {step.number}
-                          </span>
+                          <span className="text-primary font-mono text-sm">{step.number}</span>
                           <ArrowRight
                             className={`text-muted-foreground size-4 ${isEven ? "lg:rotate-180" : ""}`}
                           />
@@ -144,8 +138,8 @@ export default function LandingHowItWorks() {
                         <p className="text-muted-foreground mt-3">{step.description}</p>
                       </div>
 
-                      <div className="bg-card shadow-landing-accent/10 relative z-10 flex size-16 shrink-0 items-center justify-center rounded-2xl border shadow-lg">
-                        <Icon className="text-landing-accent size-7" />
+                      <div className="bg-card shadow-primary/10 relative z-10 flex size-16 shrink-0 items-center justify-center rounded-2xl border shadow-lg">
+                        <Icon className="text-primary size-7" />
                       </div>
 
                       <div className="bg-card/50 flex h-32 flex-1 items-center justify-center rounded-2xl border p-6">

@@ -1,16 +1,17 @@
+import { cn } from "@/lib/utils"
 import { Slot } from "@radix-ui/react-slot"
 import { cva, type VariantProps } from "class-variance-authority"
-import * as React from "react"
-
-import { cn } from "@/lib/utils"
 import { Loader2 } from "lucide-react"
+import Link from "next/link"
+import * as React from "react"
+import HoverArrow from "./hover-arrow/hover-arrow"
 
 const buttonVariants = cva(
-  "inline-flex items-center relative justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
+  "inline-flex items-center relative justify-center gap-2 whitespace-nowrap rounded-md font-medium transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none cursor-pointer shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90",
+        default: "bg-primary text-primary-foreground hover:bg-primary-hover",
         destructive:
           "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60",
         outline:
@@ -20,9 +21,10 @@ const buttonVariants = cva(
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {
-        default: "h-9 px-4 py-2 has-[>svg]:px-3",
-        sm: "h-8 rounded-md gap-1.5 px-3 has-[>svg]:px-2.5",
-        lg: "h-10 rounded-md px-6 has-[>svg]:px-4",
+        default: "h-9 px-4 py-2 has-[>svg]:px-3 [&_svg:not([class*='size-'])]:size-4 text-sm",
+        sm: "h-8 rounded-md gap-1.5 px-3 has-[>svg]:px-2.5 [&_svg:not([class*='size-'])]:size-3 text-sm",
+        lg: "h-10 rounded-md px-6 has-[>svg]:px-4 [&_svg:not([class*='size-'])]:size-4 text-sm",
+        xl: "h-12 rounded-md px-8 has-[>svg]:px-6 [&_svg:not([class*='size-'])]:size-4.5 text-base",
         icon: "size-9",
         "icon-sm": "size-8",
         "icon-lg": "size-10",
@@ -41,26 +43,19 @@ function Button({
   size = "default",
   asChild = false,
   isLoading = false,
-  hoverArrow = true,
+  hoverArrow = false,
+  href,
   ...props
 }: React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean
     isLoading?: boolean
     hoverArrow?: boolean
+    href?: string
   }) {
   const Comp = asChild ? Slot : "button"
 
-  const content = isLoading ? (
-    <>
-      <Loader2 className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-spin" />
-      <div className="opacity-0">{props.children}</div>
-    </>
-  ) : (
-    props.children
-  )
-
-  return (
+  const buttonContent = (
     <Comp
       data-slot="button"
       data-variant={variant}
@@ -73,9 +68,27 @@ function Button({
       disabled={isLoading || props.disabled}
       {...props}
     >
-      {content}
+      {isLoading ? (
+        <>
+          <Loader2 className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-spin" />
+          <div className="opacity-0">
+            {props.children} {hoverArrow && <HoverArrow overrideGroupName />}
+          </div>
+        </>
+      ) : (
+        <>
+          {props.children}
+          {hoverArrow && <HoverArrow overrideGroupName />}
+        </>
+      )}
     </Comp>
   )
+
+  if (href) {
+    return <Link href={href}>{buttonContent}</Link>
+  }
+
+  return buttonContent
 }
 
 export { Button, buttonVariants }

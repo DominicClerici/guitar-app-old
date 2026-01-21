@@ -44,16 +44,16 @@ function FeatureCard({ feature, index }: { feature: (typeof features)[0]; index:
 
   return (
     <div
-      className="group bg-card/50 hover:border-landing-accent/30 hover:shadow-landing-accent/5 relative overflow-hidden rounded-2xl border p-6 transition-all duration-300 hover:shadow-lg"
+      className="group bg-card/50 hover:border-primary/30 hover:shadow-primary/5 relative overflow-hidden rounded-2xl border p-6 transition-all duration-300 hover:shadow-lg"
       style={{
         animationDelay: `${index * 100}ms`,
       }}
     >
-      <div className="bg-landing-accent/5 absolute -top-8 -right-8 size-32 rounded-full transition-transform duration-500 group-hover:scale-150" />
+      <div className="bg-primary/5 absolute -top-8 -right-8 size-32 rounded-full transition-transform duration-500 group-hover:scale-150" />
 
       <div className="relative">
-        <div className="bg-landing-accent/10 group-hover:bg-landing-accent/20 mb-4 flex size-12 items-center justify-center rounded-xl transition-colors duration-300">
-          <Icon className="text-landing-accent size-6" />
+        <div className="bg-primary/10 group-hover:bg-primary/20 mb-4 flex size-12 items-center justify-center rounded-xl transition-colors duration-300">
+          <Icon className="text-primary size-6" />
         </div>
 
         <h3 className="mb-2 text-lg font-semibold">{feature.title}</h3>
@@ -71,13 +71,13 @@ export default function LandingFeatures() {
 
       <div className="relative mx-auto max-w-7xl px-6 lg:px-8">
         <div className="mx-auto max-w-2xl text-center">
-          <div className="border-landing-accent/20 bg-landing-accent/5 text-muted-foreground mb-4 inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm">
-            <span className="bg-landing-accent size-1.5 rounded-full" />
+          <div className="border-primary/20 bg-primary/5 text-muted-foreground mb-4 inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm">
+            <span className="bg-primary size-1.5 rounded-full" />
             Features
           </div>
 
-          <h2 className="text-3xl font-bold tracking-tight sm:text-4xl lg:text-5xl">
-            Everything you need to <span className="text-landing-accent">master the guitar</span>
+          <h2 className="font-display text-3xl font-bold tracking-tight sm:text-4xl lg:text-5xl">
+            Everything you need to <span className="text-primary">master the guitar</span>
           </h2>
 
           <p className="text-muted-foreground mt-6 text-lg leading-relaxed">

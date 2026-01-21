@@ -38,24 +38,24 @@ function TestimonialCard({ testimonial }: { testimonial: (typeof testimonials)[0
   const parts = testimonial.quote.split(testimonial.highlight)
 
   return (
-    <div className="group bg-card hover:border-landing-accent/30 relative overflow-hidden rounded-2xl border p-6 transition-all duration-300 hover:shadow-lg">
-      <Quote className="text-landing-accent/5 absolute -top-2 -right-2 size-24 transition-transform duration-500 group-hover:scale-110" />
+    <div className="group bg-card hover:border-primary/30 relative overflow-hidden rounded-2xl border p-6 transition-all duration-300 hover:shadow-lg">
+      <Quote className="text-primary/5 absolute -top-2 -right-2 size-24 transition-transform duration-500 group-hover:scale-110" />
 
       <div className="relative">
         <div className="mb-4 flex gap-1">
           {[...Array(testimonial.rating)].map((_, i) => (
-            <Star key={i} className="fill-landing-accent text-landing-accent size-4" />
+            <Star key={i} className="fill-primary text-primary size-4" />
           ))}
         </div>
 
         <blockquote className="text-foreground/90 text-base leading-relaxed">
           &ldquo;{parts[0]}
-          <span className="text-landing-accent font-medium">{testimonial.highlight}</span>
+          <span className="text-primary font-medium">{testimonial.highlight}</span>
           {parts[1]}&rdquo;
         </blockquote>
 
         <div className="mt-6 flex items-center gap-3">
-          <div className="bg-landing-accent/10 text-landing-accent flex size-10 items-center justify-center rounded-full font-semibold">
+          <div className="bg-primary/10 text-primary flex size-10 items-center justify-center rounded-full font-semibold">
             {testimonial.author[0]}
           </div>
           <div>
@@ -75,13 +75,13 @@ export default function LandingTestimonials() {
 
       <div className="relative mx-auto max-w-7xl px-6 lg:px-8">
         <div className="mx-auto max-w-2xl text-center">
-          <div className="border-landing-accent/20 bg-landing-accent/5 text-muted-foreground mb-4 inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm">
-            <span className="bg-landing-accent size-1.5 rounded-full" />
+          <div className="border-primary/20 bg-primary/5 text-muted-foreground mb-4 inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm">
+            <span className="bg-primary size-1.5 rounded-full" />
             Testimonials
           </div>
 
-          <h2 className="text-3xl font-bold tracking-tight sm:text-4xl lg:text-5xl">
-            Loved by <span className="text-landing-accent">guitarists</span> everywhere
+          <h2 className="font-display text-3xl font-bold tracking-tight sm:text-4xl lg:text-5xl">
+            Loved by <span className="text-primary">guitarists</span> everywhere
           </h2>
 
           <p className="text-muted-foreground mt-6 text-lg leading-relaxed">
@@ -100,9 +100,7 @@ export default function LandingTestimonials() {
             <div className="grid grid-cols-2 gap-8 lg:grid-cols-4">
               {stats.map((stat) => (
                 <div key={stat.label} className="text-center">
-                  <div className="text-landing-accent text-3xl font-bold lg:text-4xl">
-                    {stat.value}
-                  </div>
+                  <div className="text-primary text-3xl font-bold lg:text-4xl">{stat.value}</div>
                   <div className="text-muted-foreground mt-2 text-sm">{stat.label}</div>
                 </div>
               ))}

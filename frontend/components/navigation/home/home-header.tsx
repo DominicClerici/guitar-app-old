@@ -52,16 +52,16 @@ export default function HomeHeader() {
 
         <div className="hidden items-center gap-3 md:flex">
           {user ? (
-            <Button asChild>
-              <Link href="/dashboard">Go to Dashboard</Link>
+            <Button href="/dashboard" hoverArrow>
+              Go to Dashboard
             </Button>
           ) : (
             <>
-              <Button variant="ghost" asChild>
-                <Link href="/login">Sign In</Link>
+              <Button variant="ghost" href="/login">
+                Sign In
               </Button>
-              <Button asChild className="bg-landing-accent hover:bg-landing-accent-dark">
-                <Link href="/sign-up">Get Started</Link>
+              <Button href="/sign-up" hoverArrow>
+                Get Started
               </Button>
             </>
           )}
@@ -103,16 +103,16 @@ export default function HomeHeader() {
             </Link>
             <div className="mt-4 flex flex-col gap-3 border-t pt-4">
               {user ? (
-                <Button asChild>
-                  <Link href="/dashboard">Go to Dashboard</Link>
+                <Button href="/dashboard" hoverArrow>
+                  Go to Dashboard
                 </Button>
               ) : (
                 <>
-                  <Button variant="ghost" asChild>
-                    <Link href="/login">Sign In</Link>
+                  <Button variant="ghost" href="/login">
+                    Sign In
                   </Button>
-                  <Button asChild className="bg-landing-accent hover:bg-landing-accent-dark">
-                    <Link href="/sign-up">Get Started</Link>
+                  <Button href="/sign-up" hoverArrow>
+                    Get Started
                   </Button>
                 </>
               )}
