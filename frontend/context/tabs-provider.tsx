@@ -40,42 +40,157 @@ interface InstrumentConfig {
 }
 
 const GUITAR_12_STRING_NOTES = [
-  "Ab0", "Ab1", "Ab2", "Ab3", "Ab4", "Ab5", "Ab6",
-  "A0", "A1", "A2", "A3", "A4", "A5", "A6",
-  "Bb0", "Bb1", "Bb2", "Bb3", "Bb4", "Bb5", "Bb6",
-  "B0", "B1", "B2", "B3", "B4", "B5", "B6",
-  "C0", "C1", "C2", "C3", "C4", "C5", "C6", "C7",
-  "Db0", "Db1", "Db2", "Db3", "Db4", "Db5", "Db6",
-  "D0", "D1", "D2", "D3", "D4", "D5", "D6",
-  "Eb0", "Eb1", "Eb2", "Eb3", "Eb4", "Eb5", "Eb6",
-  "E0", "E1", "E2", "E3", "E4", "E5", "E6",
-  "F0", "F1", "F2", "F3", "F4", "F5", "F6",
-  "Gb0", "Gb1", "Gb2", "Gb3", "Gb4", "Gb5", "Gb6",
-  "G0", "G1", "G2", "G3", "G4", "G5", "G6",
+  "Ab0",
+  "Ab1",
+  "Ab2",
+  "Ab3",
+  "Ab4",
+  "Ab5",
+  "Ab6",
+  "A0",
+  "A1",
+  "A2",
+  "A3",
+  "A4",
+  "A5",
+  "A6",
+  "Bb0",
+  "Bb1",
+  "Bb2",
+  "Bb3",
+  "Bb4",
+  "Bb5",
+  "Bb6",
+  "B0",
+  "B1",
+  "B2",
+  "B3",
+  "B4",
+  "B5",
+  "B6",
+  "C0",
+  "C1",
+  "C2",
+  "C3",
+  "C4",
+  "C5",
+  "C6",
+  "C7",
+  "Db0",
+  "Db1",
+  "Db2",
+  "Db3",
+  "Db4",
+  "Db5",
+  "Db6",
+  "D0",
+  "D1",
+  "D2",
+  "D3",
+  "D4",
+  "D5",
+  "D6",
+  "Eb0",
+  "Eb1",
+  "Eb2",
+  "Eb3",
+  "Eb4",
+  "Eb5",
+  "Eb6",
+  "E0",
+  "E1",
+  "E2",
+  "E3",
+  "E4",
+  "E5",
+  "E6",
+  "F0",
+  "F1",
+  "F2",
+  "F3",
+  "F4",
+  "F5",
+  "F6",
+  "Gb0",
+  "Gb1",
+  "Gb2",
+  "Gb3",
+  "Gb4",
+  "Gb5",
+  "Gb6",
+  "G0",
+  "G1",
+  "G2",
+  "G3",
+  "G4",
+  "G5",
+  "G6",
 ]
 
 const GUITAR_ACOUSTIC_NOTES = [
-  "Ab1", "Ab2", "Ab3",
-  "Bb1", "Bb2", "Bb3",
-  "C2", "C3", "C4",
-  "D2", "D3",
-  "E1", "E2", "E3", "E4",
-  "Gb1", "Gb2", "Gb3",
+  "Ab1",
+  "Ab2",
+  "Ab3",
+  "Bb1",
+  "Bb2",
+  "Bb3",
+  "C2",
+  "C3",
+  "C4",
+  "D2",
+  "D3",
+  "E1",
+  "E2",
+  "E3",
+  "E4",
+  "Gb1",
+  "Gb2",
+  "Gb3",
 ]
 
 const GUITAR_CLASSICAL_NOTES = [
-  "Ab2", "Ab3",
-  "A1", "A2", "A3", "A4",
-  "Bb2", "Bb3",
-  "B1", "B2", "B3", "B4",
-  "C1", "C2", "C3", "C4", "C5",
-  "Db1", "Db2", "Db3",
-  "D1", "D2", "D3", "D4", "D5",
-  "Eb1", "Eb2", "Eb3",
-  "E1", "E2", "E3", "E4",
-  "F1", "F2", "F3", "F4",
-  "Gb2", "Gb3",
-  "G1", "G2", "G3", "G4",
+  "Ab2",
+  "Ab3",
+  "A1",
+  "A2",
+  "A3",
+  "A4",
+  "Bb2",
+  "Bb3",
+  "B1",
+  "B2",
+  "B3",
+  "B4",
+  "C1",
+  "C2",
+  "C3",
+  "C4",
+  "C5",
+  "Db1",
+  "Db2",
+  "Db3",
+  "D1",
+  "D2",
+  "D3",
+  "D4",
+  "D5",
+  "Eb1",
+  "Eb2",
+  "Eb3",
+  "E1",
+  "E2",
+  "E3",
+  "E4",
+  "F1",
+  "F2",
+  "F3",
+  "F4",
+  "Gb2",
+  "Gb3",
+  "G1",
+  "G2",
+  "G3",
+  "G4",
 ]
 
 function createSampleMap(notes: string[], extension: string): Record<string, string> {
@@ -235,52 +350,58 @@ export function TabsProvider({ children }: { children: React.ReactNode }) {
     setEffectsSettings((prev) => ({ ...prev, reverbDampening: clampedDampening }))
   }, [])
 
-  const loadInstrument = useCallback(async (instrumentId: GuitarInstrumentId): Promise<Tone.Sampler> => {
-    const existing = loadedInstruments.current.get(instrumentId)
-    if (existing?.state === "loaded") {
-      return existing.sampler
-    }
-
-    const config = GUITAR_INSTRUMENTS.find((i) => i.id === instrumentId)
-    if (!config) {
-      throw new Error(`Unknown instrument: ${instrumentId}`)
-    }
-
-    setLoadingStates((prev) => ({ ...prev, [instrumentId]: "loading" }))
-
-    try {
-      const sampler = new Tone.Sampler({
-        urls: config.samples,
-        baseUrl: config.baseUrl,
-        onload: () => {
-          loadedInstruments.current.set(instrumentId, { sampler, state: "loaded" })
-          setLoadingStates((prev) => ({ ...prev, [instrumentId]: "loaded" }))
-        },
-        onerror: (error) => {
-          console.error(`Error loading instrument ${instrumentId}:`, error)
-          setLoadingStates((prev) => ({ ...prev, [instrumentId]: "error" }))
-        },
-      })
-
-      // Connect to effects chain instead of directly to destination
-      if (reverbRef.current) {
-        sampler.connect(reverbRef.current)
-      } else {
-        sampler.toDestination()
+  const loadInstrument = useCallback(
+    async (instrumentId: GuitarInstrumentId): Promise<Tone.Sampler> => {
+      const existing = loadedInstruments.current.get(instrumentId)
+      if (existing?.state === "loaded") {
+        return existing.sampler
       }
 
-      await Tone.loaded()
+      const config = GUITAR_INSTRUMENTS.find((i) => i.id === instrumentId)
+      if (!config) {
+        throw new Error(`Unknown instrument: ${instrumentId}`)
+      }
 
-      return sampler
-    } catch (error) {
-      setLoadingStates((prev) => ({ ...prev, [instrumentId]: "error" }))
-      throw error
-    }
-  }, [])
+      setLoadingStates((prev) => ({ ...prev, [instrumentId]: "loading" }))
 
-  const getInstrument = useCallback((instrumentId: GuitarInstrumentId): Tone.Sampler | undefined => {
-    return loadedInstruments.current.get(instrumentId)?.sampler
-  }, [])
+      try {
+        const sampler = new Tone.Sampler({
+          urls: config.samples,
+          baseUrl: config.baseUrl,
+          onload: () => {
+            loadedInstruments.current.set(instrumentId, { sampler, state: "loaded" })
+            setLoadingStates((prev) => ({ ...prev, [instrumentId]: "loaded" }))
+          },
+          onerror: (error) => {
+            console.error(`Error loading instrument ${instrumentId}:`, error)
+            setLoadingStates((prev) => ({ ...prev, [instrumentId]: "error" }))
+          },
+        })
+
+        // Connect to effects chain instead of directly to destination
+        if (reverbRef.current) {
+          sampler.connect(reverbRef.current)
+        } else {
+          sampler.toDestination()
+        }
+
+        await Tone.loaded()
+
+        return sampler
+      } catch (error) {
+        setLoadingStates((prev) => ({ ...prev, [instrumentId]: "error" }))
+        throw error
+      }
+    },
+    [],
+  )
+
+  const getInstrument = useCallback(
+    (instrumentId: GuitarInstrumentId): Tone.Sampler | undefined => {
+      return loadedInstruments.current.get(instrumentId)?.sampler
+    },
+    [],
+  )
 
   const getLoadingState = useCallback(
     (instrumentId: GuitarInstrumentId): LoadingState => {

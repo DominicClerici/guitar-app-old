@@ -51,6 +51,15 @@ function Button({
   }) {
   const Comp = asChild ? Slot : "button"
 
+  const content = isLoading ? (
+    <>
+      <Loader2 className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-spin" />
+      <div className="opacity-0">{props.children}</div>
+    </>
+  ) : (
+    props.children
+  )
+
   return (
     <Comp
       data-slot="button"
@@ -64,17 +73,7 @@ function Button({
       disabled={isLoading || props.disabled}
       {...props}
     >
-      {isLoading ? (
-        <>
-          <Loader2 className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-spin" />
-          <div className="opacity-0">{props.children}</div>
-        </>
-      ) : (
-        <>
-          {props.children}
-          {/* {hoverArrow && <HoverArrow overrideGroupName />} */}
-        </>
-      )}
+      {content}
     </Comp>
   )
 }

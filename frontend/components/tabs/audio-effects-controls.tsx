@@ -4,13 +4,8 @@ import { Slider } from "@/components/ui/slider"
 import useTabs from "@/context/tabs-provider"
 
 export function AudioEffectsControls() {
-  const {
-    effectsSettings,
-    setMasterVolume,
-    setReverbWet,
-    setReverbRoomSize,
-    setReverbDampening,
-  } = useTabs()
+  const { effectsSettings, setMasterVolume, setReverbWet, setReverbRoomSize, setReverbDampening } =
+    useTabs()
 
   return (
     <div className="flex flex-col gap-4 rounded-lg border p-4">

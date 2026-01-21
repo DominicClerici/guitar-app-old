@@ -5,19 +5,15 @@ import { Slider } from "@/components/ui/slider"
 import useTabs, { type GuitarInstrumentId, type LineChord } from "@/context/tabs-provider"
 import { getNoteLabel } from "@/lib/audio/guitar-notes"
 import {
-  DndContext,
   closestCenter,
+  DndContext,
   KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core"
-import {
-  SortableContext,
-  useSortable,
-  horizontalListSortingStrategy,
-} from "@dnd-kit/sortable"
+import { horizontalListSortingStrategy, SortableContext, useSortable } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import * as Tone from "tone"
 
@@ -33,14 +29,10 @@ type SortableChordItemProps = {
 }
 
 function SortableChordItem({ chord, index, onRemove, disabled }: SortableChordItemProps) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: chord.id, disabled })
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: chord.id,
+    disabled,
+  })
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -142,11 +134,7 @@ export function MusicLineEditor({ instrumentId }: MusicLineEditorProps) {
           No chords added yet. Use &quot;Add to Line&quot; in the chord editor to add chords.
         </p>
       ) : (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext
             items={lineChords.map((c) => c.id)}
             strategy={horizontalListSortingStrategy}

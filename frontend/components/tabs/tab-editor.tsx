@@ -1,7 +1,5 @@
 "use client"
 
-import { useState } from "react"
-import useTabs, { type GuitarInstrumentId } from "@/context/tabs-provider"
 import {
   Select,
   SelectContent,
@@ -9,6 +7,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import useTabs, { type GuitarInstrumentId } from "@/context/tabs-provider"
+import { useState } from "react"
 import { AudioEffectsControls } from "./audio-effects-controls"
 import { ChordEditor } from "./chord-editor"
 import { MusicLineEditor } from "./music-line-editor"
@@ -46,9 +46,7 @@ export default function TabEditor() {
         {loadingState === "loading" && (
           <span className="text-muted-foreground text-sm">Loading samples...</span>
         )}
-        {loadingState === "loaded" && (
-          <span className="text-green-600 text-sm">Ready</span>
-        )}
+        {loadingState === "loaded" && <span className="text-sm text-green-600">Ready</span>}
         {loadingState === "error" && (
           <span className="text-destructive text-sm">Error loading samples</span>
         )}

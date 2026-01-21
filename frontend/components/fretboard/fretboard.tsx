@@ -254,7 +254,7 @@ export function Fretboard({
             width={FRET_WIDTH}
             height={FRETBOARD_HEIGHT / STRING_COUNT}
             fill="transparent"
-            className="cursor-pointer hover:fill-foreground/10"
+            className="hover:fill-foreground/10 cursor-pointer"
             onClick={() => onFretClick(stringIndex, fretIndex)}
           />
         )

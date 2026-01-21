@@ -12,17 +12,17 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
+import { useNoteDetection } from "@/hooks/useNoteDetection"
 import { freqToMidi, STRING_OPEN_MIDI } from "@/lib/audio/utils"
 import {
   ALL_KEYS,
   CAGED_SHAPE_NAMES,
-  type CAGEDShapeName,
-  type ScaleNote,
   getCAGEDShapeNotes,
   getMajorScale,
   getNoteName,
+  type CAGEDShapeName,
+  type ScaleNote,
 } from "@/lib/scales/major-scale"
-import { useNoteDetection } from "@/hooks/useNoteDetection"
 
 type ViewMode = "full" | CAGEDShapeName
 type PracticeState = "idle" | "countdown" | "practicing" | "between-shapes" | "complete"
@@ -58,29 +58,26 @@ export default function ScalesPracticeClient() {
   const getMidiForPosition = (stringIndex: number, fretIndex: number) =>
     STRING_OPEN_MIDI[stringIndex] + fretIndex
 
-  const handlePitchDetected = useCallback(
-    ({ pitch }: { pitch: number; clarity: number }) => {
-      if (practiceStateRef.current !== "practicing" || pitch <= 0) return
+  const handlePitchDetected = useCallback(({ pitch }: { pitch: number; clarity: number }) => {
+    if (practiceStateRef.current !== "practicing" || pitch <= 0) return
 
-      const detectedMidi = Math.round(freqToMidi(pitch))
+    const detectedMidi = Math.round(freqToMidi(pitch))
 
-      const shapeNotes = currentShapeNotesRef.current
-      const matchingNotes = shapeNotes.filter(
-        (note) => getMidiForPosition(note.stringIndex, note.fretIndex) === detectedMidi,
-      )
+    const shapeNotes = currentShapeNotesRef.current
+    const matchingNotes = shapeNotes.filter(
+      (note) => getMidiForPosition(note.stringIndex, note.fretIndex) === detectedMidi,
+    )
 
-      if (matchingNotes.length > 0) {
-        setPlayedNoteKeys((prev) => {
-          const next = new Set(prev)
-          for (const note of matchingNotes) {
-            next.add(getNoteKey(note.stringIndex, note.fretIndex))
-          }
-          return next
-        })
-      }
-    },
-    [],
-  )
+    if (matchingNotes.length > 0) {
+      setPlayedNoteKeys((prev) => {
+        const next = new Set(prev)
+        for (const note of matchingNotes) {
+          next.add(getNoteKey(note.stringIndex, note.fretIndex))
+        }
+        return next
+      })
+    }
+  }, [])
 
   const { startListening, stopListening } = useNoteDetection({
     onPitchDetected: handlePitchDetected,
@@ -89,7 +86,9 @@ export default function ScalesPracticeClient() {
 
   const allNotesPlayed =
     currentShapeNotes.length > 0 &&
-    currentShapeNotes.every((note) => playedNoteKeys.has(getNoteKey(note.stringIndex, note.fretIndex)))
+    currentShapeNotes.every((note) =>
+      playedNoteKeys.has(getNoteKey(note.stringIndex, note.fretIndex)),
+    )
 
   useEffect(() => {
     if (practiceState !== "practicing" || !allNotesPlayed) return
