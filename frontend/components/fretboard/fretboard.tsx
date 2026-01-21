@@ -35,6 +35,7 @@ type FretboardProps = {
   markers?: Marker[]
   className?: string
   showDegree?: boolean
+  onFretClick?: (stringIndex: number, fretIndex: number) => void
 }
 
 const FRETBOARD_HEIGHT = SVG_HEIGHT - FRET_LABEL_AREA_HEIGHT
@@ -56,6 +57,7 @@ export function Fretboard({
   markers = [],
   className = "",
   showDegree = false,
+  onFretClick,
 }: FretboardProps) {
   const getMarkerStyle = (type: MarkerType) => {
     if (type === "played") {
@@ -236,6 +238,30 @@ export function Fretboard({
     })
   }
 
+  const renderClickableAreas = () => {
+    if (!onFretClick) return null
+
+    return tuning.flatMap((_, stringIndex) =>
+      Array.from({ length: FRET_COUNT }, (_, fretIndex) => {
+        const cx = getFretCenterX(fretIndex)
+        const cy = getStringY(stringIndex)
+
+        return (
+          <rect
+            key={`click-${stringIndex}-${fretIndex}`}
+            x={cx - FRET_WIDTH / 2}
+            y={cy - FRETBOARD_HEIGHT / STRING_COUNT / 2}
+            width={FRET_WIDTH}
+            height={FRETBOARD_HEIGHT / STRING_COUNT}
+            fill="transparent"
+            className="cursor-pointer hover:fill-foreground/10"
+            onClick={() => onFretClick(stringIndex, fretIndex)}
+          />
+        )
+      }),
+    )
+  }
+
   return (
     <svg
       viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
@@ -257,6 +283,7 @@ export function Fretboard({
       {renderTuningLabels()}
       {renderFretLabels()}
       {renderNoteMarkers()}
+      {renderClickableAreas()}
     </svg>
   )
 }
