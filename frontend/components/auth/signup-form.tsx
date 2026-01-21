@@ -11,6 +11,7 @@ import { useForm } from "@tanstack/react-form"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { toast } from "sonner"
+import { PasswordInput } from "../ui/password-input"
 
 export default function SignupForm() {
   const { signInWithGoogle } = useAuth()
@@ -117,7 +118,7 @@ export default function SignupForm() {
               return (
                 <Field data-invalid={isInvalid}>
                   <FieldLabel htmlFor={field.name}>Password</FieldLabel>
-                  <Input
+                  <PasswordInput
                     id={field.name}
                     name={field.name}
                     value={field.state.value}
@@ -126,7 +127,6 @@ export default function SignupForm() {
                     aria-invalid={isInvalid}
                     placeholder="********"
                     autoComplete="off"
-                    type="password"
                   />
                   {isInvalid && <FieldError errors={field.state.meta.errors} />}
                 </Field>
@@ -135,11 +135,16 @@ export default function SignupForm() {
           />
         </FieldGroup>
       </form>
-      <Button type="submit" form="signup-form" isLoading={form.state.isSubmitting}>
+      <Button
+        type="submit"
+        form="signup-form"
+        className="mt-4 w-full"
+        isLoading={form.state.isSubmitting}
+      >
         Signup
       </Button>
 
-      <div className="my-4 flex items-center gap-4">
+      <div className="my-2 flex items-center gap-4">
         <Separator className="flex-1" />
         <span className="text-muted-foreground text-sm">or</span>
         <Separator className="flex-1" />

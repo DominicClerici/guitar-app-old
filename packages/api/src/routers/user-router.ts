@@ -1,8 +1,9 @@
-import { signUpZod } from "@guitar/schemas"
+import { signUpZod, updateUserProfileZod } from "@guitar/schemas"
 import { TRPCError } from "@trpc/server"
-import { publicProcedure, router } from "../trpc"
+import { protectedProcedure, publicProcedure, router } from "../trpc"
 import getUserInfo from "../user/getUserInfo"
 import registerUser from "../user/registerUser"
+import updateProfile from "../user/updateProfile"
 
 export const userRouter = router({
   // Get the current authenticated user's profile
@@ -24,4 +25,15 @@ export const userRouter = router({
 
     return await registerUser(input, ctx.supabase)
   }),
+  updateUserProfile: protectedProcedure
+    .input(updateUserProfileZod)
+    .mutation(async ({ ctx, input }) => {
+      if (!ctx.user) {
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "You are not authorized to update your profile",
+        })
+      }
+      return await updateProfile(input, ctx.user.id, ctx.supabase)
+    }),
 })

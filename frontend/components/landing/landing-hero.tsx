@@ -2,8 +2,7 @@
 
 import { Button } from "@/components/ui/button"
 import useAuth from "@/hooks/useAuth"
-import { ArrowRight, Mic, Music } from "lucide-react"
-import Link from "next/link"
+import { Mic, Music } from "lucide-react"
 
 function SoundWaveBar({ delay, height }: { delay: number; height: number }) {
   return (
@@ -94,15 +93,8 @@ export default function LandingHero() {
           style={{ animationDelay: "600ms", animationFillMode: "forwards" }}
         >
           {user ? (
-            <Button
-              size="lg"
-              asChild
-              className="bg-primary hover:bg-primary-hover h-12 px-8 text-base"
-            >
-              <Link href="/dashboard">
-                Go to Dashboard
-                <ArrowRight className="ml-2 size-4" />
-              </Link>
+            <Button size="xl" href="/dashboard" hoverArrow>
+              Go to Dashboard
             </Button>
           ) : (
             <>

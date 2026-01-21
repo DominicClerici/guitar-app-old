@@ -1,5 +1,6 @@
 import { Github, Instagram, Twitter, Youtube } from "lucide-react"
 import Link from "next/link"
+import Logo from "../ui/logo"
 
 const footerLinks = {
   product: {
@@ -52,20 +53,7 @@ export default function LandingFooter() {
       <div className="mx-auto max-w-7xl px-6 py-12 lg:px-8 lg:py-16">
         <div className="grid gap-8 lg:grid-cols-6">
           <div className="lg:col-span-2">
-            <Link href="/" className="flex items-center gap-2">
-              <div className="flex items-center gap-1">
-                {[...Array(6)].map((_, i) => (
-                  <div
-                    key={i}
-                    className="bg-foreground hover:bg-primary h-6 transition-all duration-300"
-                    style={{
-                      width: `${1 + i * 0.3}px`,
-                    }}
-                  />
-                ))}
-              </div>
-              <span className="text-xl font-semibold tracking-tight">StringFlow</span>
-            </Link>
+            <Logo href="/" />
 
             <p className="text-muted-foreground mt-4 max-w-xs text-sm leading-relaxed">
               Learn guitar with an AI that listens. Real-time feedback, personalized lessons, and

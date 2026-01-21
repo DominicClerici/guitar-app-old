@@ -33,6 +33,8 @@ When working in the /frontend directory, always use shadcn components imported f
 - slider
 - textarea
 
+For icons, we have lucide-react and lucide-react-native installed to use in the /frontend and /mobile projects.
+
 For all backend functionality, use the trpc shared package. In /frontend, you can import from "@/lib/trpc/react" for client components (tanstack react query) OR  "@/lib/trpc/server" for server components, route files, and server actions. 
 
 When you need to validate any data, create a zod schema in /packages/schemas and import it.

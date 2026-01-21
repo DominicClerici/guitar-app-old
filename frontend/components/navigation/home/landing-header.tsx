@@ -1,12 +1,13 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
+import Logo from "@/components/ui/logo"
 import useAuth from "@/hooks/useAuth"
 import { Menu, X } from "lucide-react"
 import Link from "next/link"
 import { useState } from "react"
 
-export default function HomeHeader() {
+export default function LandingHeader() {
   const { user } = useAuth()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
@@ -14,20 +15,7 @@ export default function HomeHeader() {
     <header className="fixed top-0 z-50 w-full">
       <div className="bg-background/80 absolute inset-0 backdrop-blur-md" />
       <nav className="relative mx-auto flex max-w-7xl items-center justify-between px-6 py-4 lg:px-8">
-        <Link href="/" className="flex items-center gap-2">
-          <div className="flex items-center gap-1">
-            {[...Array(6)].map((_, i) => (
-              <div
-                key={`string-${i}`}
-                className="bg-foreground hover:bg-landing-accent h-6 transition-all duration-300"
-                style={{
-                  width: `${1 + i * 0.3}px`,
-                }}
-              />
-            ))}
-          </div>
-          <span className="text-xl font-semibold tracking-tight">StringFlow</span>
-        </Link>
+        <Logo href="/" />
 
         <div className="hidden items-center gap-8 md:flex">
           <Link

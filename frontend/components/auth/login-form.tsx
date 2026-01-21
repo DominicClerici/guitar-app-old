@@ -11,6 +11,7 @@ import { useForm } from "@tanstack/react-form"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { toast } from "sonner"
+import { PasswordInput } from "../ui/password-input"
 
 export default function LoginForm() {
   const router = useRouter()
@@ -88,7 +89,7 @@ export default function LoginForm() {
               return (
                 <Field data-invalid={isInvalid}>
                   <FieldLabel htmlFor={field.name}>Password</FieldLabel>
-                  <Input
+                  <PasswordInput
                     id={field.name}
                     name={field.name}
                     value={field.state.value}
@@ -105,11 +106,11 @@ export default function LoginForm() {
           />
         </FieldGroup>
       </form>
-      <Button type="submit" form="login-form">
+      <Button type="submit" form="login-form" className="mt-4 w-full">
         Login
       </Button>
 
-      <div className="my-4 flex items-center gap-4">
+      <div className="my-2 flex items-center gap-4">
         <Separator className="flex-1" />
         <span className="text-muted-foreground text-sm">or</span>
         <Separator className="flex-1" />
