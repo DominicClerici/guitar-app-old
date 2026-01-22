@@ -7,7 +7,7 @@
   --color-background: var(--background);
   --color-background-elevated: var(--background-elevated);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-inter);
+  --font-inter: var(--font-inter);
   --font-mono: var(--font-geist-mono);
   --font-display: var(--font-inter-display);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -187,7 +187,7 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-inter;
   }
 }
 
@@ -297,4 +297,32 @@
 .animate-gradient-shift {
   background-size: 200% 200%;
   animation: gradient-shift 8s ease infinite;
+}
+
+@keyframes draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes marker-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: var(--marker-opacity, 1);
+  }
+}
+
+.animate-marker-in {
+  animation: marker-fade-in 250ms ease-out forwards;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
 }

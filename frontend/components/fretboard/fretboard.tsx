@@ -62,9 +62,9 @@ export function Fretboard({
   const getMarkerStyle = (type: MarkerType) => {
     if (type === "played") {
       return {
-        fill: "var(--destructive)",
-        textColor: "var(--destructive-foreground)",
-        borderColor: "var(--destructive)",
+        fill: "var(--primary)",
+        textColor: "var(--primary-foreground)",
+        borderColor: "var(--primary-border)",
         opacity: 1,
       }
     }
@@ -212,7 +212,8 @@ export function Fretboard({
       return (
         <g
           key={`marker-${marker.stringIndex}-${marker.fretIndex}-${index}`}
-          opacity={style.opacity}
+          className="animate-marker-in"
+          style={{ "--marker-opacity": style.opacity } as React.CSSProperties}
         >
           <circle
             cx={cx}
