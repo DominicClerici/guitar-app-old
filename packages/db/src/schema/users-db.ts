@@ -1,5 +1,6 @@
 import { relations } from "drizzle-orm"
 import { jsonb, pgSchema, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core"
+import { sessionsTable } from "./sessions-db"
 
 const authSchema = pgSchema("auth")
 export const users = authSchema.table("users", {
@@ -38,9 +39,10 @@ export const userProfileRelations = relations(userProfileTable, ({ one }) => ({
   }),
 }))
 
-export const userRelations = relations(usersTable, ({ one }) => ({
+export const userRelations = relations(usersTable, ({ one, many }) => ({
   profile: one(userProfileTable, {
     fields: [usersTable.id],
     references: [userProfileTable.userId],
   }),
+  sessions: many(sessionsTable),
 }))

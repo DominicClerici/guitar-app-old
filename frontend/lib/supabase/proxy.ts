@@ -39,6 +39,17 @@ export async function updateSession(request: NextRequest) {
 
   const user = data?.claims
 
+  if (!user && request.nextUrl.pathname.startsWith("/dashboard")) {
+    return NextResponse.redirect(new URL("/login", request.url))
+  }
+  if (
+    user &&
+    (request.nextUrl.pathname.startsWith("/login") ||
+      request.nextUrl.pathname.startsWith("/sign-up"))
+  ) {
+    return NextResponse.redirect(new URL("/dashboard", request.url))
+  }
+
   // IMPORTANT: You *must* return the supabaseResponse object as it is. If you're
   // creating a new response object with NextResponse.next() make sure to:
   // 1. Pass the request in it, like so:

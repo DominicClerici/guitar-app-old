@@ -14,6 +14,7 @@ import {
   getNoteName,
   type ScaleNote,
 } from "@/lib/scales/major-scale"
+import { trpc } from "@/lib/trpc/react"
 import { cn } from "@/lib/utils"
 import { CheckIcon, MusicIcon, Pause, Play, Square } from "lucide-react"
 import SlidingToggle from "../ui/sliding-toggle"
@@ -57,6 +58,10 @@ export default function ScalesPracticeClient() {
   const transitionTimerRef = useRef<NodeJS.Timeout | null>(null)
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const totalNotesPlayedRef = useRef(0)
+  const sessionSavedRef = useRef(false)
+
+  const saveSession = trpc.sessions.saveNewSession.useMutation()
 
   useEffect(() => {
     const stored = sessionStorage.getItem("practiceConfig")
@@ -136,6 +141,7 @@ export default function ScalesPracticeClient() {
     setPracticeState("between-shapes")
     setCompletedShapeName(currentShapeName)
     setCompletedShapesCount((prev) => prev + 1)
+    totalNotesPlayedRef.current += playedNoteKeys.size
 
     transitionTimerRef.current = setTimeout(() => {
       const nextIndex = currentShapeIndex + 1
@@ -203,6 +209,44 @@ export default function ScalesPracticeClient() {
     }
   }, [clearTimerInterval])
 
+  useEffect(() => {
+    if (practiceState !== "complete" || sessionSavedRef.current || !sessionConfig) return
+
+    const duration =
+      sessionConfig.sessionType === "timed"
+        ? initialDurationSeconds - remainingSeconds
+        : elapsedSeconds
+
+    const shouldSave = duration >= 60 || completedShapesCount >= 5
+
+    if (!shouldSave) return
+
+    sessionSavedRef.current = true
+    saveSession.mutate({
+      duration,
+      type: "scales",
+      timingMode: sessionConfig.sessionType,
+      keys: [NOTE_NAMES[selectedKeyIndex]],
+      sessionData: {
+        type: "scales",
+        key: selectedKeyIndex,
+        shapes: activeShapes,
+        shapesCompleted: completedShapesCount,
+        totalNotesPlayed: totalNotesPlayedRef.current,
+      },
+    })
+  }, [
+    practiceState,
+    sessionConfig,
+    initialDurationSeconds,
+    remainingSeconds,
+    elapsedSeconds,
+    completedShapesCount,
+    selectedKeyIndex,
+    activeShapes,
+    saveSession,
+  ])
+
   const startPractice = async () => {
     setPracticeState("countdown")
     setCountdownValue(5)
@@ -210,6 +254,8 @@ export default function ScalesPracticeClient() {
     setPlayedNoteKeys(new Set())
     setCompletedShapesCount(0)
     setElapsedSeconds(0)
+    totalNotesPlayedRef.current = 0
+    sessionSavedRef.current = false
     if (sessionConfig?.sessionType === "timed" && sessionConfig.duration) {
       const totalSecs = sessionConfig.duration.minutes * 60 + sessionConfig.duration.seconds
       setRemainingSeconds(totalSecs)
@@ -305,6 +351,25 @@ export default function ScalesPracticeClient() {
   return (
     <div className="flex flex-col gap-6">
       <SessionHeader config={sessionConfig} hideShapes={isInSession} />
+      <Button
+        onClick={() => {
+          saveSession.mutate({
+            duration: 180,
+            type: "scales",
+            timingMode: sessionConfig.sessionType,
+            keys: [NOTE_NAMES[selectedKeyIndex]],
+            sessionData: {
+              type: "scales",
+              key: selectedKeyIndex,
+              shapes: activeShapes,
+              shapesCompleted: completedShapesCount,
+              totalNotesPlayed: totalNotesPlayedRef.current,
+            },
+          })
+        }}
+      >
+        Test
+      </Button>
 
       {/* Countdown State */}
       {practiceState === "countdown" && (

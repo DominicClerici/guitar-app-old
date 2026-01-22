@@ -14,7 +14,7 @@ import {
   Waves,
 } from "lucide-react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { useEffect, useRef, useState } from "react"
 import { Button } from "../button"
 import Logo from "../logo"
@@ -41,6 +41,7 @@ export default function DesktopNav() {
   const pathname = usePathname()
   const navRef = useRef<HTMLDivElement>(null)
   const [selectorStyle, setSelectorStyle] = useState({ top: 0, opacity: 0 })
+  const router = useRouter()
 
   const activeIndex = allNavItems.findIndex(
     (item) =>
@@ -119,7 +120,10 @@ export default function DesktopNav() {
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={logout}
+                onClick={async () => {
+                  await logout()
+                  router.push("/")
+                }}
                 className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 size-8"
               >
                 <LogOutIcon className="size-4" />
