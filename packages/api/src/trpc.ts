@@ -12,7 +12,7 @@ const t = initTRPC.context<Context>().create({
 export const router = t.router
 export const createCallerFactory = t.createCallerFactory
 
-// Public procedure - no auth required
+// Public procedure - no auth required, but user is available in ctx if logged in
 export const publicProcedure = t.procedure
 
 // Middleware to check if user is authenticated

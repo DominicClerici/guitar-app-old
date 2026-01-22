@@ -11,6 +11,7 @@ export const userRouter = router({
     const userId = ctx.user?.id ?? null
     if (!userId) {
       // This is where it is failing on the server
+      console.log("No user ID found")
       return null
     }
     return await getUserInfo(userId)

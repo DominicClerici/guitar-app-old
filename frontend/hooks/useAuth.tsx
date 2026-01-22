@@ -1,11 +1,14 @@
 "use client"
 
 import { createClient } from "@/lib/supabase/client"
-import type { SupabaseClient, User } from "@supabase/supabase-js"
+import { trpc } from "@/lib/trpc/client"
+import type { SupabaseClient } from "@supabase/supabase-js"
 import { createContext, useContext, useEffect, useState } from "react"
 
+export type UserInfo = NonNullable<Awaited<ReturnType<typeof trpc.user.getUserInfo.query>>>
+
 interface AuthContextType {
-  user: User | null
+  user: UserInfo | null
   isLoading: boolean
   login: (email: string, password: string) => Promise<{ error: string | null }>
   logout: () => Promise<{ error: string | null }>
@@ -25,13 +28,24 @@ const AuthContext = createContext<AuthContextType>({
 })
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
+  const [user, setUser] = useState<UserInfo | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const supabase = createClient()
 
   useEffect(() => {
-    const userSubscription = supabase.auth.onAuthStateChange((event, session) => {
-      setUser(session?.user ?? null)
+    const userSubscription = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user?.id) {
+        const userInfo = await trpc.user.getUserInfo.query()
+        if (userInfo) {
+          console.log("userInfo", userInfo)
+          setUser(userInfo)
+        } else {
+          console.log("no userInfo")
+          setUser(null)
+        }
+      } else {
+        setUser(null)
+      }
       setIsLoading(false)
     })
     return () => userSubscription.data.subscription.unsubscribe()

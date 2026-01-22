@@ -11,6 +11,8 @@ export type SessionConfig = {
   key: string
   shapes: number[]
   startedAt: number
+  formulaType: "scale" | "arpeggio"
+  formulaId: string
   scaleName?: string
   gradient?: string
 }
@@ -107,7 +109,7 @@ export default function SessionHeader({ config, className, hideShapes }: Session
             <div>
               <p className="text-[10px] font-medium tracking-wider text-white/50 uppercase">Key</p>
               <p className="text-sm font-semibold text-white">
-                {config.key === "random" ? "Random" : `${config.key} Major`}
+                {config.key === "random" ? "Random" : config.key}
               </p>
             </div>
           </div>

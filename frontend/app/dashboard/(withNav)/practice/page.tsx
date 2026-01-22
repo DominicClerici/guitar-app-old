@@ -3,65 +3,91 @@
 import PracticeDialog from "@/components/practice/practice-dialog"
 import { useState } from "react"
 
-const scales = [
+type PracticeItem = {
+  title: string
+  subtitle: string
+  href: string
+  gradient: string
+  pattern: string
+  formulaType: "scale" | "arpeggio"
+  formulaId: string
+}
+
+const scales: PracticeItem[] = [
   {
     title: "Major Scale",
     subtitle: "The foundation",
-    href: "/dashboard/practice/scales?scale=major",
+    href: "/dashboard/practice/scales",
     gradient: "from-violet-600 via-purple-600 to-indigo-700",
     pattern: "major",
+    formulaType: "scale",
+    formulaId: "major",
   },
   {
     title: "Minor Scale",
     subtitle: "Emotional depth",
-    href: "/dashboard/practice/scales?scale=minor",
+    href: "/dashboard/practice/scales",
     gradient: "from-rose-600 via-pink-600 to-red-700",
     pattern: "minor",
+    formulaType: "scale",
+    formulaId: "naturalMinor",
   },
   {
     title: "Major Pentatonic",
     subtitle: "Blues & rock essential",
-    href: "/dashboard/practice/scales?scale=major-pentatonic",
+    href: "/dashboard/practice/scales",
     gradient: "from-amber-500 via-orange-500 to-yellow-600",
     pattern: "pentatonic-major",
+    formulaType: "scale",
+    formulaId: "majorPentatonic",
   },
   {
     title: "Minor Pentatonic",
     subtitle: "Solo building blocks",
-    href: "/dashboard/practice/scales?scale=minor-pentatonic",
+    href: "/dashboard/practice/scales",
     gradient: "from-cyan-500 via-teal-500 to-emerald-600",
     pattern: "pentatonic-minor",
+    formulaType: "scale",
+    formulaId: "minorPentatonic",
   },
 ]
 
-const arpeggios = [
+const arpeggios: PracticeItem[] = [
   {
     title: "Major Arpeggio",
     subtitle: "Bright & uplifting",
-    href: "/dashboard/practice/arpeggios?arpeggio=major",
+    href: "/dashboard/practice/scales",
     gradient: "from-sky-500 via-blue-600 to-indigo-700",
     pattern: "arp-major",
+    formulaType: "arpeggio",
+    formulaId: "major",
   },
   {
     title: "Minor Arpeggio",
     subtitle: "Dark & moody",
-    href: "/dashboard/practice/arpeggios?arpeggio=minor",
+    href: "/dashboard/practice/scales",
     gradient: "from-fuchsia-600 via-purple-600 to-violet-700",
     pattern: "arp-minor",
+    formulaType: "arpeggio",
+    formulaId: "minor",
   },
   {
     title: "Dominant 7th",
     subtitle: "Bluesy tension",
-    href: "/dashboard/practice/arpeggios?arpeggio=dominant-7",
+    href: "/dashboard/practice/scales",
     gradient: "from-lime-500 via-green-500 to-emerald-600",
     pattern: "arp-dom7",
+    formulaType: "arpeggio",
+    formulaId: "dom7",
   },
   {
     title: "Minor 7th",
     subtitle: "Jazz smoothness",
-    href: "/dashboard/practice/arpeggios?arpeggio=minor-7",
+    href: "/dashboard/practice/scales",
     gradient: "from-orange-500 via-red-500 to-rose-600",
     pattern: "arp-min7",
+    formulaType: "arpeggio",
+    formulaId: "min7",
   },
 ]
 
@@ -228,9 +254,9 @@ function PracticeRow({
   onSelectItem,
 }: {
   title: string
-  items: typeof scales
+  items: PracticeItem[]
   sectionIndex: number
-  onSelectItem: (item: (typeof scales)[number]) => void
+  onSelectItem: (item: PracticeItem) => void
 }) {
   return (
     <div className="space-y-4">
@@ -261,7 +287,7 @@ function PracticeRow({
 }
 
 export default function PracticePage() {
-  const [selectedItem, setSelectedItem] = useState<(typeof scales)[number] | null>(null)
+  const [selectedItem, setSelectedItem] = useState<PracticeItem | null>(null)
 
   return (
     <div className="space-y-10 py-2">
@@ -287,6 +313,8 @@ export default function PracticePage() {
         subtitle={selectedItem?.subtitle ?? ""}
         href={selectedItem?.href ?? ""}
         gradient={selectedItem?.gradient ?? ""}
+        formulaType={selectedItem?.formulaType ?? "scale"}
+        formulaId={selectedItem?.formulaId ?? "major"}
       />
     </div>
   )

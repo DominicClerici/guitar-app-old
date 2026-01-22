@@ -8,12 +8,14 @@ import { Button } from "@/components/ui/button"
 import { useNoteDetection } from "@/hooks/useNoteDetection"
 import { freqToMidi, NOTE_NAMES, STRING_OPEN_MIDI } from "@/lib/audio/utils"
 import {
+  ARPEGGIO_FORMULAS,
   CAGED_SHAPE_NAMES,
+  type FretboardNote,
+  generateFretboardNotes,
   getCAGEDShapeNotes,
-  getMajorScale,
   getNoteName,
-  type ScaleNote,
-} from "@/lib/scales/major-scale"
+  SCALE_FORMULAS,
+} from "@/lib/theory"
 import { trpc } from "@/lib/trpc/react"
 import { cn } from "@/lib/utils"
 import { CheckIcon, MusicIcon, Pause, Play, Square } from "lucide-react"
@@ -55,7 +57,7 @@ export default function ScalesPracticeClient() {
   const [showDegree, setShowDegree] = useState(false)
   const [previewShape, setPreviewShape] = useState<string>("full")
   const practiceStateRef = useRef(practiceState)
-  const currentShapeNotesRef = useRef<ScaleNote[]>([])
+  const currentShapeNotesRef = useRef<FretboardNote[]>([])
   const transitionTimerRef = useRef<NodeJS.Timeout | null>(null)
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null)
@@ -83,10 +85,16 @@ export default function ScalesPracticeClient() {
     practiceStateRef.current = practiceState
   }, [practiceState])
 
-  const fullScale = getMajorScale(selectedKeyIndex)
+  const formula =
+    sessionConfig?.formulaType === "arpeggio"
+      ? ARPEGGIO_FORMULAS[sessionConfig.formulaId]
+      : SCALE_FORMULAS[sessionConfig?.formulaId ?? "major"]
+  const fullScale = formula
+    ? generateFretboardNotes(selectedKeyIndex, formula)
+    : []
   const cagedShapeNames = activeShapes.map((i) => CAGED_SHAPE_NAMES[i - 1])
   const currentShapeName = cagedShapeNames[currentShapeIndex] || CAGED_SHAPE_NAMES[0]
-  const currentShapeNotes = getCAGEDShapeNotes(currentShapeName, fullScale, selectedKeyIndex)
+  const currentShapeNotes = getCAGEDShapeNotes(currentShapeName, fullScale, selectedKeyIndex, undefined, formula)
 
   useEffect(() => {
     currentShapeNotesRef.current = currentShapeNotes
@@ -318,7 +326,7 @@ export default function ScalesPracticeClient() {
   const previewNotes =
     previewShape === "full"
       ? fullScale
-      : getCAGEDShapeNotes(previewShape as "C" | "A" | "G" | "E" | "D", fullScale, selectedKeyIndex)
+      : getCAGEDShapeNotes(previewShape as "C" | "A" | "G" | "E" | "D", fullScale, selectedKeyIndex, undefined, formula)
 
   const displayNotes = isInSession ? currentShapeNotes : previewNotes
 
@@ -593,29 +601,32 @@ export default function ScalesPracticeClient() {
         </div>
       )}
       {practiceState === "idle" && (
-        <div className="flex items-center justify-center gap-4">
-          <SlidingToggle
-            options={[
-              { label: "Full", value: "full" },
-              ...cagedShapeNames.map((shape) => ({ label: shape, value: shape })),
-            ]}
-            value={previewShape}
-            onChange={setPreviewShape}
-            className="h-12"
-          />
-          <SlidingToggle
-            options={[
-              {
-                label: "Interval",
-                value: "interval",
-                icon: <span className="font-mono text-lg font-medium">1</span>,
-              },
-              { label: "Note", value: "note", icon: <MusicIcon /> },
-            ]}
-            value={showDegree ? "interval" : "note"}
-            onChange={(value) => setShowDegree(value === "interval")}
-            className="h-12"
-          />
+        <div className="flex flex-col items-center gap-2">
+          <p className="text-muted-foreground text-xs">Preview</p>
+          <div className="flex items-center justify-center gap-4">
+            <SlidingToggle
+              options={[
+                { label: "Full", value: "full" },
+                ...cagedShapeNames.map((shape) => ({ label: shape, value: shape })),
+              ]}
+              value={previewShape}
+              onChange={setPreviewShape}
+              className="h-12"
+            />
+            <SlidingToggle
+              options={[
+                {
+                  label: "Interval",
+                  value: "interval",
+                  icon: <span className="font-mono text-lg font-medium">1</span>,
+                },
+                { label: "Note", value: "note", icon: <MusicIcon /> },
+              ]}
+              value={showDegree ? "interval" : "note"}
+              onChange={(value) => setShowDegree(value === "interval")}
+              className="h-12"
+            />
+          </div>
         </div>
       )}
     </div>

@@ -1,14 +1,13 @@
+import { createClient } from "@/lib/supabase/client"
 import type { AppRouter } from "@guitar/api"
 import { createTRPCClient, httpBatchLink } from "@trpc/client"
 import superjson from "superjson"
 
 function getBaseUrl() {
   if (typeof window !== "undefined") {
-    // Browser should use relative URL
     return ""
   }
 
-  // SSR should use Vercel URL or localhost
   if (process.env.VERCEL_URL) {
     return `https://${process.env.VERCEL_URL}`
   }
@@ -22,7 +21,21 @@ export const trpc = createTRPCClient<AppRouter>({
       url: `${getBaseUrl()}/api/trpc`,
       transformer: superjson,
       async headers() {
-        // Headers will be added by the TRPCProvider for authenticated requests
+        if (typeof window === "undefined") {
+          return {}
+        }
+
+        const supabase = createClient()
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+
+        if (session?.access_token) {
+          return {
+            Authorization: `Bearer ${session.access_token}`,
+          }
+        }
+
         return {}
       },
     }),

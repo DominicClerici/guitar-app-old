@@ -49,6 +49,8 @@ interface PracticeDialogProps {
   href: string
   gradient: string
   shapeCount?: number
+  formulaType: "scale" | "arpeggio"
+  formulaId: string
 }
 
 export default function PracticeDialog({
@@ -59,6 +61,8 @@ export default function PracticeDialog({
   href,
   gradient,
   shapeCount = 5,
+  formulaType,
+  formulaId,
 }: PracticeDialogProps) {
   const router = useRouter()
 
@@ -92,11 +96,15 @@ export default function PracticeDialog({
       key: selectedKey,
       shapes: selectedShapes,
       startedAt: Date.now(),
+      formulaType,
+      formulaId,
+      scaleName: title,
+      gradient,
     }
 
     sessionStorage.setItem("practiceConfig", JSON.stringify(config))
     router.push(href)
-  }, [sessionType, duration, targetShapes, selectedKey, selectedShapes, href, router])
+  }, [sessionType, duration, targetShapes, selectedKey, selectedShapes, href, router, formulaType, formulaId, title, gradient])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

@@ -11,6 +11,7 @@ import {
   LogOutIcon,
   Music2,
   Settings,
+  UserIcon,
   Waves,
 } from "lucide-react"
 import Link from "next/link"
@@ -106,25 +107,39 @@ export default function DesktopNav() {
         />
         <Separator className="mb-2" />
 
-        <div className="bg-muted/50 flex items-center justify-between rounded-lg border px-3 py-2">
-          {isLoading || !user ? (
+        <div className="bg-muted/50 flex items-center gap-2 rounded-lg border px-3 py-2">
+          {!user ? (
             <div className="flex h-full w-full items-center justify-center py-2">
               <Loader2 className="text-muted-foreground size-5 animate-spin" />
             </div>
           ) : (
             <>
+              <div className="flex items-center gap-2">
+                {user.profile.profilePicture ? (
+                  <img
+                    src={user.profile.profilePicture.url}
+                    alt={user.name}
+                    className="size-8 rounded-full"
+                  />
+                ) : (
+                  <div className="bg-muted flex h-8 w-8 items-center justify-center rounded-full">
+                    <UserIcon className="size-4" />
+                  </div>
+                )}
+              </div>
               <div className="flex flex-col">
-                <p className="text-sm font-medium">{user?.user_metadata.name}</p>
+                <p className="text-sm font-medium">{user?.name}</p>
                 <p className="text-muted-foreground text-xs">{user?.email}</p>
               </div>
               <Button
                 variant="ghost"
                 size="icon"
+                isLoading={isLoading}
                 onClick={async () => {
                   await logout()
                   router.push("/")
                 }}
-                className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 size-8"
+                className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 ml-auto size-8"
               >
                 <LogOutIcon className="size-4" />
               </Button>
