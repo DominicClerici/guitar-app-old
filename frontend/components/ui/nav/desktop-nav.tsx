@@ -4,6 +4,7 @@ import useAuth from "@/hooks/useAuth"
 import { cn } from "@/lib/utils"
 import {
   BarChart3,
+  Book,
   Guitar,
   HelpCircleIcon,
   Home,
@@ -23,6 +24,7 @@ import { Separator } from "../separator"
 
 const mainNavItems = [
   { href: "/dashboard", label: "Home", icon: Home },
+  { href: "/dashboard/learn", label: "Learn", icon: Book },
   { href: "/dashboard/practice", label: "Practice", icon: Guitar },
   { href: "/dashboard/tabs", label: "Tabs", icon: Music2 },
 ]

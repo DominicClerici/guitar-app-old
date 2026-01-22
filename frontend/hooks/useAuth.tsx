@@ -33,20 +33,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const supabase = createClient()
 
   useEffect(() => {
-    const userSubscription = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user?.id) {
+    const checkUser = async () => {
+      const { data } = await supabase.auth.getClaims()
+      if (data?.claims?.sub) {
         const userInfo = await trpc.user.getUserInfo.query()
         if (userInfo) {
-          console.log("userInfo", userInfo)
           setUser(userInfo)
         } else {
-          console.log("no userInfo")
           setUser(null)
         }
       } else {
         setUser(null)
       }
       setIsLoading(false)
+    }
+    const userSubscription = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user) {
+        const userInfo = await trpc.user.getUserInfo.query()
+        if (userInfo) {
+          setUser(userInfo)
+        } else {
+          setUser(null)
+        }
+      }
+      setIsLoading(false)
+      // checkUser() if this keeps breaking, uncomment
     })
     return () => userSubscription.data.subscription.unsubscribe()
   }, [supabase])

@@ -14,81 +14,36 @@ type PracticeItem = {
   hideShapes?: boolean
 }
 
-const scales: PracticeItem[] = [
+const caged: PracticeItem[] = [
   {
-    title: "Major Scale",
-    subtitle: "The foundation",
-    href: "/dashboard/practice/scales",
-    gradient: "from-violet-600 via-purple-600 to-indigo-700",
-    pattern: "major",
-    formulaType: "scale",
-    formulaId: "major",
+    title: "CAGED Roots",
+    subtitle: "Foundation patterns",
+    href: "/dashboard/practice/caged",
+    gradient: "from-emerald-500 via-teal-600 to-cyan-700",
+    pattern: "caged-roots",
+    formulaType: "caged",
+    formulaId: "cagedRoots",
+    hideShapes: true,
   },
   {
-    title: "Minor Scale",
-    subtitle: "Emotional depth",
-    href: "/dashboard/practice/scales",
-    gradient: "from-rose-600 via-pink-600 to-red-700",
-    pattern: "minor",
-    formulaType: "scale",
-    formulaId: "naturalMinor",
-  },
-  {
-    title: "Major Pentatonic",
-    subtitle: "Blues & rock essential",
-    href: "/dashboard/practice/scales",
-    gradient: "from-amber-500 via-orange-500 to-yellow-600",
-    pattern: "pentatonic-major",
-    formulaType: "scale",
-    formulaId: "majorPentatonic",
+    title: "Chord Tones",
+    subtitle: "Harmonic navigation",
+    href: "/dashboard/practice/caged",
+    gradient: "from-blue-500 via-indigo-600 to-violet-700",
+    pattern: "chord-tones",
+    formulaType: "caged",
+    formulaId: "chordTones",
+    hideShapes: true,
   },
   {
     title: "Minor Pentatonic",
-    subtitle: "Solo building blocks",
-    href: "/dashboard/practice/scales",
-    gradient: "from-cyan-500 via-teal-500 to-emerald-600",
-    pattern: "pentatonic-minor",
-    formulaType: "scale",
-    formulaId: "minorPentatonic",
-  },
-]
-
-const arpeggios: PracticeItem[] = [
-  {
-    title: "Major Arpeggio",
-    subtitle: "Bright & uplifting",
-    href: "/dashboard/practice/scales",
-    gradient: "from-sky-500 via-blue-600 to-indigo-700",
-    pattern: "arp-major",
-    formulaType: "arpeggio",
-    formulaId: "major",
-  },
-  {
-    title: "Minor Arpeggio",
-    subtitle: "Dark & moody",
-    href: "/dashboard/practice/scales",
-    gradient: "from-fuchsia-600 via-purple-600 to-violet-700",
-    pattern: "arp-minor",
-    formulaType: "arpeggio",
-    formulaId: "minor",
-  },
-  {
-    title: "Dominant 7th",
-    subtitle: "Bluesy tension",
-    href: "/dashboard/practice/scales",
-    gradient: "from-lime-500 via-green-500 to-emerald-600",
-    pattern: "arp-dom7",
-    formulaType: "arpeggio",
-    formulaId: "dom7",
-  },
-  {
-    title: "Minor 7th",
-    subtitle: "Jazz smoothness",
-    href: "/dashboard/practice/scales",
-    gradient: "from-orange-500 via-red-500 to-rose-600",
-    pattern: "arp-min7",
-    formulaType: "arpeggio",
-    formulaId: "min7",
+    subtitle: "Solo essentials",
+    href: "/dashboard/practice/caged",
+    gradient: "from-rose-500 via-pink-600 to-fuchsia-700",
+    pattern: "caged-pentatonic",
+    formulaType: "caged",
+    formulaId: "cagedPentatonic",
+    hideShapes: true,
   },
 ]
 
@@ -297,19 +252,13 @@ export default function PracticePage() {
   return (
     <div className="space-y-10 py-2">
       <div className="space-y-2">
-        <h1 className="font-display text-3xl font-bold tracking-tight sm:text-4xl">Practice</h1>
+        <h1 className="font-display text-3xl font-bold tracking-tight sm:text-4xl">Learn</h1>
         <p className="text-muted-foreground">
-          Choose a scale or arpeggio to practice. StringFlow will listen and give you feedback.
+          Choose a theory topic to learn. StringFlow will explain it to you.
         </p>
       </div>
 
-      <PracticeRow title="Scales" items={scales} sectionIndex={1} onSelectItem={setSelectedItem} />
-      <PracticeRow
-        title="Arpeggios"
-        items={arpeggios}
-        sectionIndex={2}
-        onSelectItem={setSelectedItem}
-      />
+      <PracticeRow title="CAGED" items={caged} sectionIndex={0} onSelectItem={setSelectedItem} />
 
       <PracticeDialog
         open={selectedItem !== null}

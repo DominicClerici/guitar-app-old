@@ -49,8 +49,9 @@ interface PracticeDialogProps {
   href: string
   gradient: string
   shapeCount?: number
-  formulaType: "scale" | "arpeggio"
+  formulaType: "scale" | "arpeggio" | "caged"
   formulaId: string
+  hideShapes?: boolean
 }
 
 export default function PracticeDialog({
@@ -63,6 +64,7 @@ export default function PracticeDialog({
   shapeCount = 5,
   formulaType,
   formulaId,
+  hideShapes = false,
 }: PracticeDialogProps) {
   const router = useRouter()
 
@@ -213,58 +215,60 @@ export default function PracticeDialog({
             </div>
           </div>
 
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium">Shapes</label>
-              <button
-                type="button"
-                onClick={selectAllShapes}
-                className="text-muted-foreground hover:text-foreground text-xs transition-colors"
-              >
-                Select all
-              </button>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {Array.from({ length: shapeCount }, (_, i) => i + 1).map((shape) => {
-                const isSelected = selectedShapes.includes(shape)
-                return (
-                  <button
-                    key={shape}
-                    type="button"
-                    onClick={() => toggleShape(shape)}
-                    className={cn(
-                      "group relative flex size-12 items-center justify-center rounded-lg border transition-all",
-                      isSelected
-                        ? "border-primary bg-primary/10"
-                        : "border-border hover:border-primary/50 hover:bg-accent",
-                    )}
-                  >
-                    <Music
+          {!hideShapes && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium">Shapes</label>
+                <button
+                  type="button"
+                  onClick={selectAllShapes}
+                  className="text-muted-foreground hover:text-foreground text-xs transition-colors"
+                >
+                  Select all
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {Array.from({ length: shapeCount }, (_, i) => i + 1).map((shape) => {
+                  const isSelected = selectedShapes.includes(shape)
+                  return (
+                    <button
+                      key={shape}
+                      type="button"
+                      onClick={() => toggleShape(shape)}
                       className={cn(
-                        "size-4 transition-all",
+                        "group relative flex size-12 items-center justify-center rounded-lg border transition-all",
                         isSelected
-                          ? "text-primary"
-                          : "text-muted-foreground group-hover:text-foreground",
-                      )}
-                    />
-                    <span
-                      className={cn(
-                        "absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full text-[10px] font-bold",
-                        isSelected
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted text-muted-foreground",
+                          ? "border-primary bg-primary/10"
+                          : "border-border hover:border-primary/50 hover:bg-accent",
                       )}
                     >
-                      {shape}
-                    </span>
-                  </button>
-                )
-              })}
+                      <Music
+                        className={cn(
+                          "size-4 transition-all",
+                          isSelected
+                            ? "text-primary"
+                            : "text-muted-foreground group-hover:text-foreground",
+                        )}
+                      />
+                      <span
+                        className={cn(
+                          "absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full text-[10px] font-bold",
+                          isSelected
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-muted text-muted-foreground",
+                        )}
+                      >
+                        {shape}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+              <p className="text-muted-foreground text-xs">
+                {selectedShapes.length} of {shapeCount} shapes selected
+              </p>
             </div>
-            <p className="text-muted-foreground text-xs">
-              {selectedShapes.length} of {shapeCount} shapes selected
-            </p>
-          </div>
+          )}
         </div>
 
         <DialogFooter className="border-border border-t px-6 py-4">
