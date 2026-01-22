@@ -15,7 +15,8 @@ import {
   type ScaleNote,
 } from "@/lib/scales/major-scale"
 import { cn } from "@/lib/utils"
-import { CheckIcon, Pause, Play, Square } from "lucide-react"
+import { CheckIcon, MusicIcon, Pause, Play, Square } from "lucide-react"
+import SlidingToggle from "../ui/sliding-toggle"
 import { ScaleCurrentPositionInfo, ScaleTimerInfo } from "./scales-control-bar"
 
 type PracticeState = "idle" | "countdown" | "practicing" | "paused" | "between-shapes" | "complete"
@@ -50,6 +51,7 @@ export default function ScalesPracticeClient() {
   const [remainingSeconds, setRemainingSeconds] = useState(0)
   const [initialDurationSeconds, setInitialDurationSeconds] = useState(0)
 
+  const [showDegree, setShowDegree] = useState(false)
   const practiceStateRef = useRef(practiceState)
   const currentShapeNotesRef = useRef<ScaleNote[]>([])
   const transitionTimerRef = useRef<NodeJS.Timeout | null>(null)
@@ -533,8 +535,25 @@ export default function ScalesPracticeClient() {
         >
           <Fretboard
             markers={practiceState === "countdown" ? [] : markers}
-            showDegree={false}
+            showDegree={showDegree}
             className="w-full"
+          />
+        </div>
+      )}
+      {practiceState === "idle" && (
+        <div className="flex flex-col items-center justify-center gap-4">
+          {/* Add controls here */}
+          <SlidingToggle
+            options={[
+              {
+                label: "Interval",
+                value: "interval",
+                icon: <span className="font-mono text-lg font-medium">1</span>,
+              },
+              { label: "Note", value: "note", icon: <MusicIcon /> },
+            ]}
+            value={showDegree ? "interval" : "note"}
+            onChange={(value) => setShowDegree(value === "interval")}
           />
         </div>
       )}

@@ -10,7 +10,7 @@ const SVG_WIDTH = 900
 const SVG_HEIGHT = 220
 const FRET_LABEL_AREA_HEIGHT = 20
 const FRET_WIDTH = SVG_WIDTH / FRET_COUNT
-const MARKER_RADIUS = 12
+const MARKER_RADIUS = 14
 const FRET_DOT_RADIUS = 6
 
 type MarkerType =
@@ -60,22 +60,26 @@ export function Fretboard({
   onFretClick,
 }: FretboardProps) {
   const getMarkerStyle = (type: MarkerType) => {
+    const isHidden = type.includes("hidden")
+    const isDisabled = type.includes("disabled")
+    const isRoot = type.includes("root")
     if (type === "played") {
       return {
         fill: "var(--primary)",
         textColor: "var(--primary-foreground)",
         borderColor: "var(--primary-border)",
         opacity: 1,
+        isRoot,
       }
     }
-    const isHidden = type.includes("hidden")
-    const isDisabled = type.includes("disabled")
-    const isRoot = type.includes("root")
     return {
-      fill: isRoot ? "var(--foreground)" : "var(--muted)",
-      textColor: isRoot ? "var(--background)" : "var(--foreground)",
-      borderColor: isRoot ? "var(--background)" : "var(--border)",
+      fill: isRoot ? "var(--accent)" : "var(--background-elevated)",
+      textColor: isRoot ? "var(--foreground)" : "var(--muted-foreground)",
+      borderColor: isRoot
+        ? "color-mix(in srgb, var(--muted-foreground) 50%, transparent)"
+        : "var(--border)",
       opacity: isHidden ? 0 : isDisabled ? 0.25 : 1,
+      isRoot,
     }
   }
 
@@ -92,7 +96,7 @@ export function Fretboard({
           y={0}
           width={width}
           height={FRETBOARD_HEIGHT}
-          className={isNut ? "fill-foreground" : "fill-muted"}
+          className={isNut ? "fill-accent" : "fill-card"}
         />
       )
     })
@@ -111,14 +115,14 @@ export function Fretboard({
               cx={cx}
               cy={FRETBOARD_HEIGHT / 2 - gap}
               r={FRET_DOT_RADIUS}
-              className="fill-muted-foreground"
+              className="fill-accent"
               opacity={0.5}
             />
             <circle
               cx={cx}
               cy={FRETBOARD_HEIGHT / 2 + gap}
               r={FRET_DOT_RADIUS}
-              className="fill-muted-foreground"
+              className="fill-accent"
               opacity={0.5}
             />
           </g>
@@ -131,7 +135,7 @@ export function Fretboard({
           cx={cx}
           cy={FRETBOARD_HEIGHT / 2}
           r={FRET_DOT_RADIUS}
-          className="fill-muted-foreground"
+          className="fill-accent"
           opacity={0.5}
         />
       )
@@ -150,7 +154,7 @@ export function Fretboard({
           y={y - thickness / 2}
           width={SVG_WIDTH - FRET_WIDTH}
           height={thickness}
-          className="fill-muted"
+          className="fill-card"
         />
       )
     })
@@ -168,8 +172,8 @@ export function Fretboard({
           y={y}
           textAnchor="middle"
           dominantBaseline="central"
-          className="fill-muted-foreground text-xs font-semibold"
-          style={{ fontSize: 12 }}
+          className="fill-muted-foreground/50 font-semibold"
+          style={{ fontSize: 10 }}
         >
           {note}
         </text>
@@ -215,14 +219,27 @@ export function Fretboard({
           className="animate-marker-in"
           style={{ "--marker-opacity": style.opacity } as React.CSSProperties}
         >
-          <circle
-            cx={cx}
-            cy={cy}
-            r={MARKER_RADIUS}
-            fill={style.fill}
-            stroke={style.borderColor}
-            strokeWidth={1}
-          />
+          {style.isRoot ? (
+            <rect
+              x={cx - MARKER_RADIUS}
+              y={cy - MARKER_RADIUS}
+              width={MARKER_RADIUS * 2}
+              height={MARKER_RADIUS * 2}
+              rx={6}
+              fill={style.fill}
+              stroke={style.borderColor}
+              strokeWidth={1}
+            />
+          ) : (
+            <circle
+              cx={cx}
+              cy={cy}
+              r={MARKER_RADIUS}
+              fill={style.fill}
+              stroke={style.borderColor}
+              strokeWidth={1}
+            />
+          )}
           <text
             x={cx}
             y={cy}

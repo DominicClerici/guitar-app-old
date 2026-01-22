@@ -1,7 +1,7 @@
 "use client"
 
-import { useState } from "react"
 import PracticeDialog from "@/components/practice/practice-dialog"
+import { useState } from "react"
 
 const scales = [
   {
@@ -273,7 +273,12 @@ export default function PracticePage() {
       </div>
 
       <PracticeRow title="Scales" items={scales} sectionIndex={0} onSelectItem={setSelectedItem} />
-      <PracticeRow title="Arpeggios" items={arpeggios} sectionIndex={1} onSelectItem={setSelectedItem} />
+      <PracticeRow
+        title="Arpeggios"
+        items={arpeggios}
+        sectionIndex={1}
+        onSelectItem={setSelectedItem}
+      />
 
       <PracticeDialog
         open={selectedItem !== null}

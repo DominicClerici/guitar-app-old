@@ -70,9 +70,6 @@
   --background-elevated: oklch(0.965 0 0);
   --foreground: oklch(0.145 0 0);
 
-  --landing-accent: oklch(0.68 0.16 55);
-  --landing-accent-light: oklch(0.78 0.14 55);
-  --landing-accent-dark: oklch(0.55 0.18 55);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
@@ -125,9 +122,6 @@
   --background-elevated: oklch(0.165 0 0);
   --foreground: oklch(0.985 0 0);
 
-  --landing-accent: oklch(0.72 0.14 55);
-  --landing-accent-light: oklch(0.82 0.12 55);
-  --landing-accent-dark: oklch(0.58 0.16 55);
   --card: oklch(0.205 0 0);
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
@@ -174,12 +168,6 @@
   --in-tune: oklch(62.7% 0.194 149.214);
   --slight-out-of-tune: oklch(68.1% 0.162 75.834);
   --out-of-tune: oklch(57.7% 0.245 27.325);
-}
-
-@theme inline {
-  --color-landing-accent: var(--landing-accent);
-  --color-landing-accent-light: var(--landing-accent-light);
-  --color-landing-accent-dark: var(--landing-accent-dark);
 }
 
 @layer base {
