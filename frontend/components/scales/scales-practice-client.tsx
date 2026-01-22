@@ -53,6 +53,7 @@ export default function ScalesPracticeClient() {
   const [initialDurationSeconds, setInitialDurationSeconds] = useState(0)
 
   const [showDegree, setShowDegree] = useState(false)
+  const [previewShape, setPreviewShape] = useState<string>("full")
   const practiceStateRef = useRef(practiceState)
   const currentShapeNotesRef = useRef<ScaleNote[]>([])
   const transitionTimerRef = useRef<NodeJS.Timeout | null>(null)
@@ -314,7 +315,12 @@ export default function ScalesPracticeClient() {
 
   const isInSession = practiceState !== "idle" && practiceState !== "complete"
 
-  const displayNotes = isInSession ? currentShapeNotes : fullScale
+  const previewNotes =
+    previewShape === "full"
+      ? fullScale
+      : getCAGEDShapeNotes(previewShape as "C" | "A" | "G" | "E" | "D", fullScale, selectedKeyIndex)
+
+  const displayNotes = isInSession ? currentShapeNotes : previewNotes
 
   const markers: Marker[] = displayNotes.map((note) => {
     const noteKey = getNoteKey(note.stringIndex, note.fretIndex)
@@ -351,25 +357,6 @@ export default function ScalesPracticeClient() {
   return (
     <div className="flex flex-col gap-6">
       <SessionHeader config={sessionConfig} hideShapes={isInSession} />
-      <Button
-        onClick={() => {
-          saveSession.mutate({
-            duration: 180,
-            type: "scales",
-            timingMode: sessionConfig.sessionType,
-            keys: [NOTE_NAMES[selectedKeyIndex]],
-            sessionData: {
-              type: "scales",
-              key: selectedKeyIndex,
-              shapes: activeShapes,
-              shapesCompleted: completedShapesCount,
-              totalNotesPlayed: totalNotesPlayedRef.current,
-            },
-          })
-        }}
-      >
-        Test
-      </Button>
 
       {/* Countdown State */}
       {practiceState === "countdown" && (
@@ -606,8 +593,16 @@ export default function ScalesPracticeClient() {
         </div>
       )}
       {practiceState === "idle" && (
-        <div className="flex flex-col items-center justify-center gap-4">
-          {/* Add controls here */}
+        <div className="flex items-center justify-center gap-4">
+          <SlidingToggle
+            options={[
+              { label: "Full", value: "full" },
+              ...cagedShapeNames.map((shape) => ({ label: shape, value: shape })),
+            ]}
+            value={previewShape}
+            onChange={setPreviewShape}
+            className="h-12"
+          />
           <SlidingToggle
             options={[
               {
@@ -619,6 +614,7 @@ export default function ScalesPracticeClient() {
             ]}
             value={showDegree ? "interval" : "note"}
             onChange={(value) => setShowDegree(value === "interval")}
+            className="h-12"
           />
         </div>
       )}

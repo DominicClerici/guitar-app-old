@@ -104,7 +104,7 @@ const SHAPE_CONFIGS: ShapeConfig[] = [
   { name: "G", offsetFromLowERoot: [-1, 3], baseSemitones: 3 },
   { name: "A", offsetFromLowERoot: [-1, 3], baseSemitones: 5 },
   { name: "C", offsetFromLowERoot: [-1, 3], baseSemitones: 8 },
-  { name: "D", offsetFromLowERoot: [0, 4], baseSemitones: 10 },
+  { name: "D", offsetFromLowERoot: [-1, 3], baseSemitones: 10 },
 ]
 
 function getRootFretOnLowE(rootNoteIndex: number): number {
