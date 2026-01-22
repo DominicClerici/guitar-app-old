@@ -250,7 +250,7 @@ export default function PracticePage() {
   const [selectedItem, setSelectedItem] = useState<PracticeItem | null>(null)
 
   return (
-    <div className="space-y-10 py-2">
+    <div className="space-y-10">
       <div className="space-y-2">
         <h1 className="font-display text-3xl font-bold tracking-tight sm:text-4xl">Learn</h1>
         <p className="text-muted-foreground">

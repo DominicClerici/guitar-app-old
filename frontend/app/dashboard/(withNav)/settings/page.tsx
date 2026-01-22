@@ -24,7 +24,7 @@ export default function SettingsPage() {
   const ActiveComponent = sectionComponents[activeSection]
 
   return (
-    <div className="w-full px-6 py-8">
+    <div className="w-full">
       <h1 className="font-display mb-10 text-4xl font-bold tracking-tight">My account</h1>
 
       <div className="flex gap-12">
