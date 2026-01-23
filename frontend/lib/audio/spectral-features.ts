@@ -1,44 +1,48 @@
-"use client"
+import FFT from "fft.js"
 
-import {
-  applyHannWindow,
-  computeFFTMagnitudes,
-  findPeakNearFrequency,
-  parabolicInterpolation,
-} from "./fft-utils"
+export type AudioBuffer = Float32Array<ArrayBufferLike>
+
+export interface HarmonicRatios {
+  h2h1: number
+  h3h1: number
+  evenOdd: number
+}
 
 export interface SpectralFeatures {
-  spectralCentroid: number
-  spectralRolloff: number
-  spectralSpread: number
-  spectralFlatness: number
-  spectralFlux: number
-  zeroCrossingRate: number
+  centroid: number
+  rolloff: number
+  spread: number
+  flatness: number
+  flux: number
+  zcr: number
   mfccs: number[]
-  harmonicRatios: {
-    h2h1: number
-    h3h1: number
-    evenOddRatio: number
-  }
-  inharmonicity: number
+  harmonicRatios: HarmonicRatios
 }
 
-export interface FeatureExtractionConfig {
+interface MelFilterbankCache {
   sampleRate: number
   fftSize: number
-  numMfccs: number
-  numMelFilters: number
-  minFreq: number
-  maxFreq: number
+  numFilters: number
+  filterbank: Float32Array[]
 }
 
-const DEFAULT_CONFIG: FeatureExtractionConfig = {
-  sampleRate: 44100,
-  fftSize: 4096,
-  numMfccs: 13,
-  numMelFilters: 26,
-  minFreq: 60,
-  maxFreq: 8000,
+interface DCTMatrixCache {
+  numFilters: number
+  numCoeffs: number
+  matrix: Float32Array[]
+}
+
+let melFilterbankCache: MelFilterbankCache | null = null
+let dctMatrixCache: DCTMatrixCache | null = null
+let fftCache: Map<number, FFT> = new Map()
+
+function getFFT(size: number): FFT {
+  let fft = fftCache.get(size)
+  if (!fft) {
+    fft = new FFT(size)
+    fftCache.set(size, fft)
+  }
+  return fft
 }
 
 function hzToMel(hz: number): number {
@@ -49,177 +53,221 @@ function melToHz(mel: number): number {
   return 700 * (Math.pow(10, mel / 2595) - 1)
 }
 
-let melFilterbankCache: Map<string, Float32Array[]> = new Map()
+function createMelFilterbank(
+  sampleRate: number,
+  fftSize: number,
+  numFilters: number,
+  lowFreq = 20,
+  highFreq?: number
+): Float32Array[] {
+  const nyquist = sampleRate / 2
+  highFreq = highFreq ?? Math.min(nyquist, 8000)
 
-function createMelFilterbank(config: FeatureExtractionConfig): Float32Array[] {
-  const cacheKey = `${config.sampleRate}-${config.fftSize}-${config.numMelFilters}-${config.minFreq}-${config.maxFreq}`
-  if (melFilterbankCache.has(cacheKey)) {
-    return melFilterbankCache.get(cacheKey)!
+  if (
+    melFilterbankCache &&
+    melFilterbankCache.sampleRate === sampleRate &&
+    melFilterbankCache.fftSize === fftSize &&
+    melFilterbankCache.numFilters === numFilters
+  ) {
+    return melFilterbankCache.filterbank
   }
 
-  const numBins = config.fftSize / 2
-  const binResolution = config.sampleRate / config.fftSize
+  const numBins = fftSize / 2 + 1
+  const lowMel = hzToMel(lowFreq)
+  const highMel = hzToMel(highFreq)
 
-  const minMel = hzToMel(config.minFreq)
-  const maxMel = hzToMel(config.maxFreq)
-
-  const melPoints: number[] = []
-  for (let i = 0; i <= config.numMelFilters + 1; i++) {
-    const mel = minMel + (i * (maxMel - minMel)) / (config.numMelFilters + 1)
-    melPoints.push(melToHz(mel))
+  const melPoints = new Float32Array(numFilters + 2)
+  for (let i = 0; i < numFilters + 2; i++) {
+    melPoints[i] = lowMel + (i * (highMel - lowMel)) / (numFilters + 1)
   }
 
-  const binPoints = melPoints.map((hz) => Math.floor(hz / binResolution))
+  const hzPoints = melPoints.map((mel) => melToHz(mel))
+
+  const binPoints = hzPoints.map((hz) =>
+    Math.floor(((fftSize + 1) * hz) / sampleRate)
+  )
 
   const filterbank: Float32Array[] = []
-  for (let m = 1; m <= config.numMelFilters; m++) {
-    const filter = new Float32Array(numBins)
-    const left = binPoints[m - 1]
-    const center = binPoints[m]
-    const right = binPoints[m + 1]
 
-    for (let k = left; k < center && k < numBins; k++) {
-      if (center !== left) {
-        filter[k] = (k - left) / (center - left)
+  for (let m = 1; m <= numFilters; m++) {
+    const filter = new Float32Array(numBins)
+    const startBin = binPoints[m - 1]
+    const centerBin = binPoints[m]
+    const endBin = binPoints[m + 1]
+
+    for (let k = startBin; k < centerBin; k++) {
+      if (centerBin !== startBin) {
+        filter[k] = (k - startBin) / (centerBin - startBin)
       }
     }
-    for (let k = center; k <= right && k < numBins; k++) {
-      if (right !== center) {
-        filter[k] = (right - k) / (right - center)
+
+    for (let k = centerBin; k <= endBin; k++) {
+      if (endBin !== centerBin) {
+        filter[k] = (endBin - k) / (endBin - centerBin)
       }
     }
+
     filterbank.push(filter)
   }
 
-  melFilterbankCache.set(cacheKey, filterbank)
+  melFilterbankCache = { sampleRate, fftSize, numFilters, filterbank }
   return filterbank
 }
 
-let dctMatrixCache: Map<string, Float32Array[]> = new Map()
-
-function createDCTMatrix(numMfccs: number, numFilters: number): Float32Array[] {
-  const cacheKey = `${numMfccs}-${numFilters}`
-  if (dctMatrixCache.has(cacheKey)) {
-    return dctMatrixCache.get(cacheKey)!
+/**
+ * Creates a DCT-II matrix for MFCC computation.
+ * DCT[i][j] = cos(PI * i * (j + 0.5) / N)
+ */
+function createDCTMatrix(numFilters: number, numCoeffs: number): Float32Array[] {
+  if (
+    dctMatrixCache &&
+    dctMatrixCache.numFilters === numFilters &&
+    dctMatrixCache.numCoeffs === numCoeffs
+  ) {
+    return dctMatrixCache.matrix
   }
 
   const matrix: Float32Array[] = []
-  for (let k = 0; k < numMfccs; k++) {
+  for (let i = 0; i < numCoeffs; i++) {
     const row = new Float32Array(numFilters)
-    for (let n = 0; n < numFilters; n++) {
-      row[n] = Math.cos((Math.PI * k * (n + 0.5)) / numFilters)
+    for (let j = 0; j < numFilters; j++) {
+      row[j] = Math.cos((Math.PI * i * (j + 0.5)) / numFilters)
     }
     matrix.push(row)
   }
 
-  dctMatrixCache.set(cacheKey, matrix)
+  dctMatrixCache = { numFilters, numCoeffs, matrix }
   return matrix
 }
 
-export function computeMFCCs(
-  magnitudes: Float32Array,
-  config: FeatureExtractionConfig = DEFAULT_CONFIG,
-): number[] {
-  const filterbank = createMelFilterbank(config)
-  const dctMatrix = createDCTMatrix(config.numMfccs, config.numMelFilters)
+function applyHannWindow(buffer: Float32Array): Float32Array {
+  const windowed = new Float32Array(buffer.length)
+  for (let i = 0; i < buffer.length; i++) {
+    const multiplier = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (buffer.length - 1)))
+    windowed[i] = buffer[i] * multiplier
+  }
+  return windowed
+}
 
-  const filterEnergies = new Float32Array(config.numMelFilters)
-  for (let m = 0; m < config.numMelFilters; m++) {
-    let energy = 0
-    for (let k = 0; k < magnitudes.length && k < filterbank[m].length; k++) {
-      energy += filterbank[m][k] * magnitudes[k] * magnitudes[k]
-    }
-    filterEnergies[m] = Math.log(Math.max(energy, 1e-10))
+function computePowerSpectrum(buffer: Float32Array, fftSize: number): Float32Array {
+  const fft = getFFT(fftSize)
+  const input = new Array(fftSize).fill(0)
+  const output = fft.createComplexArray()
+
+  for (let i = 0; i < Math.min(buffer.length, fftSize); i++) {
+    input[i] = buffer[i]
   }
 
-  const mfccs: number[] = []
-  for (let k = 1; k < config.numMfccs; k++) {
-    let sum = 0
-    for (let n = 0; n < config.numMelFilters; n++) {
-      sum += dctMatrix[k][n] * filterEnergies[n]
-    }
-    mfccs.push(sum)
+  fft.realTransform(output, input)
+
+  const numBins = fftSize / 2 + 1
+  const powerSpectrum = new Float32Array(numBins)
+
+  for (let i = 0; i < numBins; i++) {
+    const real = output[2 * i]
+    const imag = output[2 * i + 1]
+    powerSpectrum[i] = real * real + imag * imag
   }
 
-  return mfccs
+  return powerSpectrum
+}
+
+function computeMagnitudeSpectrum(powerSpectrum: Float32Array): Float32Array {
+  const magnitude = new Float32Array(powerSpectrum.length)
+  for (let i = 0; i < powerSpectrum.length; i++) {
+    magnitude[i] = Math.sqrt(powerSpectrum[i])
+  }
+  return magnitude
 }
 
 export function computeSpectralCentroid(
-  magnitudes: Float32Array,
+  magnitudeSpectrum: Float32Array,
   sampleRate: number,
-  fftSize: number,
+  fftSize: number
 ): number {
-  const binResolution = sampleRate / fftSize
+  const binWidth = sampleRate / fftSize
   let weightedSum = 0
   let totalMagnitude = 0
 
-  for (let i = 1; i < magnitudes.length; i++) {
-    const freq = i * binResolution
-    weightedSum += freq * magnitudes[i]
-    totalMagnitude += magnitudes[i]
+  for (let i = 0; i < magnitudeSpectrum.length; i++) {
+    const frequency = i * binWidth
+    weightedSum += frequency * magnitudeSpectrum[i]
+    totalMagnitude += magnitudeSpectrum[i]
   }
 
-  return totalMagnitude > 0 ? weightedSum / totalMagnitude : 0
+  if (totalMagnitude === 0) return 0
+  return weightedSum / totalMagnitude
 }
 
 export function computeSpectralRolloff(
-  magnitudes: Float32Array,
+  magnitudeSpectrum: Float32Array,
   sampleRate: number,
   fftSize: number,
-  threshold: number = 0.85,
+  rolloffPercent = 0.85
 ): number {
-  const binResolution = sampleRate / fftSize
+  const binWidth = sampleRate / fftSize
   let totalEnergy = 0
 
-  for (let i = 0; i < magnitudes.length; i++) {
-    totalEnergy += magnitudes[i] * magnitudes[i]
+  for (let i = 0; i < magnitudeSpectrum.length; i++) {
+    totalEnergy += magnitudeSpectrum[i]
   }
 
-  const targetEnergy = totalEnergy * threshold
+  const threshold = rolloffPercent * totalEnergy
   let cumulativeEnergy = 0
 
-  for (let i = 0; i < magnitudes.length; i++) {
-    cumulativeEnergy += magnitudes[i] * magnitudes[i]
-    if (cumulativeEnergy >= targetEnergy) {
-      return i * binResolution
+  for (let i = 0; i < magnitudeSpectrum.length; i++) {
+    cumulativeEnergy += magnitudeSpectrum[i]
+    if (cumulativeEnergy >= threshold) {
+      return i * binWidth
     }
   }
 
-  return (magnitudes.length - 1) * binResolution
+  return (magnitudeSpectrum.length - 1) * binWidth
 }
 
 export function computeSpectralSpread(
-  magnitudes: Float32Array,
-  centroid: number,
+  magnitudeSpectrum: Float32Array,
   sampleRate: number,
   fftSize: number,
+  centroid?: number
 ): number {
-  const binResolution = sampleRate / fftSize
+  const binWidth = sampleRate / fftSize
+  const computedCentroid =
+    centroid ?? computeSpectralCentroid(magnitudeSpectrum, sampleRate, fftSize)
+
   let weightedVariance = 0
   let totalMagnitude = 0
 
-  for (let i = 1; i < magnitudes.length; i++) {
-    const freq = i * binResolution
-    const diff = freq - centroid
-    weightedVariance += diff * diff * magnitudes[i]
-    totalMagnitude += magnitudes[i]
+  for (let i = 0; i < magnitudeSpectrum.length; i++) {
+    const frequency = i * binWidth
+    const deviation = frequency - computedCentroid
+    weightedVariance += deviation * deviation * magnitudeSpectrum[i]
+    totalMagnitude += magnitudeSpectrum[i]
   }
 
-  return totalMagnitude > 0 ? Math.sqrt(weightedVariance / totalMagnitude) : 0
+  if (totalMagnitude === 0) return 0
+  return Math.sqrt(weightedVariance / totalMagnitude)
 }
 
-export function computeSpectralFlatness(magnitudes: Float32Array): number {
-  const n = magnitudes.length
+/**
+ * Computes ratio of geometric mean to arithmetic mean.
+ * Values near 0 indicate tonal content (peaked spectrum).
+ * Values near 1 indicate noise-like content (flat spectrum).
+ */
+export function computeSpectralFlatness(magnitudeSpectrum: Float32Array): number {
+  const n = magnitudeSpectrum.length
+  if (n === 0) return 0
+
   let logSum = 0
   let arithmeticSum = 0
   let validCount = 0
+  const epsilon = 1e-10
 
-  for (let i = 1; i < n; i++) {
-    if (magnitudes[i] > 1e-10) {
-      logSum += Math.log(magnitudes[i])
-      arithmeticSum += magnitudes[i]
-      validCount++
-    }
+  for (let i = 0; i < n; i++) {
+    const value = Math.max(magnitudeSpectrum[i], epsilon)
+    logSum += Math.log(value)
+    arithmeticSum += magnitudeSpectrum[i]
+    validCount++
   }
 
   if (validCount === 0 || arithmeticSum === 0) return 0
@@ -230,302 +278,276 @@ export function computeSpectralFlatness(magnitudes: Float32Array): number {
   return geometricMean / arithmeticMean
 }
 
-let previousMagnitudes: Float32Array | null = null
-
 export function computeSpectralFlux(
-  magnitudes: Float32Array,
-  previousMags: Float32Array | null = null,
+  currentSpectrum: Float32Array,
+  previousSpectrum: Float32Array | undefined
 ): number {
-  const prev = previousMags ?? previousMagnitudes
-  previousMagnitudes = new Float32Array(magnitudes)
-
-  if (!prev || prev.length !== magnitudes.length) {
+  if (!previousSpectrum || currentSpectrum.length !== previousSpectrum.length) {
     return 0
   }
 
   let flux = 0
-  for (let i = 0; i < magnitudes.length; i++) {
-    const diff = magnitudes[i] - prev[i]
+  for (let i = 0; i < currentSpectrum.length; i++) {
+    const diff = currentSpectrum[i] - previousSpectrum[i]
     flux += diff * diff
   }
 
-  return Math.sqrt(flux / magnitudes.length)
+  return Math.sqrt(flux)
 }
 
-export function computeZeroCrossingRate(timeDomainData: Float32Array): number {
+export function computeZeroCrossingRate(audioBuffer: Float32Array): number {
+  if (audioBuffer.length < 2) return 0
+
   let crossings = 0
-  for (let i = 1; i < timeDomainData.length; i++) {
+  for (let i = 1; i < audioBuffer.length; i++) {
     if (
-      (timeDomainData[i] >= 0 && timeDomainData[i - 1] < 0) ||
-      (timeDomainData[i] < 0 && timeDomainData[i - 1] >= 0)
+      (audioBuffer[i] >= 0 && audioBuffer[i - 1] < 0) ||
+      (audioBuffer[i] < 0 && audioBuffer[i - 1] >= 0)
     ) {
       crossings++
     }
   }
-  return crossings / timeDomainData.length
+
+  return crossings / (audioBuffer.length - 1)
+}
+
+export function computeMFCCs(
+  powerSpectrum: Float32Array,
+  sampleRate: number,
+  fftSize: number,
+  numCoeffs = 13,
+  numFilters = 26
+): number[] {
+  const filterbank = createMelFilterbank(sampleRate, fftSize, numFilters)
+  const dctMatrix = createDCTMatrix(numFilters, numCoeffs)
+
+  const filterEnergies = new Float32Array(numFilters)
+  for (let m = 0; m < numFilters; m++) {
+    let energy = 0
+    const filter = filterbank[m]
+    for (let k = 0; k < powerSpectrum.length; k++) {
+      energy += powerSpectrum[k] * filter[k]
+    }
+    filterEnergies[m] = Math.log(Math.max(energy, 1e-10))
+  }
+
+  const mfccs: number[] = []
+  for (let i = 1; i < numCoeffs; i++) {
+    let coeff = 0
+    const row = dctMatrix[i]
+    for (let j = 0; j < numFilters; j++) {
+      coeff += filterEnergies[j] * row[j]
+    }
+    mfccs.push(coeff)
+  }
+
+  return mfccs
+}
+
+function findPeakAmplitude(
+  magnitudeSpectrum: Float32Array,
+  targetFreq: number,
+  sampleRate: number,
+  fftSize: number,
+  searchWidthHz = 20
+): number {
+  const binWidth = sampleRate / fftSize
+  const targetBin = Math.round(targetFreq / binWidth)
+  const searchBins = Math.ceil(searchWidthHz / binWidth)
+
+  const startBin = Math.max(0, targetBin - searchBins)
+  const endBin = Math.min(magnitudeSpectrum.length - 1, targetBin + searchBins)
+
+  let maxAmplitude = 0
+  for (let i = startBin; i <= endBin; i++) {
+    if (magnitudeSpectrum[i] > maxAmplitude) {
+      maxAmplitude = magnitudeSpectrum[i]
+    }
+  }
+
+  return maxAmplitude
 }
 
 export function computeHarmonicRatios(
-  magnitudes: Float32Array,
-  fundamental: number,
+  magnitudeSpectrum: Float32Array,
+  fundamentalFreq: number,
   sampleRate: number,
-  fftSize: number,
-): { h2h1: number; h3h1: number; evenOddRatio: number } {
-  const binResolution = sampleRate / fftSize
-
-  const findPeakAmplitude = (targetFreq: number): number => {
-    const targetBin = Math.round(targetFreq / binResolution)
-    const searchRange = 3
-
-    let maxAmp = 0
-    for (
-      let i = Math.max(0, targetBin - searchRange);
-      i <= Math.min(magnitudes.length - 1, targetBin + searchRange);
-      i++
-    ) {
-      if (magnitudes[i] > maxAmp) {
-        maxAmp = magnitudes[i]
-      }
-    }
-    return maxAmp
+  fftSize: number
+): HarmonicRatios {
+  if (fundamentalFreq <= 0) {
+    return { h2h1: 0, h3h1: 0, evenOdd: 0 }
   }
 
-  const h1 = findPeakAmplitude(fundamental)
-  const h2 = findPeakAmplitude(fundamental * 2)
-  const h3 = findPeakAmplitude(fundamental * 3)
-  const h4 = findPeakAmplitude(fundamental * 4)
-  const h5 = findPeakAmplitude(fundamental * 5)
-  const h6 = findPeakAmplitude(fundamental * 6)
+  const h1 = findPeakAmplitude(
+    magnitudeSpectrum,
+    fundamentalFreq,
+    sampleRate,
+    fftSize
+  )
+  const h2 = findPeakAmplitude(
+    magnitudeSpectrum,
+    fundamentalFreq * 2,
+    sampleRate,
+    fftSize
+  )
+  const h3 = findPeakAmplitude(
+    magnitudeSpectrum,
+    fundamentalFreq * 3,
+    sampleRate,
+    fftSize
+  )
+  const h4 = findPeakAmplitude(
+    magnitudeSpectrum,
+    fundamentalFreq * 4,
+    sampleRate,
+    fftSize
+  )
+  const h5 = findPeakAmplitude(
+    magnitudeSpectrum,
+    fundamentalFreq * 5,
+    sampleRate,
+    fftSize
+  )
+  const h6 = findPeakAmplitude(
+    magnitudeSpectrum,
+    fundamentalFreq * 6,
+    sampleRate,
+    fftSize
+  )
 
-  const h2h1 = h1 > 0 ? h2 / h1 : 0
-  const h3h1 = h1 > 0 ? h3 / h1 : 0
+  const epsilon = 1e-10
+
+  const h2h1 = h1 > epsilon ? h2 / h1 : 0
+  const h3h1 = h1 > epsilon ? h3 / h1 : 0
 
   const evenSum = h2 + h4 + h6
   const oddSum = h1 + h3 + h5
-  const evenOddRatio = oddSum > 0 ? evenSum / oddSum : 0
+  const evenOdd = oddSum > epsilon ? evenSum / oddSum : 0
 
-  return { h2h1, h3h1, evenOddRatio }
+  return { h2h1, h3h1, evenOdd }
 }
 
-export function measureInharmonicity(
-  magnitudes: Float32Array,
-  fundamentalFreq: number,
+export function extractFeatures(
+  audioBuffer: AudioBuffer,
   sampleRate: number,
-  fftSize: number,
-): number {
-  if (fundamentalFreq <= 0) return 0
+  fundamentalFreq?: number,
+  previousSpectrum?: AudioBuffer
+): SpectralFeatures {
+  const fftSize = nextPowerOfTwo(audioBuffer.length)
 
-  const harmonicsToMeasure = [2, 3, 4, 5]
-  const bEstimates: number[] = []
+  const windowed = applyHannWindow(audioBuffer)
+  const powerSpectrum = computePowerSpectrum(windowed, fftSize)
+  const magnitudeSpectrum = computeMagnitudeSpectrum(powerSpectrum)
 
-  const fundamentalPeak = findPeakNearFrequency(
-    magnitudes,
-    fundamentalFreq,
+  const centroid = computeSpectralCentroid(magnitudeSpectrum, sampleRate, fftSize)
+  const rolloff = computeSpectralRolloff(magnitudeSpectrum, sampleRate, fftSize)
+  const spread = computeSpectralSpread(
+    magnitudeSpectrum,
     sampleRate,
     fftSize,
-    50,
+    centroid
   )
-  if (!fundamentalPeak || fundamentalPeak.amplitude < 1e-6) return 0
+  const flatness = computeSpectralFlatness(magnitudeSpectrum)
+  const flux = computeSpectralFlux(magnitudeSpectrum, previousSpectrum)
+  const zcr = computeZeroCrossingRate(audioBuffer)
+  const mfccs = computeMFCCs(powerSpectrum, sampleRate, fftSize)
 
-  for (const n of harmonicsToMeasure) {
-    const expectedFreq = n * fundamentalFreq
-
-    if (expectedFreq > sampleRate / 2 - 100) break
-
-    const peak = findPeakNearFrequency(magnitudes, expectedFreq, sampleRate, fftSize, 80)
-    if (!peak) continue
-
-    const relativeAmplitude = peak.amplitude / fundamentalPeak.amplitude
-    if (relativeAmplitude < 0.01) continue
-
-    const interpolated = parabolicInterpolation(magnitudes, peak.peakIndex, sampleRate, fftSize)
-    const actualFreq = interpolated.frequency
-
-    const idealFreq = n * fundamentalFreq
-    const ratio = actualFreq / idealFreq
-    const ratioSquared = ratio * ratio
-    const b = (ratioSquared - 1) / (n * n)
-
-    if (b >= 0 && b < 0.001) {
-      bEstimates.push(b)
-    }
-  }
-
-  if (bEstimates.length === 0) return 0
-
-  bEstimates.sort((a, b) => a - b)
-  const median = bEstimates[Math.floor(bEstimates.length / 2)]
-  return median
-}
-
-export function extractSpectralFeatures(
-  timeDomainData: Float32Array,
-  fundamental: number | null,
-  config: Partial<FeatureExtractionConfig> = {},
-  previousMags: Float32Array | null = null,
-): SpectralFeatures {
-  const fullConfig: FeatureExtractionConfig = { ...DEFAULT_CONFIG, ...config }
-
-  const windowed = applyHannWindow(timeDomainData)
-  const magnitudes = computeFFTMagnitudes(windowed)
-
-  const spectralCentroid = computeSpectralCentroid(
-    magnitudes,
-    fullConfig.sampleRate,
-    fullConfig.fftSize,
-  )
-  const spectralRolloff = computeSpectralRolloff(
-    magnitudes,
-    fullConfig.sampleRate,
-    fullConfig.fftSize,
-  )
-  const spectralSpread = computeSpectralSpread(
-    magnitudes,
-    spectralCentroid,
-    fullConfig.sampleRate,
-    fullConfig.fftSize,
-  )
-  const spectralFlatness = computeSpectralFlatness(magnitudes)
-  const spectralFlux = computeSpectralFlux(magnitudes, previousMags)
-  const zeroCrossingRate = computeZeroCrossingRate(timeDomainData)
-  const mfccs = computeMFCCs(magnitudes, fullConfig)
-
-  const harmonicRatios =
-    fundamental && fundamental > 0
-      ? computeHarmonicRatios(magnitudes, fundamental, fullConfig.sampleRate, fullConfig.fftSize)
-      : { h2h1: 0, h3h1: 0, evenOddRatio: 0 }
-
-  const inharmonicity =
-    fundamental && fundamental > 0
-      ? measureInharmonicity(magnitudes, fundamental, fullConfig.sampleRate, fullConfig.fftSize)
-      : 0
+  const harmonicRatios = fundamentalFreq
+    ? computeHarmonicRatios(magnitudeSpectrum, fundamentalFreq, sampleRate, fftSize)
+    : { h2h1: 0, h3h1: 0, evenOdd: 0 }
 
   return {
-    spectralCentroid,
-    spectralRolloff,
-    spectralSpread,
-    spectralFlatness,
-    spectralFlux,
-    zeroCrossingRate,
+    centroid,
+    rolloff,
+    spread,
+    flatness,
+    flux,
+    zcr,
     mfccs,
     harmonicRatios,
-    inharmonicity,
+  }
+}
+
+export function extractFeaturesWithSpectrum(
+  audioBuffer: AudioBuffer,
+  sampleRate: number,
+  fundamentalFreq?: number,
+  previousSpectrum?: AudioBuffer
+): { features: SpectralFeatures; magnitudeSpectrum: AudioBuffer } {
+  const fftSize = nextPowerOfTwo(audioBuffer.length)
+
+  const windowed = applyHannWindow(audioBuffer)
+  const powerSpectrum = computePowerSpectrum(windowed, fftSize)
+  const magnitudeSpectrum = computeMagnitudeSpectrum(powerSpectrum)
+
+  const centroid = computeSpectralCentroid(magnitudeSpectrum, sampleRate, fftSize)
+  const rolloff = computeSpectralRolloff(magnitudeSpectrum, sampleRate, fftSize)
+  const spread = computeSpectralSpread(
+    magnitudeSpectrum,
+    sampleRate,
+    fftSize,
+    centroid
+  )
+  const flatness = computeSpectralFlatness(magnitudeSpectrum)
+  const flux = computeSpectralFlux(magnitudeSpectrum, previousSpectrum)
+  const zcr = computeZeroCrossingRate(audioBuffer)
+  const mfccs = computeMFCCs(powerSpectrum, sampleRate, fftSize)
+
+  const harmonicRatios = fundamentalFreq
+    ? computeHarmonicRatios(magnitudeSpectrum, fundamentalFreq, sampleRate, fftSize)
+    : { h2h1: 0, h3h1: 0, evenOdd: 0 }
+
+  return {
+    features: {
+      centroid,
+      rolloff,
+      spread,
+      flatness,
+      flux,
+      zcr,
+      mfccs,
+      harmonicRatios,
+    },
+    magnitudeSpectrum,
   }
 }
 
 export function featuresToVector(features: SpectralFeatures): number[] {
   return [
-    features.spectralCentroid,
-    features.spectralRolloff,
-    features.spectralSpread,
-    features.spectralFlatness,
-    features.spectralFlux,
-    features.zeroCrossingRate,
+    features.centroid,
+    features.rolloff,
+    features.spread,
+    features.flatness,
+    features.flux,
+    features.zcr,
     ...features.mfccs,
     features.harmonicRatios.h2h1,
     features.harmonicRatios.h3h1,
-    features.harmonicRatios.evenOddRatio,
+    features.harmonicRatios.evenOdd,
   ]
 }
 
-export function featuresToVectorWithInharmonicity(features: SpectralFeatures): number[] {
-  return [...featuresToVector(features), features.inharmonicity]
-}
-
-export function vectorToFeatures(vector: number[]): SpectralFeatures {
-  const numMfccs = vector.length - 9
-  return {
-    spectralCentroid: vector[0],
-    spectralRolloff: vector[1],
-    spectralSpread: vector[2],
-    spectralFlatness: vector[3],
-    spectralFlux: vector[4],
-    zeroCrossingRate: vector[5],
-    mfccs: vector.slice(6, 6 + numMfccs),
-    harmonicRatios: {
-      h2h1: vector[6 + numMfccs],
-      h3h1: vector[7 + numMfccs],
-      evenOddRatio: vector[8 + numMfccs],
-    },
-    inharmonicity: 0,
-  }
-}
-
-export interface MultiWindowConfig {
-  attackWindowMs: [number, number]
-  sustainWindowMs: [number, number]
-  decayWindowMs: [number, number]
-}
-
-const DEFAULT_MULTI_WINDOW_CONFIG: MultiWindowConfig = {
-  attackWindowMs: [0, 30],
-  sustainWindowMs: [50, 150],
-  decayWindowMs: [200, 300],
-}
-
-export function extractMultiWindowFeatures(
-  audioData: Float32Array,
-  pitch: number,
-  sampleRate: number,
-  fftSize: number,
-  windowConfig: MultiWindowConfig = DEFAULT_MULTI_WINDOW_CONFIG,
+export function normalizeFeatureVector(
+  vector: number[],
+  means: number[],
+  stds: number[]
 ): number[] {
-  const featureConfig: Partial<FeatureExtractionConfig> = { sampleRate, fftSize }
+  return vector.map((value, i) => {
+    const std = stds[i] || 1
+    return (value - (means[i] || 0)) / std
+  })
+}
 
-  const extractWindowChunk = (startMs: number, endMs: number): Float32Array => {
-    const startSample = Math.floor((startMs / 1000) * sampleRate)
-    const endSample = Math.floor((endMs / 1000) * sampleRate)
-    const windowCenter = Math.floor((startSample + endSample) / 2)
-    const halfFft = Math.floor(fftSize / 2)
-
-    let chunkStart = windowCenter - halfFft
-    let chunkEnd = windowCenter + halfFft
-
-    if (chunkStart < 0) {
-      chunkStart = 0
-      chunkEnd = fftSize
-    }
-    if (chunkEnd > audioData.length) {
-      chunkEnd = audioData.length
-      chunkStart = Math.max(0, chunkEnd - fftSize)
-    }
-
-    const chunk = audioData.slice(chunkStart, chunkEnd)
-
-    if (chunk.length < fftSize) {
-      const padded = new Float32Array(fftSize)
-      padded.set(chunk)
-      return padded
-    }
-
-    return chunk
+function nextPowerOfTwo(n: number): number {
+  let power = 1
+  while (power < n) {
+    power *= 2
   }
+  return power
+}
 
-  const extractWindowFeatures = (chunk: Float32Array): number[] => {
-    const features = extractSpectralFeatures(chunk, pitch, featureConfig)
-    return featuresToVector(features)
-  }
-
-  const attackChunk = extractWindowChunk(
-    windowConfig.attackWindowMs[0],
-    windowConfig.attackWindowMs[1],
-  )
-  const sustainChunk = extractWindowChunk(
-    windowConfig.sustainWindowMs[0],
-    windowConfig.sustainWindowMs[1],
-  )
-  const decayChunk = extractWindowChunk(
-    windowConfig.decayWindowMs[0],
-    windowConfig.decayWindowMs[1],
-  )
-
-  const attackFeatures = extractWindowFeatures(attackChunk)
-  const sustainFeatures = extractWindowFeatures(sustainChunk)
-  const decayFeatures = extractWindowFeatures(decayChunk)
-
-  const sustainWindowed = applyHannWindow(sustainChunk)
-  const sustainMagnitudes = computeFFTMagnitudes(sustainWindowed)
-  const inharmonicity = measureInharmonicity(sustainMagnitudes, pitch, sampleRate, fftSize)
-
-  return [...attackFeatures, ...sustainFeatures, ...decayFeatures, inharmonicity]
+export function clearCaches(): void {
+  melFilterbankCache = null
+  dctMatrixCache = null
+  fftCache.clear()
 }

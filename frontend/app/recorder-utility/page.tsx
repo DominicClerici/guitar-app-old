@@ -1,60 +1,53 @@
 "use client"
 
-import { Fretboard, type Marker } from "@/components/fretboard/fretboard"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Switch } from "@/components/ui/switch"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { STANDARD_TUNING_STRINGS, midiToFreq } from "@/lib/audio/guitar-constants"
-import { KNNClassifier, type KNNModelData } from "@/lib/audio/knn-classifier"
-import { extractMultiWindowFeatures } from "@/lib/audio/spectral-features"
-import { midiToNoteName } from "@/lib/audio/utils"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Circle, Download, Mic, Play, Square, Trash2 } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
+import { toast } from "sonner"
 
-type SampleCounts = Record<string, Record<string, number>>
-type RecordingMode = "audio" | "training"
+const SAMPLE_RATE = 44100
+const RECORDING_DURATION = 0.75
+const SAMPLES_COUNT = Math.floor(SAMPLE_RATE * RECORDING_DURATION)
 
-const SAMPLE_COUNT = 5
-const TRAINING_SAMPLES_PER_FRET = 6
-const TRAINING_FRETS = [0, 3, 5, 7, 9, 12]
-const RECORDING_DURATION_MS = 750
-const SILENCE_WAIT_MS = 200
-const COUNTDOWN_SECONDS = 2
-const FRET_TRANSITION_SECONDS = 3
-const SILENCE_THRESHOLD = 0.005
-const PRE_ATTACK_MS = 10
-const FFT_SIZE = 4096
-
-type RecordingState =
-  | "idle"
-  | "countdown"
-  | "waiting-for-pluck"
-  | "recording"
-  | "waiting-for-silence"
-  | "fret-transition"
-  | "complete"
-
-interface RecordedSample {
-  blob: Blob
-  url: string
-}
-
-interface TrainingSample {
-  features: number[]
+interface AudioSample {
+  id: string
   stringNumber: number
-  fret: number
+  fretPosition: number
+  timestamp: number
+  audioData: Float32Array
+  duration: number
 }
 
-function encodeWav(samples: Float32Array, sampleRate: number): Blob {
-  const buffer = new ArrayBuffer(44 + samples.length * 2)
+const STRING_NAMES = [
+  { number: 1, name: "E4", label: "High E" },
+  { number: 2, name: "B3", label: "B" },
+  { number: 3, name: "G3", label: "G" },
+  { number: 4, name: "D3", label: "D" },
+  { number: 5, name: "A2", label: "A" },
+  { number: 6, name: "E2", label: "Low E" },
+]
+
+const STRING_COLORS = [
+  "bg-red-500 hover:bg-red-600",
+  "bg-orange-500 hover:bg-orange-600",
+  "bg-yellow-500 hover:bg-yellow-600",
+  "bg-green-500 hover:bg-green-600",
+  "bg-blue-500 hover:bg-blue-600",
+  "bg-purple-500 hover:bg-purple-600",
+]
+
+function createWavBlob(audioData: Float32Array, sampleRate: number): Blob {
+  const numChannels = 1
+  const bitsPerSample = 16
+  const bytesPerSample = bitsPerSample / 8
+  const blockAlign = numChannels * bytesPerSample
+  const byteRate = sampleRate * blockAlign
+  const dataSize = audioData.length * bytesPerSample
+  const bufferSize = 44 + dataSize
+  const buffer = new ArrayBuffer(bufferSize)
   const view = new DataView(buffer)
 
   const writeString = (offset: number, str: string) => {
@@ -64,754 +57,523 @@ function encodeWav(samples: Float32Array, sampleRate: number): Blob {
   }
 
   writeString(0, "RIFF")
-  view.setUint32(4, 36 + samples.length * 2, true)
+  view.setUint32(4, bufferSize - 8, true)
   writeString(8, "WAVE")
   writeString(12, "fmt ")
   view.setUint32(16, 16, true)
   view.setUint16(20, 1, true)
-  view.setUint16(22, 1, true)
+  view.setUint16(22, numChannels, true)
   view.setUint32(24, sampleRate, true)
-  view.setUint32(28, sampleRate * 2, true)
-  view.setUint16(32, 2, true)
-  view.setUint16(34, 16, true)
+  view.setUint32(28, byteRate, true)
+  view.setUint16(32, blockAlign, true)
+  view.setUint16(34, bitsPerSample, true)
   writeString(36, "data")
-  view.setUint32(40, samples.length * 2, true)
+  view.setUint32(40, dataSize, true)
 
   let offset = 44
-  for (let i = 0; i < samples.length; i++) {
-    const s = Math.max(-1, Math.min(1, samples[i]))
-    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true)
+  for (let i = 0; i < audioData.length; i++) {
+    const sample = Math.max(-1, Math.min(1, audioData[i]))
+    const intSample = sample < 0 ? sample * 0x8000 : sample * 0x7fff
+    view.setInt16(offset, intSample, true)
     offset += 2
   }
 
   return new Blob([buffer], { type: "audio/wav" })
 }
 
+function openDatabase(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open("AudioSamplesDB", 1)
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => resolve(request.result)
+    request.onupgradeneeded = (event) => {
+      const db = (event.target as IDBOpenDBRequest).result
+      if (!db.objectStoreNames.contains("samples")) {
+        const store = db.createObjectStore("samples", { keyPath: "id" })
+        store.createIndex("stringNumber", "stringNumber", { unique: false })
+      }
+    }
+  })
+}
+
+async function saveSampleToDb(sample: AudioSample): Promise<void> {
+  const db = await openDatabase()
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(["samples"], "readwrite")
+    const store = transaction.objectStore("samples")
+    const serializedSample = {
+      ...sample,
+      audioData: Array.from(sample.audioData),
+    }
+    const request = store.put(serializedSample)
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => resolve()
+  })
+}
+
+async function loadSamplesFromDb(): Promise<AudioSample[]> {
+  const db = await openDatabase()
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(["samples"], "readonly")
+    const store = transaction.objectStore("samples")
+    const request = store.getAll()
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => {
+      const samples = request.result.map((s: { audioData: number[] } & Omit<AudioSample, "audioData">) => ({
+        ...s,
+        audioData: new Float32Array(s.audioData),
+      }))
+      resolve(samples)
+    }
+  })
+}
+
+async function deleteSampleFromDb(id: string): Promise<void> {
+  const db = await openDatabase()
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(["samples"], "readwrite")
+    const store = transaction.objectStore("samples")
+    const request = store.delete(id)
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => resolve()
+  })
+}
+
+async function clearAllSamplesFromDb(): Promise<void> {
+  const db = await openDatabase()
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(["samples"], "readwrite")
+    const store = transaction.objectStore("samples")
+    const request = store.clear()
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => resolve()
+  })
+}
+
 export default function RecorderUtilityPage() {
-  const [mode, setMode] = useState<RecordingMode>("training")
-  const [autoFretProgression, setAutoFretProgression] = useState<boolean>(true)
-  const [selectedString, setSelectedString] = useState<number>(6)
-  const [selectedFret, setSelectedFret] = useState<number>(0)
-  const [recordingState, setRecordingState] = useState<RecordingState>("idle")
-  const [countdown, setCountdown] = useState<number>(COUNTDOWN_SECONDS)
-  const [currentSampleIndex, setCurrentSampleIndex] = useState<number>(0)
-  const [currentTrainingFretIndex, setCurrentTrainingFretIndex] = useState<number>(0)
-  const [transitionCountdown, setTransitionCountdown] = useState<number>(FRET_TRANSITION_SECONDS)
-  const [samples, setSamples] = useState<RecordedSample[]>([])
-  const [trainingSamples, setTrainingSamples] = useState<TrainingSample[]>([])
-  const [error, setError] = useState<string | null>(null)
+  const [samples, setSamples] = useState<AudioSample[]>([])
+  const [recording, setRecording] = useState<number | null>(null)
+  const [recordingProgress, setRecordingProgress] = useState(0)
+  const [fretPosition, setFretPosition] = useState(0)
+  const [playingId, setPlayingId] = useState<string | null>(null)
+  const [hasPermission, setHasPermission] = useState<boolean | null>(null)
 
   const audioContextRef = useRef<AudioContext | null>(null)
-  const mediaStreamRef = useRef<MediaStream | null>(null)
-  const analyserRef = useRef<AnalyserNode | null>(null)
-  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
-  const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null)
-  const recordingBufferRef = useRef<Float32Array[]>([])
-  const preBufferRef = useRef<Float32Array[]>([])
-  const isRecordingRef = useRef<boolean>(false)
-  const silenceCheckIntervalRef = useRef<NodeJS.Timeout | null>(null)
-  const sampleUrlsRef = useRef<string[]>([])
-  const sampleRateRef = useRef<number>(44100)
-
-  const classifierRef = useRef<KNNClassifier>(new KNNClassifier(5))
-  const [modelStats, setModelStats] = useState({
-    totalSamples: 0,
-    samplesPerString: new Map<number, number>(),
-  })
-
-  const stringProfile = STANDARD_TUNING_STRINGS.find((s) => s.stringNumber === selectedString)
-  const currentFret = mode === "training" ? TRAINING_FRETS[currentTrainingFretIndex] : selectedFret
-  const noteMidi = stringProfile ? stringProfile.openMidi + currentFret : 40
-  const noteName = midiToNoteName(noteMidi)
-  const noteFreq = midiToFreq(noteMidi)
+  const streamRef = useRef<MediaStream | null>(null)
+  const workletNodeRef = useRef<AudioWorkletNode | null>(null)
+  const processorNodeRef = useRef<ScriptProcessorNode | null>(null)
 
   useEffect(() => {
-    const loaded = classifierRef.current.loadFromStorage()
-    if (loaded) {
-      updateModelStats()
-    }
+    loadSamplesFromDb()
+      .then(setSamples)
+      .catch((err) => {
+        console.error("Failed to load samples:", err)
+        toast.error("Failed to load saved samples")
+      })
   }, [])
 
-  const updateModelStats = useCallback(() => {
-    setModelStats({
-      totalSamples: classifierRef.current.getSampleCount(),
-      samplesPerString: classifierRef.current.getSampleCountByClass(),
-    })
-  }, [])
-
-  const cleanup = useCallback(() => {
-    if (silenceCheckIntervalRef.current) {
-      clearInterval(silenceCheckIntervalRef.current)
-      silenceCheckIntervalRef.current = null
-    }
-    if (scriptProcessorRef.current) {
-      scriptProcessorRef.current.disconnect()
-      scriptProcessorRef.current = null
-    }
-    if (sourceRef.current) {
-      sourceRef.current.disconnect()
-      sourceRef.current = null
-    }
-    if (analyserRef.current) {
-      analyserRef.current.disconnect()
-      analyserRef.current = null
-    }
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach((track) => track.stop())
-      mediaStreamRef.current = null
-    }
-    if (audioContextRef.current) {
-      audioContextRef.current.close()
-      audioContextRef.current = null
-    }
-  }, [])
-
-  useEffect(() => {
-    return () => {
-      cleanup()
-      sampleUrlsRef.current.forEach((url) => URL.revokeObjectURL(url))
-    }
-  }, [cleanup])
-
-  const getAudioLevel = useCallback((): number => {
-    if (!analyserRef.current) return 0
-    const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount)
-    analyserRef.current.getByteTimeDomainData(dataArray)
-    let sum = 0
-    for (let i = 0; i < dataArray.length; i++) {
-      const normalized = (dataArray[i] - 128) / 128
-      sum += normalized * normalized
-    }
-    return Math.sqrt(sum / dataArray.length)
-  }, [])
-
-  const startRecordingChunk = useCallback(() => {
-    recordingBufferRef.current = [...preBufferRef.current]
-    preBufferRef.current = []
-    isRecordingRef.current = true
-  }, [])
-
-  const stopRecordingChunk = useCallback((): {
-    sample: RecordedSample | null
-    rawData: Float32Array | null
-  } => {
-    isRecordingRef.current = false
-    if (recordingBufferRef.current.length === 0) return { sample: null, rawData: null }
-
-    const totalLength = recordingBufferRef.current.reduce((acc, chunk) => acc + chunk.length, 0)
-    const combined = new Float32Array(totalLength)
-    let offset = 0
-    for (const chunk of recordingBufferRef.current) {
-      combined.set(chunk, offset)
-      offset += chunk.length
-    }
-
-    const blob = encodeWav(combined, sampleRateRef.current)
-    const url = URL.createObjectURL(blob)
-    sampleUrlsRef.current.push(url)
-    return { sample: { blob, url }, rawData: combined }
-  }, [])
-
-  const waitForSilence = useCallback((): Promise<void> => {
-    return new Promise((resolve) => {
-      const check = () => {
-        const level = getAudioLevel()
-        if (level < SILENCE_THRESHOLD) {
-          if (silenceCheckIntervalRef.current) {
-            clearInterval(silenceCheckIntervalRef.current)
-            silenceCheckIntervalRef.current = null
-          }
-          setTimeout(resolve, SILENCE_WAIT_MS)
-        }
-      }
-      silenceCheckIntervalRef.current = setInterval(check, 50)
-    })
-  }, [getAudioLevel])
-
-  const waitForPluck = useCallback((): Promise<void> => {
-    return new Promise((resolve) => {
-      const check = () => {
-        const level = getAudioLevel()
-        if (level > SILENCE_THRESHOLD * 2) {
-          if (silenceCheckIntervalRef.current) {
-            clearInterval(silenceCheckIntervalRef.current)
-            silenceCheckIntervalRef.current = null
-          }
-          resolve()
-        }
-      }
-      silenceCheckIntervalRef.current = setInterval(check, 10)
-    })
-  }, [getAudioLevel])
-
-  const recordSingleSample = useCallback(
-    async (
-      fretForSample: number,
-      freqForSample: number,
-    ): Promise<{
-      sample: RecordedSample | null
-      training: TrainingSample | null
-    }> => {
-      setRecordingState("waiting-for-pluck")
-      await waitForPluck()
-
-      setRecordingState("recording")
-      startRecordingChunk()
-      await new Promise((resolve) => setTimeout(resolve, RECORDING_DURATION_MS))
-      const { sample, rawData } = stopRecordingChunk()
-
-      setRecordingState("waiting-for-silence")
-      await waitForSilence()
-
-      let training: TrainingSample | null = null
-      if (mode === "training" && rawData && rawData.length >= FFT_SIZE) {
-        const features = extractMultiWindowFeatures(
-          rawData,
-          freqForSample,
-          sampleRateRef.current,
-          FFT_SIZE,
-        )
-
-        training = {
-          features,
-          stringNumber: selectedString,
-          fret: fretForSample,
-        }
-      }
-
-      return { sample, training }
-    },
-    [waitForPluck, startRecordingChunk, stopRecordingChunk, waitForSilence, mode, selectedString],
-  )
-
-  const startRecording = useCallback(async () => {
-    setError(null)
-    sampleUrlsRef.current.forEach((url) => URL.revokeObjectURL(url))
-    sampleUrlsRef.current = []
-    setSamples([])
-    setTrainingSamples([])
-    setCurrentSampleIndex(0)
-    setCurrentTrainingFretIndex(0)
-
+  const requestMicrophonePermission = useCallback(async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-        },
-      })
-      mediaStreamRef.current = stream
-
-      const audioContext = new AudioContext()
-      sampleRateRef.current = audioContext.sampleRate
-      audioContextRef.current = audioContext
-
-      const source = audioContext.createMediaStreamSource(stream)
-      sourceRef.current = source
-
-      const analyser = audioContext.createAnalyser()
-      analyser.fftSize = 2048
-      analyserRef.current = analyser
-      source.connect(analyser)
-
-      const scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1)
-      const preBufferSamples = Math.ceil((PRE_ATTACK_MS / 1000) * audioContext.sampleRate)
-      const preBufferChunks = Math.ceil(preBufferSamples / 4096)
-
-      scriptProcessor.onaudioprocess = (event) => {
-        const inputData = new Float32Array(event.inputBuffer.getChannelData(0))
-
-        if (isRecordingRef.current) {
-          recordingBufferRef.current.push(inputData)
-        } else {
-          preBufferRef.current.push(inputData)
-          if (preBufferRef.current.length > preBufferChunks) {
-            preBufferRef.current.shift()
-          }
-        }
-      }
-      scriptProcessorRef.current = scriptProcessor
-      source.connect(scriptProcessor)
-      scriptProcessor.connect(audioContext.destination)
-
-      setRecordingState("countdown")
-      for (let i = COUNTDOWN_SECONDS; i > 0; i--) {
-        setCountdown(i)
-        await new Promise((resolve) => setTimeout(resolve, 1000))
-      }
-
-      const recordedSamples: RecordedSample[] = []
-      const recordedTraining: TrainingSample[] = []
-
-      if (mode === "training" && autoFretProgression) {
-        for (let fretIdx = 0; fretIdx < TRAINING_FRETS.length; fretIdx++) {
-          const fret = TRAINING_FRETS[fretIdx]
-          setCurrentTrainingFretIndex(fretIdx)
-
-          const fretMidi = stringProfile ? stringProfile.openMidi + fret : 40
-          const fretFreq = midiToFreq(fretMidi)
-
-          for (let i = 0; i < TRAINING_SAMPLES_PER_FRET; i++) {
-            setCurrentSampleIndex(i)
-            const { sample, training } = await recordSingleSample(fret, fretFreq)
-            if (sample) {
-              recordedSamples.push(sample)
-              setSamples([...recordedSamples])
-            }
-            if (training) {
-              recordedTraining.push(training)
-              setTrainingSamples([...recordedTraining])
-            }
-          }
-
-          if (fretIdx < TRAINING_FRETS.length - 1) {
-            setRecordingState("fret-transition")
-            for (let t = FRET_TRANSITION_SECONDS; t > 0; t--) {
-              setTransitionCountdown(t)
-              await new Promise((resolve) => setTimeout(resolve, 1000))
-            }
-          }
-        }
-      } else {
-        for (let i = 0; i < SAMPLE_COUNT; i++) {
-          setCurrentSampleIndex(i)
-          const { sample, training } = await recordSingleSample(selectedFret, noteFreq)
-          if (sample) {
-            recordedSamples.push(sample)
-            setSamples([...recordedSamples])
-          }
-          if (training) {
-            recordedTraining.push(training)
-            setTrainingSamples([...recordedTraining])
-          }
-        }
-      }
-
-      setRecordingState("complete")
-      cleanup()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to access microphone")
-      setRecordingState("idle")
-      cleanup()
-    }
-  }, [
-    recordSingleSample,
-    cleanup,
-    mode,
-    autoFretProgression,
-    stringProfile,
-    selectedFret,
-    noteFreq,
-  ])
-
-  const resetRecording = useCallback(() => {
-    sampleUrlsRef.current.forEach((url) => URL.revokeObjectURL(url))
-    sampleUrlsRef.current = []
-    setSamples([])
-    setTrainingSamples([])
-    setCurrentSampleIndex(0)
-    setRecordingState("idle")
-    setError(null)
-  }, [])
-
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [sampleCounts, setSampleCounts] = useState<SampleCounts>({})
-
-  const fetchSampleCounts = useCallback(async () => {
-    try {
-      const response = await fetch("/recorder-utility/get")
-      const data = await response.json()
-      if (data.counts) {
-        setSampleCounts(data.counts)
-      }
-    } catch (err) {
-      console.error("Failed to fetch sample counts:", err)
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      stream.getTracks().forEach((track) => track.stop())
+      setHasPermission(true)
+      toast.success("Microphone access granted")
+    } catch {
+      setHasPermission(false)
+      toast.error("Microphone access denied")
     }
   }, [])
 
-  useEffect(() => {
-    fetchSampleCounts()
-  }, [fetchSampleCounts])
-
-  const handleSubmitAudio = useCallback(async () => {
-    if (samples.length === 0 || isSubmitting) return
-
-    setIsSubmitting(true)
-    setError(null)
-
-    try {
-      const formData = new FormData()
-      formData.append("string", selectedString.toString())
-      formData.append("fret", selectedFret.toString())
-
-      samples.forEach((sample, index) => {
-        formData.append(`sample_${index}`, sample.blob, `sample_${index}.wav`)
-      })
-
-      const response = await fetch("/recorder-utility/post", {
-        method: "POST",
-        body: formData,
-      })
-
-      const result = await response.json()
-
-      if (!response.ok) {
-        throw new Error(result.error || "Failed to submit samples")
-      }
-
-      resetRecording()
-      fetchSampleCounts()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to submit samples")
-    } finally {
-      setIsSubmitting(false)
-    }
-  }, [selectedString, selectedFret, samples, isSubmitting, resetRecording, fetchSampleCounts])
-
-  const handleSubmitTraining = useCallback(() => {
-    if (trainingSamples.length === 0) return
-
-    for (const sample of trainingSamples) {
-      classifierRef.current.addSample(sample.features, sample.stringNumber, {
-        fret: sample.fret,
-      })
-    }
-
-    classifierRef.current.train()
-    classifierRef.current.saveToStorage()
-    updateModelStats()
-    resetRecording()
-  }, [trainingSamples, updateModelStats, resetRecording])
-
-  const handleExportModel = useCallback(() => {
-    const modelData = classifierRef.current.exportModel()
-    const json = JSON.stringify(modelData, null, 2)
-    const blob = new Blob([json], { type: "application/json" })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = "string-detection-model.json"
-    a.click()
-    URL.revokeObjectURL(url)
-  }, [])
-
-  const handleImportModel = useCallback(() => {
-    const input = document.createElement("input")
-    input.type = "file"
-    input.accept = ".json"
-    input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0]
-      if (!file) return
+  const startRecording = useCallback(
+    async (stringNumber: number) => {
+      if (recording !== null) return
 
       try {
-        const text = await file.text()
-        const modelData: KNNModelData = JSON.parse(text)
-        classifierRef.current.importModel(modelData)
-        classifierRef.current.saveToStorage()
-        updateModelStats()
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
+            sampleRate: SAMPLE_RATE,
+          },
+        })
+
+        streamRef.current = stream
+        const audioContext = new AudioContext({ sampleRate: SAMPLE_RATE })
+        audioContextRef.current = audioContext
+
+        const source = audioContext.createMediaStreamSource(stream)
+        const collectedSamples: number[] = []
+        const startTime = Date.now()
+
+        setRecording(stringNumber)
+        setRecordingProgress(0)
+
+        const processor = audioContext.createScriptProcessor(4096, 1, 1)
+        processorNodeRef.current = processor
+
+        processor.onaudioprocess = (event) => {
+          const inputData = event.inputBuffer.getChannelData(0)
+          const elapsed = (Date.now() - startTime) / 1000
+          setRecordingProgress(Math.min(elapsed / RECORDING_DURATION, 1))
+
+          for (let i = 0; i < inputData.length && collectedSamples.length < SAMPLES_COUNT; i++) {
+            collectedSamples.push(inputData[i])
+          }
+
+          if (collectedSamples.length >= SAMPLES_COUNT) {
+            processor.disconnect()
+            source.disconnect()
+            stream.getTracks().forEach((track) => track.stop())
+            audioContext.close()
+
+            const audioData = new Float32Array(collectedSamples.slice(0, SAMPLES_COUNT))
+            const newSample: AudioSample = {
+              id: `${stringNumber}_${fretPosition}_${Date.now()}`,
+              stringNumber,
+              fretPosition,
+              timestamp: Date.now(),
+              audioData,
+              duration: RECORDING_DURATION,
+            }
+
+            saveSampleToDb(newSample)
+              .then(() => {
+                setSamples((prev) => [...prev, newSample])
+                toast.success(`Recorded string ${stringNumber} sample`)
+              })
+              .catch((err) => {
+                console.error("Failed to save sample:", err)
+                toast.error("Failed to save sample")
+              })
+
+            setRecording(null)
+            setRecordingProgress(0)
+          }
+        }
+
+        source.connect(processor)
+        processor.connect(audioContext.destination)
       } catch (err) {
-        setError("Failed to import model")
+        console.error("Recording failed:", err)
+        toast.error("Failed to start recording")
+        setRecording(null)
+        setRecordingProgress(0)
       }
-    }
-    input.click()
-  }, [updateModelStats])
+    },
+    [recording, fretPosition],
+  )
 
-  const handleClearModel = useCallback(() => {
-    classifierRef.current.clearSamples()
-    KNNClassifier.clearStorage()
-    updateModelStats()
-  }, [updateModelStats])
+  const playSample = useCallback(
+    async (sample: AudioSample) => {
+      if (playingId === sample.id) return
 
-  const handleCrossValidate = useCallback(() => {
+      try {
+        setPlayingId(sample.id)
+        const audioContext = new AudioContext({ sampleRate: SAMPLE_RATE })
+        const buffer = audioContext.createBuffer(1, sample.audioData.length, SAMPLE_RATE)
+        buffer.getChannelData(0).set(sample.audioData)
+
+        const source = audioContext.createBufferSource()
+        source.buffer = buffer
+        source.connect(audioContext.destination)
+
+        source.onended = () => {
+          setPlayingId(null)
+          audioContext.close()
+        }
+
+        source.start()
+      } catch (err) {
+        console.error("Playback failed:", err)
+        toast.error("Failed to play sample")
+        setPlayingId(null)
+      }
+    },
+    [playingId],
+  )
+
+  const deleteSample = useCallback(async (id: string) => {
     try {
-      const result = classifierRef.current.crossValidate(5)
-      alert(`Cross-validation accuracy: ${(result.accuracy * 100).toFixed(1)}%`)
+      await deleteSampleFromDb(id)
+      setSamples((prev) => prev.filter((s) => s.id !== id))
+      toast.success("Sample deleted")
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Cross-validation failed")
+      console.error("Failed to delete sample:", err)
+      toast.error("Failed to delete sample")
     }
   }, [])
 
-  const sampleCountMarkers: Marker[] = Object.entries(sampleCounts).flatMap(([stringNum, frets]) =>
-    Object.entries(frets).map(([fretNum, count]) => ({
-      stringIndex: 6 - parseInt(stringNum, 10),
-      fretIndex: parseInt(fretNum, 10),
-      type: "note" as const,
-      label: count.toString(),
-    })),
+  const clearSamplesForString = useCallback(
+    async (stringNumber: number) => {
+      const toDelete = samples.filter((s) => s.stringNumber === stringNumber)
+      try {
+        for (const sample of toDelete) {
+          await deleteSampleFromDb(sample.id)
+        }
+        setSamples((prev) => prev.filter((s) => s.stringNumber !== stringNumber))
+        toast.success(`Cleared all samples for string ${stringNumber}`)
+      } catch (err) {
+        console.error("Failed to clear samples:", err)
+        toast.error("Failed to clear samples")
+      }
+    },
+    [samples],
   )
 
-  const trainingMarkers: Marker[] = STANDARD_TUNING_STRINGS.flatMap((s) => {
-    const count = modelStats.samplesPerString.get(s.stringNumber) ?? 0
-    if (count === 0) return []
-    return [
-      {
-        stringIndex: 6 - s.stringNumber,
-        fretIndex: 0,
-        type: "note" as const,
-        label: count.toString(),
-      },
-    ]
-  })
-
-  const getStatusMessage = () => {
-    switch (recordingState) {
-      case "idle":
-        return mode === "training" && autoFretProgression
-          ? "Select a string, then press Start"
-          : "Select a string and fret, then press Start"
-      case "countdown":
-        return `Starting in ${countdown}...`
-      case "waiting-for-pluck":
-        return "Pluck the string now!"
-      case "recording":
-        return "Recording..."
-      case "waiting-for-silence":
-        return "Mute the string"
-      case "fret-transition": {
-        const nextFret = TRAINING_FRETS[currentTrainingFretIndex + 1]
-        return `Move to fret ${nextFret === 0 ? "Open" : nextFret} in ${transitionCountdown}...`
-      }
-      case "complete":
-        return "Recording complete! Review your samples below."
-      default:
-        return ""
+  const clearAllSamples = useCallback(async () => {
+    try {
+      await clearAllSamplesFromDb()
+      setSamples([])
+      toast.success("All samples cleared")
+    } catch (err) {
+      console.error("Failed to clear all samples:", err)
+      toast.error("Failed to clear all samples")
     }
+  }, [])
+
+  const downloadSample = useCallback((sample: AudioSample) => {
+    const blob = createWavBlob(sample.audioData, SAMPLE_RATE)
+    const url = URL.createObjectURL(blob)
+    const filename = `string${sample.stringNumber}_fret${sample.fretPosition}_${sample.timestamp}.wav`
+
+    const a = document.createElement("a")
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+
+    toast.success(`Downloaded ${filename}`)
+  }, [])
+
+  const downloadAllSamples = useCallback(async () => {
+    if (samples.length === 0) {
+      toast.error("No samples to download")
+      return
+    }
+
+    for (const sample of samples) {
+      downloadSample(sample)
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+
+    toast.success(`Downloaded ${samples.length} samples`)
+  }, [samples, downloadSample])
+
+  const getSamplesForString = (stringNumber: number) => samples.filter((s) => s.stringNumber === stringNumber)
+
+  const formatTime = (timestamp: number) => {
+    const date = new Date(timestamp)
+    return date.toLocaleTimeString()
   }
 
   return (
-    <div className="max-w-8xl container mx-auto grid grid-cols-2 gap-4 p-6">
-      <Card className="col-span-2">
-        <CardHeader>
-          <CardTitle className="flex items-center justify-between">
-            <span>Sample Recorder</span>
-            <Tabs value={mode} onValueChange={(v) => setMode(v as RecordingMode)}>
-              <TabsList>
-                <TabsTrigger value="training">ML Training</TabsTrigger>
-                <TabsTrigger value="audio">Audio Files</TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="flex gap-4">
-            <div className="flex-1">
-              <label className="mb-2 block text-sm font-medium">String</label>
-              <Select
-                value={selectedString.toString()}
-                onValueChange={(v) => setSelectedString(parseInt(v))}
-                disabled={recordingState !== "idle" && recordingState !== "complete"}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {STANDARD_TUNING_STRINGS.map((s) => (
-                    <SelectItem key={s.stringNumber} value={s.stringNumber.toString()}>
-                      {s.stringNumber} - {s.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {(mode === "audio" || !autoFretProgression) && (
-              <div className="flex-1">
-                <label className="mb-2 block text-sm font-medium">Fret</label>
-                <Select
-                  value={selectedFret.toString()}
-                  onValueChange={(v) => setSelectedFret(parseInt(v))}
-                  disabled={recordingState !== "idle" && recordingState !== "complete"}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Array.from({ length: 25 }, (_, i) => (
-                      <SelectItem key={i} value={i.toString()}>
-                        {i === 0 ? "Open" : `Fret ${i}`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+    <div className="container mx-auto max-w-4xl p-6">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold">Audio Recording Utility</h1>
+        <p className="text-muted-foreground mt-2">Record labeled 0.75-second audio clips for ML training data</p>
+      </div>
+
+      {hasPermission === null && (
+        <Card className="mb-6">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Microphone Access Required</p>
+                <p className="text-muted-foreground text-sm">Grant microphone access to start recording</p>
               </div>
-            )}
-          </div>
-
-          {mode === "training" && (
-            <div className="flex items-center gap-3">
-              <Switch
-                id="auto-fret"
-                checked={autoFretProgression}
-                onCheckedChange={setAutoFretProgression}
-                disabled={recordingState !== "idle" && recordingState !== "complete"}
-              />
-              <label htmlFor="auto-fret" className="text-sm">
-                Auto fret progression (records at frets {TRAINING_FRETS.join(", ")})
-              </label>
-            </div>
-          )}
-
-          <div className="flex items-center justify-center gap-4 py-4">
-            <Badge variant="secondary" className="px-4 py-2 text-2xl">
-              {noteName}
-            </Badge>
-            <span className="text-muted-foreground text-sm">{noteFreq.toFixed(2)} Hz</span>
-          </div>
-
-          {error && (
-            <div className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">{error}</div>
-          )}
-
-          <div className="py-4 text-center">
-            <p className="text-lg font-medium">{getStatusMessage()}</p>
-            {recordingState !== "idle" &&
-              recordingState !== "complete" &&
-              recordingState !== "fret-transition" && (
-                <p className="text-muted-foreground mt-2">
-                  {mode === "training" && autoFretProgression ? (
-                    <>
-                      Fret{" "}
-                      {TRAINING_FRETS[currentTrainingFretIndex] === 0
-                        ? "Open"
-                        : TRAINING_FRETS[currentTrainingFretIndex]}{" "}
-                      - Sample {currentSampleIndex + 1} of {TRAINING_SAMPLES_PER_FRET}
-                      <span className="ml-2 text-xs">
-                        ({currentTrainingFretIndex + 1}/{TRAINING_FRETS.length} positions)
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      Sample {currentSampleIndex + 1} of {SAMPLE_COUNT}
-                    </>
-                  )}
-                </p>
-              )}
-          </div>
-
-          <div className="flex justify-center gap-4">
-            {recordingState === "idle" && (
-              <Button size="lg" onClick={startRecording}>
-                Start Recording
+              <Button onClick={requestMicrophonePermission}>
+                <Mic className="mr-2 size-4" />
+                Enable Microphone
               </Button>
-            )}
-            {recordingState === "complete" && (
-              <>
-                <Button variant="outline" onClick={resetRecording}>
-                  Record Again
-                </Button>
-                {mode === "audio" ? (
-                  <Button onClick={handleSubmitAudio} disabled={isSubmitting}>
-                    {isSubmitting ? "Submitting..." : "Submit Audio Files"}
-                  </Button>
-                ) : (
-                  <Button onClick={handleSubmitTraining} disabled={trainingSamples.length === 0}>
-                    Add to Training Model ({trainingSamples.length} samples)
-                  </Button>
-                )}
-              </>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Recorded Samples</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {samples.length > 0 ? (
-            <div className="space-y-3">
-              <div className="grid gap-2">
-                {samples.map((sample, index) => (
-                  <div key={index} className="bg-muted/50 flex items-center gap-3 rounded-md p-2">
-                    <Badge variant="outline" className="w-8 justify-center">
-                      {index + 1}
-                    </Badge>
-                    <audio controls src={sample.url} className="h-8 flex-1" />
-                    {mode === "training" && trainingSamples[index] && (
-                      <Badge variant="secondary" className="text-xs">
-                        Features extracted
-                      </Badge>
-                    )}
-                  </div>
-                ))}
-              </div>
             </div>
-          ) : (
-            <p className="text-muted-foreground py-8 text-center">No samples recorded yet</p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>ML Model Stats</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-wrap gap-2">
-            <Badge variant="outline">Total: {modelStats.totalSamples} samples</Badge>
-          </div>
-          <div className="flex flex-wrap gap-1">
-            {STANDARD_TUNING_STRINGS.map((s) => (
-              <Badge
-                key={s.stringNumber}
-                variant={
-                  (modelStats.samplesPerString.get(s.stringNumber) ?? 0) > 0 ? "default" : "outline"
-                }
-                className="text-xs"
-              >
-                {s.name}: {modelStats.samplesPerString.get(s.stringNumber) ?? 0}
-              </Badge>
-            ))}
-          </div>
-
-          <div className="flex flex-wrap gap-2 border-t pt-4">
-            <Button size="sm" variant="outline" onClick={handleExportModel}>
-              Export Model
-            </Button>
-            <Button size="sm" variant="outline" onClick={handleImportModel}>
-              Import Model
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleCrossValidate}
-              disabled={modelStats.totalSamples < 10}
-            >
-              Cross-Validate
-            </Button>
-            <Button size="sm" variant="destructive" onClick={handleClearModel}>
-              Clear Model
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {mode === "audio" && (
-        <Card className="col-span-2">
-          <CardHeader>
-            <CardTitle>Saved Audio Samples</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Fretboard markers={sampleCountMarkers} />
           </CardContent>
         </Card>
       )}
 
-      {mode === "training" && (
-        <Card className="col-span-2">
-          <CardHeader>
-            <CardTitle>Training Data Coverage</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Fretboard markers={trainingMarkers} />
-            <p className="text-muted-foreground mt-4 text-sm">
-              For best results, record samples at multiple fret positions (0, 3, 5, 7, 9, 12) for
-              each string. Aim for 10-20 samples per string with varied dynamics.
+      {hasPermission === false && (
+        <Card className="mb-6 border-destructive">
+          <CardContent className="pt-6">
+            <p className="text-destructive">
+              Microphone access was denied. Please enable microphone access in your browser settings.
             </p>
           </CardContent>
         </Card>
       )}
+
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Recording Settings</CardTitle>
+          <CardDescription>Configure recording parameters</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-4">
+            <label className="font-medium">Fret Position:</label>
+            <Input
+              type="number"
+              min={0}
+              max={24}
+              value={fretPosition}
+              onChange={(e) => setFretPosition(Math.max(0, Math.min(24, parseInt(e.target.value) || 0)))}
+              className="w-20"
+            />
+            <span className="text-muted-foreground text-sm">(0 = open string)</span>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Mic className="size-5" />
+            Record Samples
+          </CardTitle>
+          <CardDescription>Click a string button to record a 0.75-second sample</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+            {STRING_NAMES.map((string, index) => {
+              const isRecording = recording === string.number
+              const sampleCount = getSamplesForString(string.number).length
+
+              return (
+                <Button
+                  key={string.number}
+                  onClick={() => startRecording(string.number)}
+                  disabled={recording !== null && !isRecording}
+                  className={`relative h-24 flex-col gap-1 text-white ${isRecording ? "animate-pulse bg-red-600" : STRING_COLORS[index]}`}
+                >
+                  {isRecording && (
+                    <div className="absolute top-2 right-2">
+                      <Circle className="size-3 animate-pulse fill-white" />
+                    </div>
+                  )}
+                  <span className="text-lg font-bold">String {string.number}</span>
+                  <span className="text-sm opacity-90">
+                    {string.name} ({string.label})
+                  </span>
+                  <Badge variant="secondary" className="mt-1">
+                    {sampleCount} samples
+                  </Badge>
+                  {isRecording && (
+                    <div className="absolute right-0 bottom-0 left-0 h-1 bg-white/30">
+                      <div className="h-full bg-white transition-all" style={{ width: `${recordingProgress * 100}%` }} />
+                    </div>
+                  )}
+                </Button>
+              )
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between">
+            <span>Recorded Samples ({samples.length})</span>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={downloadAllSamples} disabled={samples.length === 0}>
+                <Download className="mr-2 size-4" />
+                Download All
+              </Button>
+              <Button variant="destructive" size="sm" onClick={clearAllSamples} disabled={samples.length === 0}>
+                <Trash2 className="mr-2 size-4" />
+                Clear All
+              </Button>
+            </div>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {samples.length === 0 ? (
+            <p className="text-muted-foreground py-8 text-center">No samples recorded yet. Click a string button above to start recording.</p>
+          ) : (
+            <div className="space-y-6">
+              {STRING_NAMES.map((string) => {
+                const stringSamples = getSamplesForString(string.number)
+                if (stringSamples.length === 0) return null
+
+                return (
+                  <div key={string.number}>
+                    <div className="mb-3 flex items-center justify-between">
+                      <h3 className="flex items-center gap-2 font-medium">
+                        <span
+                          className={`size-3 rounded-full ${STRING_COLORS[string.number - 1].split(" ")[0]}`}
+                        />
+                        String {string.number} ({string.name})
+                        <Badge variant="outline">{stringSamples.length}</Badge>
+                      </h3>
+                      <Button variant="ghost" size="sm" onClick={() => clearSamplesForString(string.number)}>
+                        <Trash2 className="mr-1 size-3" />
+                        Clear
+                      </Button>
+                    </div>
+                    <div className="grid gap-2">
+                      {stringSamples.map((sample) => (
+                        <div
+                          key={sample.id}
+                          className="bg-muted/50 flex items-center justify-between rounded-lg p-3"
+                        >
+                          <div className="flex items-center gap-4">
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => playSample(sample)}
+                              disabled={playingId === sample.id}
+                            >
+                              {playingId === sample.id ? (
+                                <Square className="size-4" />
+                              ) : (
+                                <Play className="size-4" />
+                              )}
+                            </Button>
+                            <div>
+                              <p className="text-sm font-medium">
+                                Fret {sample.fretPosition} - {formatTime(sample.timestamp)}
+                              </p>
+                              <p className="text-muted-foreground text-xs">
+                                {sample.duration.toFixed(2)}s - {sample.audioData.length} samples
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex gap-1">
+                            <Button variant="ghost" size="icon-sm" onClick={() => downloadSample(sample)}>
+                              <Download className="size-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon-sm" onClick={() => deleteSample(sample.id)}>
+                              <Trash2 className="size-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Export Information</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-muted-foreground space-y-2 text-sm">
+            <p>
+              <strong>File Format:</strong> WAV (PCM 16-bit, Mono, {SAMPLE_RATE}Hz)
+            </p>
+            <p>
+              <strong>Duration:</strong> {RECORDING_DURATION} seconds ({SAMPLES_COUNT} samples)
+            </p>
+            <p>
+              <strong>Naming Convention:</strong> string{"{N}"}_fret{"{F}"}_{"{timestamp}"}.wav
+            </p>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }

@@ -1,173 +1,135 @@
-"use client"
+import { midiToFreq, STRING_OPEN_MIDI } from "./utils"
 
-export interface StringProfile {
-  stringNumber: number
+export interface StringInfo {
+  number: number // 1-6 (1 = high E, 6 = low E)
   name: string
   openMidi: number
   openFreq: number
-  maxFret: number
-  minFreq: number
-  maxFreq: number
-  typicalInharmonicity: number
-  isWound: boolean
-  typicalCentroidRange: { min: number; max: number }
-  centroidFretCoefficient: number
+  material: "plain" | "wound"
+  gauge: number // approximate in thousandths of inch (e.g., 10 = .010")
 }
 
-export interface StringCandidate {
-  stringNumber: number
-  fretNumber: number
-  expectedFreq: number
+export interface FrequencyRange {
+  min: number
+  max: number
 }
 
-export interface HarmonicPeak {
-  harmonicNumber: number
-  expectedFreq: number
-  actualFreq: number
-  amplitude: number
-  deviationCents: number
-}
+const MAX_FRETS = 22
 
-export interface SpectralFeatures {
-  centroid: number
-  rolloff: number
-  spread: number
-  flatness: number
-}
-
-export interface CandidateScoreInfo {
-  stringNumber: number
-  fretNumber: number
-  totalScore: number
-  inharmonicityScore: number
-  spectralScore: number
-  harmonicScore: number
-}
-
-export interface StringDetectionResult {
-  stringNumber: number
-  fretNumber: number
-  confidence: number
-  scoreDifference: number
-  secondBest?: {
-    stringNumber: number
-    fretNumber: number
-    confidence: number
-  }
-  allCandidateScores: CandidateScoreInfo[]
-  measuredInharmonicity: number
-  spectralCentroid: number
-  expectedInharmonicity: number
-}
-
-export const STANDARD_TUNING_STRINGS: StringProfile[] = [
+export const STRINGS: StringInfo[] = [
   {
-    stringNumber: 6,
-    name: "Low E",
-    openMidi: 40,
-    openFreq: 82.41,
-    maxFret: 24,
-    minFreq: 82.41,
-    maxFreq: 329.63,
-    typicalInharmonicity: 0.00012,
-    isWound: true,
-    typicalCentroidRange: { min: 300, max: 600 },
-    centroidFretCoefficient: 15,
+    number: 1,
+    name: "E4",
+    openMidi: STRING_OPEN_MIDI[5],
+    openFreq: midiToFreq(STRING_OPEN_MIDI[5]),
+    material: "plain",
+    gauge: 10,
   },
   {
-    stringNumber: 5,
-    name: "A",
-    openMidi: 45,
-    openFreq: 110.0,
-    maxFret: 24,
-    minFreq: 110.0,
-    maxFreq: 440.0,
-    typicalInharmonicity: 0.00008,
-    isWound: true,
-    typicalCentroidRange: { min: 400, max: 750 },
-    centroidFretCoefficient: 18,
+    number: 2,
+    name: "B3",
+    openMidi: STRING_OPEN_MIDI[4],
+    openFreq: midiToFreq(STRING_OPEN_MIDI[4]),
+    material: "plain",
+    gauge: 13,
   },
   {
-    stringNumber: 4,
-    name: "D",
-    openMidi: 50,
-    openFreq: 146.83,
-    maxFret: 24,
-    minFreq: 146.83,
-    maxFreq: 587.33,
-    typicalInharmonicity: 0.00005,
-    isWound: true,
-    typicalCentroidRange: { min: 500, max: 900 },
-    centroidFretCoefficient: 22,
+    number: 3,
+    name: "G3",
+    openMidi: STRING_OPEN_MIDI[3],
+    openFreq: midiToFreq(STRING_OPEN_MIDI[3]),
+    material: "plain",
+    gauge: 17,
   },
   {
-    stringNumber: 3,
-    name: "G",
-    openMidi: 55,
-    openFreq: 196.0,
-    maxFret: 24,
-    minFreq: 196.0,
-    maxFreq: 783.99,
-    typicalInharmonicity: 0.00003,
-    isWound: false,
-    typicalCentroidRange: { min: 700, max: 1200 },
-    centroidFretCoefficient: 30,
+    number: 4,
+    name: "D3",
+    openMidi: STRING_OPEN_MIDI[2],
+    openFreq: midiToFreq(STRING_OPEN_MIDI[2]),
+    material: "wound",
+    gauge: 26,
   },
   {
-    stringNumber: 2,
-    name: "B",
-    openMidi: 59,
-    openFreq: 246.94,
-    maxFret: 24,
-    minFreq: 246.94,
-    maxFreq: 987.77,
-    typicalInharmonicity: 0.00002,
-    isWound: false,
-    typicalCentroidRange: { min: 900, max: 1500 },
-    centroidFretCoefficient: 35,
+    number: 5,
+    name: "A2",
+    openMidi: STRING_OPEN_MIDI[1],
+    openFreq: midiToFreq(STRING_OPEN_MIDI[1]),
+    material: "wound",
+    gauge: 36,
   },
   {
-    stringNumber: 1,
-    name: "High E",
-    openMidi: 64,
-    openFreq: 329.63,
-    maxFret: 24,
-    minFreq: 329.63,
-    maxFreq: 1318.51,
-    typicalInharmonicity: 0.00001,
-    isWound: false,
-    typicalCentroidRange: { min: 1100, max: 1800 },
-    centroidFretCoefficient: 40,
+    number: 6,
+    name: "E2",
+    openMidi: STRING_OPEN_MIDI[0],
+    openFreq: midiToFreq(STRING_OPEN_MIDI[0]),
+    material: "wound",
+    gauge: 46,
   },
 ]
 
-export function midiToFreq(midi: number): number {
-  return 440 * Math.pow(2, (midi - 69) / 12)
+export function getStringByNumber(stringNumber: number): StringInfo | undefined {
+  return STRINGS.find((s) => s.number === stringNumber)
 }
 
-export function freqToMidi(freq: number): number {
-  return 12 * Math.log2(freq / 440) + 69
+export function getFretFrequency(stringNumber: number, fret: number): number {
+  const string = getStringByNumber(stringNumber)
+  if (!string) {
+    throw new Error(`Invalid string number: ${stringNumber}`)
+  }
+  if (fret < 0) {
+    throw new Error(`Fret must be non-negative: ${fret}`)
+  }
+  return midiToFreq(string.openMidi + fret)
 }
 
-export function getCandidateStrings(pitch: number): StringCandidate[] {
-  const candidates: StringCandidate[] = []
-  const midiNote = freqToMidi(pitch)
-  const roundedMidi = Math.round(midiNote)
+export function getStringFrequencyRange(stringNumber: number): FrequencyRange {
+  const string = getStringByNumber(stringNumber)
+  if (!string) {
+    throw new Error(`Invalid string number: ${stringNumber}`)
+  }
+  return {
+    min: string.openFreq,
+    max: midiToFreq(string.openMidi + MAX_FRETS),
+  }
+}
 
-  for (const string of STANDARD_TUNING_STRINGS) {
-    const fret = roundedMidi - string.openMidi
-    if (fret >= 0 && fret <= string.maxFret) {
-      candidates.push({
-        stringNumber: string.stringNumber,
-        fretNumber: fret,
-        expectedFreq: midiToFreq(string.openMidi + fret),
-      })
+export function getCandidateStrings(frequency: number, toleranceCents = 50): number[] {
+  const candidates: number[] = []
+
+  for (const string of STRINGS) {
+    const range = getStringFrequencyRange(string.number)
+
+    const toleranceMultiplier = Math.pow(2, toleranceCents / 1200)
+    const minWithTolerance = range.min / toleranceMultiplier
+    const maxWithTolerance = range.max * toleranceMultiplier
+
+    if (frequency >= minWithTolerance && frequency <= maxWithTolerance) {
+      candidates.push(string.number)
     }
   }
 
-  return candidates
+  return candidates.sort((a, b) => a - b)
 }
 
-export function getStringProfile(stringNumber: number): StringProfile | undefined {
-  return STANDARD_TUNING_STRINGS.find((s) => s.stringNumber === stringNumber)
+export function getFretForFrequency(
+  stringNumber: number,
+  frequency: number
+): { fret: number; centsOff: number } | null {
+  const string = getStringByNumber(stringNumber)
+  if (!string) return null
+
+  const semitonesFromOpen = 12 * Math.log2(frequency / string.openFreq)
+  const fret = Math.round(semitonesFromOpen)
+
+  if (fret < 0 || fret > MAX_FRETS) return null
+
+  const exactFreq = getFretFrequency(stringNumber, fret)
+  const centsOff = 1200 * Math.log2(frequency / exactFreq)
+
+  return { fret, centsOff }
+}
+
+export function isWoundString(stringNumber: number): boolean {
+  const string = getStringByNumber(stringNumber)
+  return string?.material === "wound"
 }

@@ -1,440 +1,523 @@
 "use client"
 
-import { Fretboard, type Marker } from "@/components/fretboard/fretboard"
-import { Badge } from "@/components/ui/badge"
+import { useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Slider } from "@/components/ui/slider"
+import { Card } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
-import { useSpectralStringDetection } from "@/hooks/useSpectralStringDetection"
-import { STANDARD_TUNING_STRINGS } from "@/lib/audio/guitar-constants"
-import { getClosestNoteName } from "@/lib/audio/utils"
-import { useCallback, useMemo, useState } from "react"
+import { Slider } from "@/components/ui/slider"
+import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Input } from "@/components/ui/input"
+import {
+  Mic,
+  MicOff,
+  Download,
+  Upload,
+  Trash2,
+  Plus,
+  Activity,
+  Waves,
+  CircleDot,
+} from "lucide-react"
+import {
+  useSpectralStringDetection,
+  type DetectionMethod,
+} from "@/hooks/useSpectralStringDetection"
+import type { KNNModel } from "@/lib/audio/knn-classifier"
+
+const STRING_NAMES: Record<number, string> = {
+  1: "E4",
+  2: "B3",
+  3: "G3",
+  4: "D3",
+  5: "A2",
+  6: "E2",
+}
+
+const STRING_LABELS: Record<number, string> = {
+  1: "High E",
+  2: "B",
+  3: "G",
+  4: "D",
+  5: "A",
+  6: "Low E",
+}
+
+function ConfidenceBar({ value, label }: { value: number; label: string }) {
+  const percentage = Math.round(value * 100)
+  return (
+    <div className="flex items-center gap-2">
+      <span className="w-8 text-xs text-muted-foreground">{label}</span>
+      <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+        <div
+          className="h-full bg-primary transition-all duration-150"
+          style={{ width: `${percentage}%` }}
+        />
+      </div>
+      <span className="w-10 text-xs text-right text-muted-foreground">
+        {percentage}%
+      </span>
+    </div>
+  )
+}
+
+function FeatureValue({
+  label,
+  value,
+  unit,
+}: {
+  label: string
+  value: number | undefined
+  unit?: string
+}) {
+  const formatted =
+    value !== undefined ? (value > 1000 ? value.toFixed(0) : value.toFixed(3)) : "-"
+  return (
+    <div className="flex justify-between items-center py-1">
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <span className="text-sm font-mono">
+        {formatted}
+        {unit && value !== undefined && (
+          <span className="text-muted-foreground ml-1">{unit}</span>
+        )}
+      </span>
+    </div>
+  )
+}
 
 export default function StringDetectionPage() {
-  const [kValue, setKValue] = useState(5)
-  const [showAdvanced, setShowAdvanced] = useState(false)
+  const [minConfidence, setMinConfidence] = useState(0.3)
+  const [fundamentalFreqInput, setFundamentalFreqInput] = useState("")
+  const [samplesPerString, setSamplesPerString] = useState<Record<number, number>>({
+    1: 0,
+    2: 0,
+    3: 0,
+    4: 0,
+    5: 0,
+    6: 0,
+  })
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const spectral = useSpectralStringDetection({ k: kValue })
+  const {
+    status,
+    error,
+    sampleRate,
+    currentResult,
+    currentFeatures,
+    detectionMethod,
+    setDetectionMethod,
+    setFundamentalFrequency,
+    startListening,
+    stopListening,
+    classifier,
+    captureTrainingSample,
+  } = useSpectralStringDetection()
 
-  const isRecording = spectral.status === "recording"
+  const handleToggleListening = () => {
+    if (status === "listening") {
+      stopListening()
+    } else if (status === "idle" || status === "error") {
+      startListening()
+    }
+  }
 
-  const currentStatus = spectral.status
-  const currentError = spectral.error
-  const currentSampleRate = spectral.sampleRate
+  const handleMethodChange = (checked: boolean) => {
+    setDetectionMethod(checked ? "knn" : "rule-based")
+  }
 
-  const handleToggleListening = useCallback(() => {
-    if (isRecording) {
-      spectral.stopListening()
+  const handleFundamentalFreqChange = (value: string) => {
+    setFundamentalFreqInput(value)
+    const freq = parseFloat(value)
+    if (!isNaN(freq) && freq > 0) {
+      setFundamentalFrequency(freq)
     } else {
-      spectral.startListening()
+      setFundamentalFrequency(undefined)
     }
-  }, [isRecording, spectral])
+  }
 
-  const handleKChange = useCallback(
-    (value: number[]) => {
-      const newK = value[0]
-      setKValue(newK)
-      spectral.setK(newK)
-    },
-    [spectral],
-  )
-
-  const handleAddTrainingSample = useCallback(
-    (stringNumber: number) => {
-      spectral.addTrainingSample(stringNumber)
-    },
-    [spectral],
-  )
-
-  const handleCrossValidate = useCallback(() => {
-    const result = spectral.crossValidate()
-    if (result) {
-      console.log("Cross-validation result:", result)
+  const handleCaptureSample = (stringNumber: number) => {
+    const sample = captureTrainingSample(stringNumber)
+    if (sample) {
+      classifier.addSample(sample)
+      setSamplesPerString({ ...classifier.samplesPerString })
     }
-  }, [spectral])
+  }
 
-  const handleOptimizeK = useCallback(() => {
-    const result = spectral.optimizeK()
-    if (result) {
-      setKValue(result.bestK)
-      console.log("Optimized K:", result.bestK, "Accuracies:", result.accuracies)
+  const handleClearSamples = (stringNumber: number) => {
+    classifier.removeSamplesForString(stringNumber)
+    setSamplesPerString({ ...classifier.samplesPerString })
+  }
+
+  const handleExportModel = () => {
+    const model = classifier.exportModel()
+    const blob = new Blob([JSON.stringify(model, null, 2)], {
+      type: "application/json",
+    })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = "string-detection-model.json"
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const handleImportModel = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const model = JSON.parse(e.target?.result as string) as KNNModel
+        classifier.importModel(model)
+        setSamplesPerString({ ...classifier.samplesPerString })
+      } catch (err) {
+        console.error("Failed to import model:", err)
+      }
     }
-  }, [spectral])
+    reader.readAsText(file)
+    event.target.value = ""
+  }
 
-  const detection = spectral.data?.detection
-  const pitch = spectral.data?.pitch
-  const clarity = spectral.data?.clarity
-  const candidates = spectral.data?.candidates
+  const predictedString = currentResult?.predictedString
+  const showPrediction =
+    predictedString !== null &&
+    predictedString !== undefined &&
+    currentResult &&
+    currentResult.confidence >= minConfidence
 
-  const fretboardMarkers: Marker[] = useMemo(() => {
-    if (!detection || detection.confidence < 0.3) return []
-
-    const stringIndex = 6 - detection.stringNumber
-    return [
-      {
-        stringIndex,
-        fretIndex: detection.fretNumber,
-        type: "played",
-        label: detection.stringName,
-      },
-    ]
-  }, [detection])
+  const statusBadgeVariant =
+    status === "listening"
+      ? "default"
+      : status === "error"
+        ? "destructive"
+        : "secondary"
 
   return (
-    <div className="container mx-auto max-w-6xl p-6">
-      <h1 className="mb-6 text-3xl font-bold">String Detection Test</h1>
+    <div className="container mx-auto py-8 px-4 max-w-6xl">
+      <h1 className="text-3xl font-bold mb-6">String Detection Utility</h1>
 
-      <div className="mb-6 flex flex-wrap items-center gap-4">
-        <Button
-          onClick={handleToggleListening}
-          variant={isRecording ? "destructive" : "default"}
-          disabled={currentStatus === "requesting"}
-        >
-          {currentStatus === "requesting"
-            ? "Requesting..."
-            : isRecording
-              ? "Stop Listening"
-              : "Start Listening"}
-        </Button>
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* Controls Section */}
+        <Card className="p-6">
+          <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+            <Activity className="h-5 w-5" />
+            Controls
+          </h2>
 
-        <Badge variant="outline" className="px-3 py-1 text-sm">
-          Status: {currentStatus}
-        </Badge>
-        <Badge variant="secondary" className="px-3 py-1 text-sm">
-          Sample Rate: {currentSampleRate} Hz
-        </Badge>
+          <div className="space-y-6">
+            <div className="flex items-center gap-4">
+              <Button
+                onClick={handleToggleListening}
+                disabled={status === "requesting"}
+                variant={status === "listening" ? "destructive" : "default"}
+                size="lg"
+                className="flex-1"
+              >
+                {status === "listening" ? (
+                  <>
+                    <MicOff className="mr-2 h-5 w-5" />
+                    Stop Listening
+                  </>
+                ) : (
+                  <>
+                    <Mic className="mr-2 h-5 w-5" />
+                    Start Listening
+                  </>
+                )}
+              </Button>
+            </div>
 
-        <div className="ml-auto flex items-center gap-2">
-          <span className="text-sm">Advanced</span>
-          <Switch checked={showAdvanced} onCheckedChange={setShowAdvanced} />
-        </div>
-      </div>
-
-      {currentError && (
-        <Card className="border-destructive mb-6">
-          <CardContent className="pt-4">
-            <p className="text-destructive">{currentError}</p>
-          </CardContent>
-        </Card>
-      )}
-
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle>ML Model Controls</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-sm font-medium">K-Neighbors</span>
-                <span className="text-muted-foreground text-sm">{kValue}</span>
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <label className="text-sm font-medium">Detection Method</label>
+                <p className="text-xs text-muted-foreground">
+                  {detectionMethod === "knn" ? "KNN Classifier" : "Rule-based"}
+                </p>
               </div>
-              <Slider value={[kValue]} onValueChange={handleKChange} min={1} max={15} step={1} />
+              <Switch
+                checked={detectionMethod === "knn"}
+                onCheckedChange={handleMethodChange}
+              />
             </div>
 
             <div className="space-y-2">
-              <span className="text-sm font-medium">Training Stats</span>
-              <div className="flex flex-wrap gap-2">
-                <Badge variant="outline">
-                  Total: {spectral.trainingStats.totalSamples} samples
-                </Badge>
-                {spectral.trainingStats.accuracy !== null && (
-                  <Badge variant="secondary">
-                    Accuracy: {(spectral.trainingStats.accuracy * 100).toFixed(1)}%
-                  </Badge>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-1">
-                {STANDARD_TUNING_STRINGS.map((s) => (
-                  <Badge
-                    key={s.stringNumber}
-                    variant={
-                      (spectral.trainingStats.samplesPerString.get(s.stringNumber) ?? 0) > 0
-                        ? "default"
-                        : "outline"
-                    }
-                    className="text-xs"
-                  >
-                    {s.name}: {spectral.trainingStats.samplesPerString.get(s.stringNumber) ?? 0}
-                  </Badge>
-                ))}
-              </div>
+              <label className="text-sm font-medium">
+                Minimum Confidence: {Math.round(minConfidence * 100)}%
+              </label>
+              <Slider
+                value={[minConfidence]}
+                onValueChange={([value]) => setMinConfidence(value)}
+                min={0}
+                max={1}
+                step={0.05}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                Fundamental Frequency (Hz)
+              </label>
+              <Input
+                type="number"
+                placeholder="e.g., 329.63 for E4"
+                value={fundamentalFreqInput}
+                onChange={(e) => handleFundamentalFreqChange(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Optional: Enter a frequency to constrain candidate strings
+              </p>
             </div>
           </div>
+        </Card>
 
-          <div className="flex flex-wrap gap-2">
-            <span className="text-sm font-medium">Add Sample:</span>
-            {STANDARD_TUNING_STRINGS.map((s) => (
-              <Button
-                key={s.stringNumber}
-                size="sm"
-                variant="outline"
-                onClick={() => handleAddTrainingSample(s.stringNumber)}
-                disabled={!spectral.data}
+        {/* Prediction Display */}
+        <Card className="p-6">
+          <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+            <CircleDot className="h-5 w-5" />
+            Prediction
+          </h2>
+
+          <div className="text-center mb-6">
+            {showPrediction ? (
+              <>
+                <div className="text-8xl font-bold text-primary mb-2">
+                  {predictedString}
+                </div>
+                <div className="text-2xl font-semibold text-muted-foreground">
+                  {STRING_NAMES[predictedString!]} ({STRING_LABELS[predictedString!]})
+                </div>
+                <div className="mt-4">
+                  <div className="text-sm text-muted-foreground mb-1">Confidence</div>
+                  <div className="h-4 bg-muted rounded-full overflow-hidden max-w-xs mx-auto">
+                    <div
+                      className="h-full bg-primary transition-all duration-150"
+                      style={{ width: `${Math.round(currentResult.confidence * 100)}%` }}
+                    />
+                  </div>
+                  <div className="text-lg font-mono mt-1">
+                    {Math.round(currentResult.confidence * 100)}%
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="py-12 text-muted-foreground">
+                {status === "listening"
+                  ? "Waiting for detection..."
+                  : "Start listening to detect strings"}
+              </div>
+            )}
+          </div>
+
+          {currentResult && (
+            <div className="space-y-1">
+              <div className="text-sm font-medium mb-2">All String Confidences</div>
+              {[1, 2, 3, 4, 5, 6].map((stringNum) => (
+                <ConfidenceBar
+                  key={stringNum}
+                  label={`${stringNum}`}
+                  value={currentResult.allConfidences[stringNum] ?? 0}
+                />
+              ))}
+            </div>
+          )}
+        </Card>
+
+        {/* Status Display */}
+        <Card className="p-6">
+          <h2 className="text-xl font-semibold mb-4">Status</h2>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Detection Status</span>
+              <Badge variant={statusBadgeVariant}>{status}</Badge>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Sample Rate</span>
+              <span className="text-sm font-mono">{sampleRate} Hz</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Method</span>
+              <Badge variant="outline">{detectionMethod}</Badge>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">KNN Samples</span>
+              <span className="text-sm font-mono">{classifier.sampleCount}</span>
+            </div>
+            {currentResult?.candidateStrings && (
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Candidates</span>
+                <div className="flex gap-1">
+                  {currentResult.candidateStrings.map((s) => (
+                    <Badge key={s} variant="outline" className="text-xs">
+                      {s}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+            {error && (
+              <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-md">
+                <span className="text-sm text-destructive">{error}</span>
+              </div>
+            )}
+          </div>
+        </Card>
+
+        {/* Feature Visualization */}
+        <Card className="p-6">
+          <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+            <Waves className="h-5 w-5" />
+            Spectral Features
+          </h2>
+
+          <Tabs defaultValue="spectral" className="w-full">
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="spectral">Spectral</TabsTrigger>
+              <TabsTrigger value="mfcc">MFCC</TabsTrigger>
+              <TabsTrigger value="harmonic">Harmonic</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="spectral" className="mt-4">
+              <div className="space-y-1">
+                <FeatureValue
+                  label="Spectral Centroid"
+                  value={currentFeatures?.centroid}
+                  unit="Hz"
+                />
+                <FeatureValue
+                  label="Spectral Rolloff"
+                  value={currentFeatures?.rolloff}
+                  unit="Hz"
+                />
+                <FeatureValue
+                  label="Spectral Spread"
+                  value={currentFeatures?.spread}
+                  unit="Hz"
+                />
+                <FeatureValue
+                  label="Spectral Flatness"
+                  value={currentFeatures?.flatness}
+                />
+                <FeatureValue
+                  label="Spectral Flux"
+                  value={currentFeatures?.flux}
+                />
+                <FeatureValue
+                  label="Zero Crossing Rate"
+                  value={currentFeatures?.zcr}
+                />
+              </div>
+            </TabsContent>
+
+            <TabsContent value="mfcc" className="mt-4">
+              <div className="space-y-1">
+                {currentFeatures?.mfccs ? (
+                  currentFeatures.mfccs.map((value, idx) => (
+                    <FeatureValue key={idx} label={`MFCC ${idx + 1}`} value={value} />
+                  ))
+                ) : (
+                  <div className="text-sm text-muted-foreground py-4 text-center">
+                    No MFCC data available
+                  </div>
+                )}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="harmonic" className="mt-4">
+              <div className="space-y-1">
+                <FeatureValue
+                  label="H2/H1 Ratio"
+                  value={currentFeatures?.harmonicRatios.h2h1}
+                />
+                <FeatureValue
+                  label="H3/H1 Ratio"
+                  value={currentFeatures?.harmonicRatios.h3h1}
+                />
+                <FeatureValue
+                  label="Even/Odd Ratio"
+                  value={currentFeatures?.harmonicRatios.evenOdd}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground mt-4">
+                Note: Harmonic ratios require a fundamental frequency to be set for
+                accurate measurement.
+              </p>
+            </TabsContent>
+          </Tabs>
+        </Card>
+
+        {/* Training Section */}
+        <Card className="p-6 lg:col-span-2">
+          <h2 className="text-xl font-semibold mb-4">KNN Training</h2>
+
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 mb-6">
+            {[1, 2, 3, 4, 5, 6].map((stringNum) => (
+              <div
+                key={stringNum}
+                className="border rounded-lg p-4 flex flex-col gap-3"
               >
-                {s.name}
-              </Button>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-semibold">
+                      String {stringNum} - {STRING_NAMES[stringNum]}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {STRING_LABELS[stringNum]}
+                    </div>
+                  </div>
+                  <Badge variant="secondary">
+                    {samplesPerString[stringNum] || 0} samples
+                  </Badge>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => handleCaptureSample(stringNum)}
+                    disabled={status !== "listening"}
+                    className="flex-1"
+                  >
+                    <Plus className="h-4 w-4 mr-1" />
+                    Capture
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleClearSamples(stringNum)}
+                    disabled={(samplesPerString[stringNum] || 0) === 0}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
             ))}
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" onClick={handleOptimizeK}>
-              Auto-Select K
+          <div className="flex flex-wrap gap-3 pt-4 border-t">
+            <Button variant="outline" onClick={handleExportModel}>
+              <Download className="h-4 w-4 mr-2" />
+              Export Model
             </Button>
-            <Button size="sm" variant="outline" onClick={() => spectral.saveModel()}>
-              Save Model
+            <Button
+              variant="outline"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload className="h-4 w-4 mr-2" />
+              Import Model
             </Button>
-            <Button size="sm" variant="outline" onClick={() => spectral.loadModel()}>
-              Load Model
-            </Button>
-            <Button size="sm" variant="outline" onClick={handleCrossValidate}>
-              Cross-Validate
-            </Button>
-            <Button size="sm" variant="destructive" onClick={() => spectral.clearModel()}>
-              Clear Model
-            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".json"
+              onChange={handleImportModel}
+              className="hidden"
+            />
+            <div className="flex-1" />
+            <div className="text-sm text-muted-foreground self-center">
+              Total samples: {classifier.sampleCount}
+            </div>
           </div>
-        </CardContent>
-      </Card>
-
-      {spectral.data ? (
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Fretboard</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Fretboard markers={fretboardMarkers} className="w-full" />
-            </CardContent>
-          </Card>
-
-          <div className="grid gap-6 md:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>String Detection</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {detection ? (
-                  <div className="space-y-4">
-                    <div className="text-center">
-                      <div className="text-primary text-6xl font-bold">
-                        {detection.stringNumber}
-                      </div>
-                      <div className="text-muted-foreground text-2xl">{detection.stringName}</div>
-                      <div className="text-lg">Fret {detection.fretNumber}</div>
-                    </div>
-                    <div className="flex justify-center">
-                      <Badge
-                        variant={
-                          detection.confidence > 0.7
-                            ? "default"
-                            : detection.confidence > 0.5
-                              ? "secondary"
-                              : "outline"
-                        }
-                      >
-                        Confidence: {(detection.confidence * 100).toFixed(0)}%
-                      </Badge>
-                    </div>
-
-                    {spectral.data?.classificationResult && (
-                      <div className="space-y-2 border-t pt-4">
-                        <span className="text-sm font-medium">String Probabilities</span>
-                        <div className="space-y-1">
-                          {[...spectral.data.classificationResult.probabilities.entries()]
-                            .sort((a, b) => b[1] - a[1])
-                            .map(([stringNum, prob]) => {
-                              const profile = STANDARD_TUNING_STRINGS.find(
-                                (s) => s.stringNumber === stringNum,
-                              )
-                              return (
-                                <div key={stringNum} className="flex items-center gap-2">
-                                  <span className="w-8 text-sm">{profile?.name ?? stringNum}</span>
-                                  <div className="bg-muted h-2 flex-1 rounded">
-                                    <div
-                                      className="bg-primary h-full rounded"
-                                      style={{ width: `${prob * 100}%` }}
-                                    />
-                                  </div>
-                                  <span className="text-muted-foreground w-12 text-right text-xs">
-                                    {(prob * 100).toFixed(0)}%
-                                  </span>
-                                </div>
-                              )
-                            })}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <p className="text-muted-foreground text-center">No string detected</p>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Pitch Information</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Frequency</span>
-                  <span className="font-mono">{pitch?.toFixed(2)} Hz</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Note</span>
-                  <span className="font-mono">
-                    {pitch ? (getClosestNoteName(pitch) ?? "-") : "-"}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Clarity</span>
-                  <span className="font-mono">{clarity ? (clarity * 100).toFixed(1) : 0}%</span>
-                </div>
-              </CardContent>
-            </Card>
-
-            {spectral.data && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Spectral Features</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Spectral Centroid</span>
-                    <span className="font-mono">
-                      {spectral.data.features.spectralCentroid.toFixed(0)} Hz
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Spectral Rolloff</span>
-                    <span className="font-mono">
-                      {spectral.data.features.spectralRolloff.toFixed(0)} Hz
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Spectral Spread</span>
-                    <span className="font-mono">
-                      {spectral.data.features.spectralSpread.toFixed(0)} Hz
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Spectral Flatness</span>
-                    <span className="font-mono">
-                      {spectral.data.features.spectralFlatness.toFixed(4)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Zero Crossing Rate</span>
-                    <span className="font-mono">
-                      {spectral.data.features.zeroCrossingRate.toFixed(4)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">H2/H1 Ratio</span>
-                    <span className="font-mono">
-                      {spectral.data.features.harmonicRatios.h2h1.toFixed(3)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">H3/H1 Ratio</span>
-                    <span className="font-mono">
-                      {spectral.data.features.harmonicRatios.h3h1.toFixed(3)}
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Candidate Positions</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {candidates && candidates.length > 0 ? (
-                  <div className="space-y-2">
-                    {candidates.map((c) => (
-                      <div
-                        key={`${c.stringNumber}-${c.fretNumber}`}
-                        className={`flex justify-between rounded p-2 ${
-                          detection?.stringNumber === c.stringNumber &&
-                          detection?.fretNumber === c.fretNumber
-                            ? "border-primary bg-primary/10 border"
-                            : "bg-muted/50"
-                        }`}
-                      >
-                        <span>String {c.stringNumber}</span>
-                        <span>Fret {c.fretNumber}</span>
-                        <span className="text-muted-foreground font-mono text-sm">
-                          {c.expectedFreq.toFixed(1)} Hz
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-muted-foreground text-center">No candidates</p>
-                )}
-              </CardContent>
-            </Card>
-
-            {showAdvanced && spectral.data && (
-              <Card className="md:col-span-2">
-                <CardHeader>
-                  <CardTitle>MFCC Coefficients</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-wrap gap-2">
-                    {spectral.data.features.mfccs.map((mfcc, i) => (
-                      <Badge key={i} variant="outline" className="font-mono text-xs">
-                        MFCC{i + 1}: {mfcc.toFixed(2)}
-                      </Badge>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {showAdvanced && spectral.data?.classificationResult && (
-              <Card className="md:col-span-2">
-                <CardHeader>
-                  <CardTitle>Nearest Neighbors</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-wrap gap-2">
-                    {spectral.data.classificationResult.nearestNeighbors.map((neighbor, i) => {
-                      const profile = STANDARD_TUNING_STRINGS.find(
-                        (s) => s.stringNumber === neighbor.label,
-                      )
-                      return (
-                        <Badge
-                          key={i}
-                          variant={
-                            neighbor.label === spectral.data?.detection?.stringNumber
-                              ? "default"
-                              : "outline"
-                          }
-                        >
-                          {profile?.name ?? `String ${neighbor.label}`} (d=
-                          {neighbor.distance.toFixed(2)})
-                        </Badge>
-                      )
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        </div>
-      ) : (
-        <Card>
-          <CardContent className="py-12">
-            <p className="text-muted-foreground text-center">
-              {isRecording ? "Play a note on your guitar..." : "Click 'Start Listening' to begin"}
-            </p>
-          </CardContent>
         </Card>
-      )}
+      </div>
     </div>
   )
 }

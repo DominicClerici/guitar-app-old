@@ -1,123 +1,92 @@
-"use client"
-
 export interface TrainingSample {
+  stringNumber: number
   features: number[]
-  label: number
-  metadata?: {
-    fret?: number
-    timestamp?: number
+}
+
+export interface PredictionResult {
+  predictedString: number
+  confidence: number
+  allConfidences: Record<number, number>
+  nearestNeighbors: Array<{ stringNumber: number; distance: number }>
+}
+
+export interface KNNModel {
+  k: number
+  samples: TrainingSample[]
+  normalization: {
+    means: number[]
+    stds: number[]
   }
 }
 
-export interface NormalizationParams {
-  means: number[]
-  stds: number[]
-}
-
-export interface ClassificationResult {
-  predictedClass: number
-  confidence: number
-  probabilities: Map<number, number>
-  nearestNeighbors: Array<{
-    label: number
-    distance: number
-  }>
-}
-
-export interface KNNModelData {
-  samples: TrainingSample[]
-  normalization: NormalizationParams | null
-  k: number
-  featureCount: number
-  version: string
-}
-
-const MODEL_VERSION = "1.0.0"
-const STORAGE_KEY = "spectral-string-detection-model"
-
 export class KNNClassifier {
-  private samples: TrainingSample[] = []
-  private normalization: NormalizationParams | null = null
   private k: number
-  private featureCount: number = 0
+  private samples: TrainingSample[] = []
+  private means: number[] = []
+  private stds: number[] = []
+  private normalized: number[][] = []
 
-  constructor(k: number = 5) {
+  constructor(k = 5) {
     this.k = k
   }
 
-  addSample(features: number[], label: number, metadata?: { fret?: number }): void {
-    if (this.featureCount === 0) {
-      this.featureCount = features.length
-    } else if (features.length !== this.featureCount) {
-      throw new Error(
-        `Feature count mismatch: expected ${this.featureCount}, got ${features.length}`,
-      )
+  train(samples: TrainingSample[]): void {
+    if (samples.length === 0) {
+      throw new Error("Cannot train with empty samples")
     }
 
-    this.samples.push({
-      features: [...features],
-      label,
-      metadata: {
-        ...metadata,
-        timestamp: Date.now(),
-      },
-    })
-
-    this.normalization = null
+    this.samples = samples
+    this.computeNormalizationParams()
+    this.normalizeAllSamples()
   }
 
-  addSamples(samples: Array<{ features: number[]; label: number; fret?: number }>): void {
-    for (const sample of samples) {
-      this.addSample(sample.features, sample.label, { fret: sample.fret })
-    }
-  }
-
-  private computeNormalization(): void {
-    if (this.samples.length === 0) {
-      this.normalization = null
-      return
-    }
-
+  private computeNormalizationParams(): void {
+    const featureCount = this.samples[0].features.length
     const n = this.samples.length
-    const means = new Array(this.featureCount).fill(0)
-    const stds = new Array(this.featureCount).fill(0)
 
-    for (const sample of this.samples) {
-      for (let i = 0; i < this.featureCount; i++) {
-        means[i] += sample.features[i]
+    this.means = new Array(featureCount).fill(0)
+    this.stds = new Array(featureCount).fill(0)
+
+    for (let i = 0; i < n; i++) {
+      const features = this.samples[i].features
+      for (let j = 0; j < featureCount; j++) {
+        this.means[j] += features[j]
       }
     }
-    for (let i = 0; i < this.featureCount; i++) {
-      means[i] /= n
+
+    for (let j = 0; j < featureCount; j++) {
+      this.means[j] /= n
     }
 
-    for (const sample of this.samples) {
-      for (let i = 0; i < this.featureCount; i++) {
-        const diff = sample.features[i] - means[i]
-        stds[i] += diff * diff
+    for (let i = 0; i < n; i++) {
+      const features = this.samples[i].features
+      for (let j = 0; j < featureCount; j++) {
+        const diff = features[j] - this.means[j]
+        this.stds[j] += diff * diff
       }
     }
-    for (let i = 0; i < this.featureCount; i++) {
-      stds[i] = Math.sqrt(stds[i] / n)
-      if (stds[i] < 1e-10) stds[i] = 1
-    }
 
-    this.normalization = { means, stds }
+    for (let j = 0; j < featureCount; j++) {
+      this.stds[j] = Math.sqrt(this.stds[j] / n)
+      if (this.stds[j] === 0) {
+        this.stds[j] = 1
+      }
+    }
   }
 
-  private normalize(features: number[]): number[] {
-    if (!this.normalization) {
-      return features
+  private normalizeAllSamples(): void {
+    this.normalized = new Array(this.samples.length)
+    for (let i = 0; i < this.samples.length; i++) {
+      this.normalized[i] = this.normalizeFeatures(this.samples[i].features)
     }
-
-    return features.map((f, i) => (f - this.normalization!.means[i]) / this.normalization!.stds[i])
   }
 
-  train(): void {
-    if (this.samples.length === 0) {
-      throw new Error("No training samples available")
+  private normalizeFeatures(features: number[]): number[] {
+    const result = new Array(features.length)
+    for (let i = 0; i < features.length; i++) {
+      result[i] = (features[i] - this.means[i]) / this.stds[i]
     }
-    this.computeNormalization()
+    return result
   }
 
   private euclideanDistance(a: number[], b: number[]): number {
@@ -129,310 +98,142 @@ export class KNNClassifier {
     return Math.sqrt(sum)
   }
 
-  classify(features: number[]): ClassificationResult | null {
+  predict(features: number[]): PredictionResult {
     if (this.samples.length === 0) {
-      return null
+      throw new Error("Classifier has no training samples")
     }
 
-    if (features.length !== this.featureCount) {
+    if (features.length !== this.means.length) {
       throw new Error(
-        `Feature count mismatch: expected ${this.featureCount}, got ${features.length}`,
+        `Feature length mismatch: expected ${this.means.length}, got ${features.length}`
       )
     }
 
-    if (!this.normalization) {
-      this.train()
-    }
+    const normalizedInput = this.normalizeFeatures(features)
 
-    const normalizedInput = this.normalize(features)
+    const distances: Array<{ index: number; distance: number }> = new Array(
+      this.samples.length
+    )
 
-    const distances: Array<{ label: number; distance: number }> = []
-
-    for (const sample of this.samples) {
-      const normalizedSample = this.normalize(sample.features)
-      const distance = this.euclideanDistance(normalizedInput, normalizedSample)
-      distances.push({ label: sample.label, distance })
+    for (let i = 0; i < this.samples.length; i++) {
+      distances[i] = {
+        index: i,
+        distance: this.euclideanDistance(normalizedInput, this.normalized[i]),
+      }
     }
 
     distances.sort((a, b) => a.distance - b.distance)
 
-    const k = Math.min(this.k, distances.length)
-    const nearestNeighbors = distances.slice(0, k)
+    const effectiveK = Math.min(this.k, this.samples.length)
+    const nearestNeighbors: Array<{ stringNumber: number; distance: number }> =
+      new Array(effectiveK)
 
-    const votes = new Map<number, number>()
-    const weightedVotes = new Map<number, number>()
-
-    for (const neighbor of nearestNeighbors) {
-      votes.set(neighbor.label, (votes.get(neighbor.label) || 0) + 1)
-
-      const weight = 1 / (neighbor.distance + 1e-10)
-      weightedVotes.set(neighbor.label, (weightedVotes.get(neighbor.label) || 0) + weight)
-    }
-
-    let predictedClass = -1
-    let maxWeight = -Infinity
-    for (const [label, weight] of weightedVotes) {
-      if (weight > maxWeight) {
-        maxWeight = weight
-        predictedClass = label
+    for (let i = 0; i < effectiveK; i++) {
+      nearestNeighbors[i] = {
+        stringNumber: this.samples[distances[i].index].stringNumber,
+        distance: distances[i].distance,
       }
     }
 
+    // Weighted voting: weight = 1 / (distance + epsilon) to avoid division by zero
+    const epsilon = 1e-10
+    const votes: Record<number, number> = {}
     let totalWeight = 0
-    for (const weight of weightedVotes.values()) {
+
+    for (let i = 0; i < effectiveK; i++) {
+      const stringNum = nearestNeighbors[i].stringNumber
+      const weight = 1 / (nearestNeighbors[i].distance + epsilon)
+      votes[stringNum] = (votes[stringNum] || 0) + weight
       totalWeight += weight
     }
 
-    const probabilities = new Map<number, number>()
-    for (const [label, weight] of weightedVotes) {
-      probabilities.set(label, weight / totalWeight)
+    let predictedString = 1
+    let maxVote = 0
+
+    const allConfidences: Record<number, number> = {}
+
+    for (let s = 1; s <= 6; s++) {
+      const vote = votes[s] || 0
+      allConfidences[s] = vote / totalWeight
+
+      if (vote > maxVote) {
+        maxVote = vote
+        predictedString = s
+      }
     }
 
-    const confidence = probabilities.get(predictedClass) || 0
-
     return {
-      predictedClass,
-      confidence,
-      probabilities,
+      predictedString,
+      confidence: allConfidences[predictedString],
+      allConfidences,
       nearestNeighbors,
     }
   }
 
-  getSampleCount(): number {
+  addSample(sample: TrainingSample): void {
+    this.samples.push(sample)
+
+    if (this.samples.length === 1) {
+      this.means = [...sample.features]
+      this.stds = new Array(sample.features.length).fill(1)
+      this.normalized = [this.normalizeFeatures(sample.features)]
+    } else {
+      this.computeNormalizationParams()
+      this.normalizeAllSamples()
+    }
+  }
+
+  removeSamplesForString(stringNumber: number): void {
+    const originalLength = this.samples.length
+    this.samples = this.samples.filter((s) => s.stringNumber !== stringNumber)
+
+    if (this.samples.length !== originalLength && this.samples.length > 0) {
+      this.computeNormalizationParams()
+      this.normalizeAllSamples()
+    } else if (this.samples.length === 0) {
+      this.means = []
+      this.stds = []
+      this.normalized = []
+    }
+  }
+
+  exportModel(): KNNModel {
+    return {
+      k: this.k,
+      samples: this.samples.map((s) => ({
+        stringNumber: s.stringNumber,
+        features: [...s.features],
+      })),
+      normalization: {
+        means: [...this.means],
+        stds: [...this.stds],
+      },
+    }
+  }
+
+  importModel(model: KNNModel): void {
+    this.k = model.k
+    this.samples = model.samples.map((s) => ({
+      stringNumber: s.stringNumber,
+      features: [...s.features],
+    }))
+    this.means = [...model.normalization.means]
+    this.stds = [...model.normalization.stds]
+    this.normalizeAllSamples()
+  }
+
+  get sampleCount(): number {
     return this.samples.length
   }
 
-  getSampleCountByClass(): Map<number, number> {
-    const counts = new Map<number, number>()
+  get samplesPerString(): Record<number, number> {
+    const counts: Record<number, number> = {}
+    for (let s = 1; s <= 6; s++) {
+      counts[s] = 0
+    }
     for (const sample of this.samples) {
-      counts.set(sample.label, (counts.get(sample.label) || 0) + 1)
+      counts[sample.stringNumber] = (counts[sample.stringNumber] || 0) + 1
     }
     return counts
   }
-
-  getClasses(): number[] {
-    return [...new Set(this.samples.map((s) => s.label))].sort((a, b) => a - b)
-  }
-
-  setK(k: number): void {
-    if (k < 1) throw new Error("k must be at least 1")
-    this.k = k
-  }
-
-  getK(): number {
-    return this.k
-  }
-
-  clearSamples(): void {
-    this.samples = []
-    this.normalization = null
-    this.featureCount = 0
-  }
-
-  removeSamplesByClass(label: number): void {
-    this.samples = this.samples.filter((s) => s.label !== label)
-    this.normalization = null
-  }
-
-  exportModel(): KNNModelData {
-    return {
-      samples: this.samples.map((s) => ({
-        features: [...s.features],
-        label: s.label,
-        metadata: s.metadata ? { ...s.metadata } : undefined,
-      })),
-      normalization: this.normalization
-        ? {
-            means: [...this.normalization.means],
-            stds: [...this.normalization.stds],
-          }
-        : null,
-      k: this.k,
-      featureCount: this.featureCount,
-      version: MODEL_VERSION,
-    }
-  }
-
-  importModel(data: KNNModelData): void {
-    if (data.version !== MODEL_VERSION) {
-      console.warn(`Model version mismatch: expected ${MODEL_VERSION}, got ${data.version}`)
-    }
-
-    this.samples = data.samples.map((s) => ({
-      features: [...s.features],
-      label: s.label,
-      metadata: s.metadata ? { ...s.metadata } : undefined,
-    }))
-
-    this.normalization = data.normalization
-      ? {
-          means: [...data.normalization.means],
-          stds: [...data.normalization.stds],
-        }
-      : null
-
-    this.k = data.k
-    this.featureCount = data.featureCount
-  }
-
-  saveToStorage(): void {
-    try {
-      const data = this.exportModel()
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
-    } catch (e) {
-      console.error("Failed to save model to localStorage:", e)
-    }
-  }
-
-  loadFromStorage(): boolean {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY)
-      if (!stored) return false
-
-      const data: KNNModelData = JSON.parse(stored)
-      this.importModel(data)
-      return true
-    } catch (e) {
-      console.error("Failed to load model from localStorage:", e)
-      return false
-    }
-  }
-
-  static clearStorage(): void {
-    localStorage.removeItem(STORAGE_KEY)
-  }
-
-  crossValidate(folds: number = 5): {
-    accuracy: number
-    confusionMatrix: Map<number, Map<number, number>>
-  } {
-    if (this.samples.length < folds) {
-      throw new Error(`Not enough samples for ${folds}-fold cross-validation`)
-    }
-
-    const shuffled = [...this.samples].sort(() => Math.random() - 0.5)
-    const foldSize = Math.floor(shuffled.length / folds)
-
-    let correct = 0
-    let total = 0
-    const confusionMatrix = new Map<number, Map<number, number>>()
-
-    for (let fold = 0; fold < folds; fold++) {
-      const testStart = fold * foldSize
-      const testEnd = fold === folds - 1 ? shuffled.length : (fold + 1) * foldSize
-
-      const testSet = shuffled.slice(testStart, testEnd)
-      const trainSet = [...shuffled.slice(0, testStart), ...shuffled.slice(testEnd)]
-
-      const tempClassifier = new KNNClassifier(this.k)
-      tempClassifier.addSamples(
-        trainSet.map((s) => ({ features: s.features, label: s.label, fret: s.metadata?.fret })),
-      )
-      tempClassifier.train()
-
-      for (const sample of testSet) {
-        const result = tempClassifier.classify(sample.features)
-        if (result) {
-          if (result.predictedClass === sample.label) {
-            correct++
-          }
-          total++
-
-          if (!confusionMatrix.has(sample.label)) {
-            confusionMatrix.set(sample.label, new Map())
-          }
-          const row = confusionMatrix.get(sample.label)!
-          row.set(result.predictedClass, (row.get(result.predictedClass) || 0) + 1)
-        }
-      }
-    }
-
-    return {
-      accuracy: total > 0 ? correct / total : 0,
-      confusionMatrix,
-    }
-  }
-
-  optimizeK(maxK: number = 15): { bestK: number; accuracies: Map<number, number> } {
-    if (this.samples.length < 3) {
-      throw new Error("Need at least 3 samples to optimize K")
-    }
-
-    const accuracies = new Map<number, number>()
-    const effectiveMaxK = Math.min(maxK, this.samples.length - 1)
-
-    if (!this.normalization) {
-      this.computeNormalization()
-    }
-
-    const normalizedSamples = this.samples.map((s) => ({
-      features: this.normalize(s.features),
-      label: s.label,
-    }))
-
-    const distanceMatrix: number[][] = []
-    for (let i = 0; i < normalizedSamples.length; i++) {
-      distanceMatrix[i] = []
-      for (let j = 0; j < normalizedSamples.length; j++) {
-        if (i === j) {
-          distanceMatrix[i][j] = Infinity
-        } else {
-          distanceMatrix[i][j] = this.euclideanDistance(
-            normalizedSamples[i].features,
-            normalizedSamples[j].features,
-          )
-        }
-      }
-    }
-
-    for (let k = 1; k <= effectiveMaxK; k++) {
-      let correct = 0
-
-      for (let i = 0; i < normalizedSamples.length; i++) {
-        const distances = distanceMatrix[i]
-          .map((d, j) => ({ distance: d, label: normalizedSamples[j].label }))
-          .sort((a, b) => a.distance - b.distance)
-          .slice(0, k)
-
-        const weightedVotes = new Map<number, number>()
-        for (const neighbor of distances) {
-          const weight = 1 / (neighbor.distance + 1e-10)
-          weightedVotes.set(neighbor.label, (weightedVotes.get(neighbor.label) || 0) + weight)
-        }
-
-        let predicted = -1
-        let maxWeight = -Infinity
-        for (const [label, weight] of weightedVotes) {
-          if (weight > maxWeight) {
-            maxWeight = weight
-            predicted = label
-          }
-        }
-
-        if (predicted === normalizedSamples[i].label) {
-          correct++
-        }
-      }
-
-      accuracies.set(k, correct / normalizedSamples.length)
-    }
-
-    let bestK = 1
-    let bestAccuracy = 0
-    for (const [k, accuracy] of accuracies) {
-      if (
-        accuracy > bestAccuracy ||
-        (accuracy === bestAccuracy && k % 2 === 1 && bestK % 2 === 0)
-      ) {
-        bestAccuracy = accuracy
-        bestK = k
-      }
-    }
-
-    return { bestK, accuracies }
-  }
-}
-
-export function createClassifier(k: number = 5): KNNClassifier {
-  return new KNNClassifier(k)
 }
