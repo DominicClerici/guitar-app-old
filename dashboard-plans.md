@@ -32,7 +32,14 @@ Make sure each task is marked as completed inside of dashboard-plans-progress.tx
 {last completed phase (1/2/3/4)}
 {Last update timestamp}
 
+If there is anything that needs to be done outside of the codebase, like some external service settings, or api keys, write a note of it in @user-notes.txt
+
 ...
 
 Tasks to complete:
 
+1. Add a new tab on the settings page for account settings in the /dashboard/settings route. This will have options to change password and change email. We will start with implementing the password change functionality with supabase auth. It should send the user a link to their email, and then that link takes them to a password reset page where we validate their token and let them reset their password. 
+
+2. On the account settings page, if the user used email/password auth (instead of google auth), give them an option to change their email. Make sure to follow the best practices for supabase auth email changes.
+
+3. Add a dashboard/tuner page, this should use the functionality and seismograph style graph as inspriation in @frontend\components\tuner\tuner-graph.tsx. It should make this a full dashboard page though, so make sure it is designed well and fully functional. It should still use the seismograph style graph though.
