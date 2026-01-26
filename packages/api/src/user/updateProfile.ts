@@ -22,18 +22,21 @@ export default async function updateProfile(
       })
 
       if (existingProfile?.profilePicture?.path) {
-        await supabase.storage.from("profile-pictures").remove([existingProfile.profilePicture.path])
+        await supabase.storage
+          .from("profile-pictures")
+          .remove([existingProfile.profilePicture.path])
       }
     }
 
     const profileUpdate: {
       country?: string
       bio?: string
-      profilePicture?: DatabaseImage | null
+      profilePicture?: DatabaseImage
     } = {}
     if (country !== undefined) profileUpdate.country = country
     if (bio !== undefined) profileUpdate.bio = bio
-    if (profilePicture !== undefined) profileUpdate.profilePicture = profilePicture
+    if (profilePicture !== undefined)
+      profileUpdate.profilePicture = profilePicture ?? { path: "", url: "" }
 
     await db.update(userProfileTable).set(profileUpdate).where(eq(userProfileTable.userId, userId))
   }

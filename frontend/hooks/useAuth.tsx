@@ -48,13 +48,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(false)
     }
     const userSubscription = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log("session", session, event)
       if (session?.user) {
         const userInfo = await trpc.user.getUserInfo.query()
+        console.log("userInfo", userInfo)
         if (userInfo) {
           setUser(userInfo)
         } else {
           setUser(null)
         }
+      } else {
+        setUser(null)
       }
       setIsLoading(false)
       // checkUser() if this keeps breaking, uncomment

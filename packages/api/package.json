@@ -17,6 +17,7 @@
     "@guitar/schemas": "workspace:*",
     "@supabase/supabase-js": "^2.89.0",
     "@trpc/server": "^11.1.4",
+    "resend": "^6.8.0",
     "superjson": "^2.2.2",
     "zod": "catalog:"
   },

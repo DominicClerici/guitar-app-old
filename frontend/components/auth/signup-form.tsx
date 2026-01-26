@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import useAuth from "@/hooks/useAuth"
 import { createClient } from "@/lib/supabase/client"
+import { trpc } from "@/lib/trpc/react"
 import { signUpZod } from "@guitar/schemas"
 import { useForm } from "@tanstack/react-form"
 import { useRouter } from "next/navigation"
@@ -26,6 +27,7 @@ export default function SignupForm() {
       setIsGoogleLoading(false)
     }
   }
+  const registerUser = trpc.user.registerUser.useMutation()
   const router = useRouter()
   const form = useForm({
     defaultValues: {
@@ -38,7 +40,7 @@ export default function SignupForm() {
     },
     onSubmit: async ({ value }) => {
       try {
-        const { error: registerError } = await supabase.auth.signUp({
+        const { error: registerError, data } = await supabase.auth.signUp({
           email: value.email,
           password: value.password,
           options: {
@@ -47,7 +49,21 @@ export default function SignupForm() {
             },
           },
         })
-        if (registerError) toast.error(registerError.message)
+        if (data.user?.id && !registerError) {
+          await registerUser.mutateAsync({
+            id: data.user?.id,
+            name: value.name,
+            email: value.email,
+            password: value.password,
+          })
+          if (registerUser.error) {
+            console.error(registerUser.error)
+            throw new Error("Failed to create account")
+          }
+        } else {
+          console.error(registerError)
+          throw new Error("Failed to create account")
+        }
         toast.success("Account created successfully! Please log in.")
         router.push("/")
       } catch (error) {

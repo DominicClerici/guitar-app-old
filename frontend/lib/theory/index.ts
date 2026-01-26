@@ -1,57 +1,52 @@
 export type {
-  FretboardNote,
-  ScaleNote,
-  NoteFormula,
-  Tuning,
   CAGEDPosition,
   CAGEDShapeName,
+  FretboardNote,
   NoteFilter,
+  NoteFormula,
+  ScaleNote,
+  Tuning,
 } from "./types"
 
 export {
-  NOTE_NAMES,
-  NOTE_NAMES_FLAT,
-  type NoteName,
-  STANDARD_TUNING,
   ALTERNATE_TUNINGS,
   MAX_FRET,
+  NOTE_NAMES,
+  NOTE_NAMES_FLAT,
+  STANDARD_TUNING,
   STRING_COUNT,
+  type NoteName,
 } from "./constants"
 
-export { INTERVALS, getIntervalName, getIntervalFromSemitones, type Interval } from "./intervals"
+export { getIntervalFromSemitones, getIntervalName, INTERVALS, type Interval } from "./intervals"
 
-export { SCALE_FORMULAS, MAJOR_SCALE_INTERVALS, ALL_SCALES } from "./scales"
+export { ALL_SCALES, MAJOR_SCALE_INTERVALS, SCALE_FORMULAS } from "./scales"
 
-export { MODE_FORMULAS, ALL_MODES } from "./modes"
+export { ALL_MODES, MODE_FORMULAS } from "./modes"
 
-export { ARPEGGIO_FORMULAS, ALL_ARPEGGIOS } from "./arpeggios"
+export { ALL_ARPEGGIOS, ARPEGGIO_FORMULAS } from "./arpeggios"
 
-export {
-  getNoteAtFret,
-  getNoteName,
-  generateFretboardNotes,
-  getMajorScale,
-} from "./fretboard"
+export { generateFretboardNotes, getMajorScale, getNoteAtFret, getNoteName } from "./fretboard"
 
 export {
   CAGED_SHAPE_NAMES,
-  getCAGEDPosition,
-  getCAGEDFretRange,
-  getCAGEDShapeNotes,
   getAllCAGEDPositions,
+  getCAGEDFretRange,
+  getCAGEDPosition,
+  getCAGEDShapeNotes,
 } from "./caged"
 
 export {
   filterNotes,
-  getRootNotes,
   getChordTones,
-  getNotesInFretRange,
   getNotesByDegrees,
+  getNotesInFretRange,
+  getRootNotes,
 } from "./filters"
 
-import { SCALE_FORMULAS } from "./scales"
-import { MODE_FORMULAS } from "./modes"
 import { ARPEGGIO_FORMULAS } from "./arpeggios"
+import { MODE_FORMULAS } from "./modes"
+import { SCALE_FORMULAS } from "./scales"
 import type { NoteFormula } from "./types"
 
 export function getAllFormulas(): NoteFormula[] {

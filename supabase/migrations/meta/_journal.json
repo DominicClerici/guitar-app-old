@@ -15,6 +15,20 @@
       "when": 1769044241342,
       "tag": "0001_mean_moira_mactaggert",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1769468513337,
+      "tag": "0002_cuddly_unus",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1769468842042,
+      "tag": "0003_public_joseph",
+      "breakpoints": true
     }
   ]
 }

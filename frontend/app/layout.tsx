@@ -1,5 +1,4 @@
 import { TrpcProvider } from "@/context/trpc-provider"
-import { AuthProvider } from "@/hooks/useAuth"
 import type { Metadata } from "next"
 import { Geist_Mono, Inter } from "next/font/google"
 import localFont from "next/font/local"
@@ -120,9 +119,7 @@ export default function RootLayout({
       <body
         className={`${inter.variable} ${interDisplay.variable} ${geistMono.variable} antialiased`}
       >
-        <TrpcProvider>
-          <AuthProvider>{children}</AuthProvider>
-        </TrpcProvider>
+        <TrpcProvider>{children}</TrpcProvider>
         <Toaster />
       </body>
     </html>

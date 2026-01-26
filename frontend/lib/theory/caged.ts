@@ -44,8 +44,8 @@ export function getCAGEDFretRange(
 
 function getRelativeMajorRoot(rootNoteIndex: number, formula: NoteFormula): number {
   const isMajorBased =
-    formula.category === "scale" && formula.id === "major" ||
-    formula.category === "pentatonic" && formula.id === "majorPentatonic"
+    (formula.category === "scale" && formula.id === "major") ||
+    (formula.category === "pentatonic" && formula.id === "majorPentatonic")
 
   if (isMajorBased) {
     return rootNoteIndex
@@ -62,15 +62,11 @@ export function getCAGEDShapeNotes<T extends FretboardNote>(
   tuning?: Tuning,
   formula?: NoteFormula,
 ): T[] {
-  const relativeMajorRoot = formula
-    ? getRelativeMajorRoot(rootNoteIndex, formula)
-    : rootNoteIndex
+  const relativeMajorRoot = formula ? getRelativeMajorRoot(rootNoteIndex, formula) : rootNoteIndex
   const range = getCAGEDFretRange(shapeName, relativeMajorRoot, tuning)
   if (!range) return []
 
-  return notes.filter(
-    (note) => note.fretIndex >= range.minFret && note.fretIndex <= range.maxFret,
-  )
+  return notes.filter((note) => note.fretIndex >= range.minFret && note.fretIndex <= range.maxFret)
 }
 
 export function getAllCAGEDPositions(

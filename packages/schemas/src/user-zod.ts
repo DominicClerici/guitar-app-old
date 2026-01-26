@@ -1,5 +1,18 @@
 import { z } from "zod"
 
+export const guitarTuningZod = z.tuple([
+  z.number().int(),
+  z.number().int(),
+  z.number().int(),
+  z.number().int(),
+  z.number().int(),
+  z.number().int(),
+])
+
+export const updateUserMetadataZod = z.object({
+  defaultTuning: guitarTuningZod.optional(),
+})
+
 export const updateUserProfileZod = z.object({
   name: z.string().min(1).max(100).optional(),
   country: z.string().optional(),

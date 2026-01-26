@@ -1,13 +1,13 @@
 "use client"
 
 export {
-  type ScaleNote,
-  type CAGEDShapeName,
-  MAJOR_SCALE_INTERVALS,
   CAGED_SHAPE_NAMES,
-  getMajorScale,
   getCAGEDShapeNotes,
+  getMajorScale,
   getNoteName,
+  MAJOR_SCALE_INTERVALS,
+  type CAGEDShapeName,
+  type ScaleNote,
 } from "@/lib/theory"
 
 import { NOTE_NAMES } from "@/lib/theory"

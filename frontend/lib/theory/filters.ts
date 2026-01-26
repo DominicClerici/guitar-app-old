@@ -38,9 +38,6 @@ export function getNotesInFretRange<T extends FretboardNote>(
   return filterNotes(notes, { fretRange: { min, max } })
 }
 
-export function getNotesByDegrees<T extends FretboardNote>(
-  notes: T[],
-  degrees: number[],
-): T[] {
+export function getNotesByDegrees<T extends FretboardNote>(notes: T[], degrees: number[]): T[] {
   return filterNotes(notes, { degrees })
 }

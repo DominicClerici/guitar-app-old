@@ -106,7 +106,19 @@ export default function PracticeDialog({
 
     sessionStorage.setItem("practiceConfig", JSON.stringify(config))
     router.push(href)
-  }, [sessionType, duration, targetShapes, selectedKey, selectedShapes, href, router, formulaType, formulaId, title, gradient])
+  }, [
+    sessionType,
+    duration,
+    targetShapes,
+    selectedKey,
+    selectedShapes,
+    href,
+    router,
+    formulaType,
+    formulaId,
+    title,
+    gradient,
+  ])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

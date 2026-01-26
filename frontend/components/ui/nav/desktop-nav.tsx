@@ -110,14 +110,14 @@ export default function DesktopNav() {
         <Separator className="mb-2" />
 
         <div className="bg-muted/50 flex items-center gap-2 rounded-lg border px-3 py-2">
-          {!user ? (
+          {!user || isLoading ? (
             <div className="flex h-full w-full items-center justify-center py-2">
               <Loader2 className="text-muted-foreground size-5 animate-spin" />
             </div>
           ) : (
             <>
               <div className="flex items-center gap-2">
-                {user.profile.profilePicture ? (
+                {user?.profile?.profilePicture?.url ? (
                   <img
                     src={user.profile.profilePicture.url}
                     alt={user.name}

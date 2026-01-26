@@ -89,12 +89,16 @@ export default function ScalesPracticeClient() {
     sessionConfig?.formulaType === "arpeggio"
       ? ARPEGGIO_FORMULAS[sessionConfig.formulaId]
       : SCALE_FORMULAS[sessionConfig?.formulaId ?? "major"]
-  const fullScale = formula
-    ? generateFretboardNotes(selectedKeyIndex, formula)
-    : []
+  const fullScale = formula ? generateFretboardNotes(selectedKeyIndex, formula) : []
   const cagedShapeNames = activeShapes.map((i) => CAGED_SHAPE_NAMES[i - 1])
   const currentShapeName = cagedShapeNames[currentShapeIndex] || CAGED_SHAPE_NAMES[0]
-  const currentShapeNotes = getCAGEDShapeNotes(currentShapeName, fullScale, selectedKeyIndex, undefined, formula)
+  const currentShapeNotes = getCAGEDShapeNotes(
+    currentShapeName,
+    fullScale,
+    selectedKeyIndex,
+    undefined,
+    formula,
+  )
 
   useEffect(() => {
     currentShapeNotesRef.current = currentShapeNotes
@@ -326,7 +330,13 @@ export default function ScalesPracticeClient() {
   const previewNotes =
     previewShape === "full"
       ? fullScale
-      : getCAGEDShapeNotes(previewShape as "C" | "A" | "G" | "E" | "D", fullScale, selectedKeyIndex, undefined, formula)
+      : getCAGEDShapeNotes(
+          previewShape as "C" | "A" | "G" | "E" | "D",
+          fullScale,
+          selectedKeyIndex,
+          undefined,
+          formula,
+        )
 
   const displayNotes = isInSession ? currentShapeNotes : previewNotes
 

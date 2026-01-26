@@ -19,10 +19,7 @@ function buildNoteLookup(
   rootNoteIndex: number,
   formula: NoteFormula,
 ): Map<number, { degree: number; intervalIndex: number; isChordTone: boolean }> {
-  const lookup = new Map<
-    number,
-    { degree: number; intervalIndex: number; isChordTone: boolean }
-  >()
+  const lookup = new Map<number, { degree: number; intervalIndex: number; isChordTone: boolean }>()
 
   formula.intervals.forEach((interval, index) => {
     const noteIndex = (rootNoteIndex + interval) % 12
