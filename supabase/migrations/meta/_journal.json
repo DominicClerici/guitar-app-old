@@ -29,6 +29,13 @@
       "when": 1769468842042,
       "tag": "0003_public_joseph",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1769469990266,
+      "tag": "0004_third_fat_cobra",
+      "breakpoints": true
     }
   ]
 }
