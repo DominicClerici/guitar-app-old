@@ -10,8 +10,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import NumberTicker from "@/components/ui/number-ticker"
+import SlidingToggle from "@/components/ui/sliding-toggle"
 import { cn } from "@/lib/utils"
-import { Clock, Dices, Hash, Infinity, Music } from "lucide-react"
+import { BookOpen, Clock, Dices, Dumbbell, Hash, Infinity, Music } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useCallback, useState } from "react"
 import TimePicker from "../ui/time-picker"
@@ -40,6 +41,7 @@ const SESSION_TYPES = [
 ] as const
 
 type SessionType = (typeof SESSION_TYPES)[number]["id"]
+type DialogMode = "learn" | "practice"
 
 interface PracticeDialogProps {
   open: boolean
@@ -52,6 +54,7 @@ interface PracticeDialogProps {
   formulaType: "scale" | "arpeggio" | "caged"
   formulaId: string
   hideShapes?: boolean
+  supportLearnMode?: boolean
 }
 
 export default function PracticeDialog({
@@ -65,9 +68,11 @@ export default function PracticeDialog({
   formulaType,
   formulaId,
   hideShapes = false,
+  supportLearnMode = false,
 }: PracticeDialogProps) {
   const router = useRouter()
 
+  const [mode, setMode] = useState<DialogMode>("learn")
   const [sessionType, setSessionType] = useState<SessionType>("infinite")
   const [duration, setDuration] = useState({ minutes: 5, seconds: 0 })
   const [targetShapes, setTargetShapes] = useState(10)
@@ -91,7 +96,9 @@ export default function PracticeDialog({
   }, [shapeCount])
 
   const handleStart = useCallback(() => {
+    // TODO: Task 2 - Add practice mode state management
     const config = {
+      mode,
       sessionType,
       duration: sessionType === "timed" ? duration : null,
       targetShapes: sessionType === "shapes" ? targetShapes : null,
@@ -105,8 +112,14 @@ export default function PracticeDialog({
     }
 
     sessionStorage.setItem("practiceConfig", JSON.stringify(config))
-    router.push(href)
+
+    if (supportLearnMode && mode === "learn") {
+      router.push(`/dashboard/learn/${formulaId}`)
+    } else {
+      router.push(href)
+    }
   }, [
+    mode,
     sessionType,
     duration,
     targetShapes,
@@ -118,6 +131,7 @@ export default function PracticeDialog({
     formulaId,
     title,
     gradient,
+    supportLearnMode,
   ])
 
   return (
@@ -136,62 +150,80 @@ export default function PracticeDialog({
         </div>
 
         <div className="space-y-6 px-6 py-5">
-          <div className="space-y-3">
-            <label className="text-sm font-medium">Session Type</label>
-            <div className="grid grid-cols-3 gap-2">
-              {SESSION_TYPES.map((type) => {
-                const Icon = type.icon
-                const isSelected = sessionType === type.id
-                return (
-                  <button
-                    key={type.id}
-                    type="button"
-                    onClick={() => setSessionType(type.id)}
-                    className={cn(
-                      "group relative flex flex-col items-center gap-2 rounded-lg border p-3 text-center transition-all",
-                      isSelected
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-border hover:border-primary/50 hover:bg-accent",
-                    )}
-                  >
-                    <Icon
-                      className={cn(
-                        "size-5 transition-transform group-hover:scale-110",
-                        isSelected && "text-primary",
-                      )}
-                    />
-                    <span className="text-sm font-medium">{type.label}</span>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 items-center justify-items-center gap-4">
-            <div
-              className={cn(
-                "transition-opacity",
-                sessionType !== "timed" && "pointer-events-none opacity-25",
-              )}
-            >
-              <TimePicker
-                value={{ minutes: duration.minutes, seconds: duration.seconds }}
-                onChange={(value) =>
-                  setDuration({ minutes: value.minutes, seconds: value.seconds })
-                }
-                className="w-full"
+          {supportLearnMode && (
+            <div className="flex justify-center">
+              <SlidingToggle
+                options={[
+                  { label: "Learn", value: "learn", icon: <BookOpen /> },
+                  { label: "Practice", value: "practice", icon: <Dumbbell /> },
+                ]}
+                value={mode}
+                onChange={(value) => setMode(value as DialogMode)}
+                className="h-12"
               />
             </div>
+          )}
 
-            <div
-              className={cn(
-                "transition-opacity",
-                sessionType !== "shapes" && "pointer-events-none opacity-25",
-              )}
-            >
-              <NumberTicker value={targetShapes} onChange={setTargetShapes} min={1} max={100} />
-            </div>
-          </div>
+          {(!supportLearnMode || mode === "practice") && (
+            <>
+              <div className="space-y-3">
+                <label className="text-sm font-medium">Session Type</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {SESSION_TYPES.map((type) => {
+                    const Icon = type.icon
+                    const isSelected = sessionType === type.id
+                    return (
+                      <button
+                        key={type.id}
+                        type="button"
+                        onClick={() => setSessionType(type.id)}
+                        className={cn(
+                          "group relative flex flex-col items-center gap-2 rounded-lg border p-3 text-center transition-all",
+                          isSelected
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-border hover:border-primary/50 hover:bg-accent",
+                        )}
+                      >
+                        <Icon
+                          className={cn(
+                            "size-5 transition-transform group-hover:scale-110",
+                            isSelected && "text-primary",
+                          )}
+                        />
+                        <span className="text-sm font-medium">{type.label}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 items-center justify-items-center gap-4">
+                <div
+                  className={cn(
+                    "transition-opacity",
+                    sessionType !== "timed" && "pointer-events-none opacity-25",
+                  )}
+                >
+                  <TimePicker
+                    value={{ minutes: duration.minutes, seconds: duration.seconds }}
+                    onChange={(value) =>
+                      setDuration({ minutes: value.minutes, seconds: value.seconds })
+                    }
+                    className="w-full"
+                  />
+                </div>
+
+                <div
+                  className={cn(
+                    "transition-opacity",
+                    sessionType !== "shapes" && "pointer-events-none opacity-25",
+                  )}
+                >
+                  <NumberTicker value={targetShapes} onChange={setTargetShapes} min={1} max={100} />
+                </div>
+              </div>
+            </>
+          )}
 
           <div className="space-y-3">
             <label className="text-sm font-medium">Key</label>
@@ -227,7 +259,7 @@ export default function PracticeDialog({
             </div>
           </div>
 
-          {!hideShapes && (
+          {!hideShapes && (!supportLearnMode || mode === "practice") && (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <label className="text-sm font-medium">Shapes</label>
@@ -287,7 +319,9 @@ export default function PracticeDialog({
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handleStart}>Start Practice</Button>
+          <Button onClick={handleStart}>
+            {supportLearnMode && mode === "learn" ? "Start Learning" : "Start Practice"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

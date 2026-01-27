@@ -270,6 +270,7 @@ export default function PracticePage() {
         formulaType={selectedItem?.formulaType ?? "scale"}
         formulaId={selectedItem?.formulaId ?? "major"}
         hideShapes={selectedItem?.hideShapes}
+        supportLearnMode={true}
       />
     </div>
   )

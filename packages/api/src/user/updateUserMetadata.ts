@@ -15,10 +15,7 @@ export default async function updateUserMetadata(
     const update: { defaultTuning?: GuitarTuning } = {}
     if (defaultTuning !== undefined) update.defaultTuning = defaultTuning
 
-    await db
-      .update(usersMetadataTable)
-      .set(update)
-      .where(eq(usersMetadataTable.userId, userId))
+    await db.update(usersMetadataTable).set(update).where(eq(usersMetadataTable.userId, userId))
   } else {
     await db.insert(usersMetadataTable).values({
       userId,

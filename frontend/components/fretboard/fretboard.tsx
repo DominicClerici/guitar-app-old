@@ -20,6 +20,9 @@ type MarkerType =
   | "note"
   | "root-hidden"
   | "note-hidden"
+  | "chord-tone"
+  | "chord-tone-disabled"
+  | "chord-tone-hidden"
   | "played"
 
 type Marker = {
@@ -63,6 +66,7 @@ export function Fretboard({
     const isHidden = type.includes("hidden")
     const isDisabled = type.includes("disabled")
     const isRoot = type.includes("root")
+    const isChordTone = type.includes("chord-tone")
     if (type === "played") {
       return {
         fill: "var(--primary)",
@@ -70,6 +74,15 @@ export function Fretboard({
         borderColor: "var(--primary-border)",
         opacity: 1,
         isRoot,
+      }
+    }
+    if (isChordTone) {
+      return {
+        fill: "var(--background-elevated)",
+        textColor: "var(--muted-foreground)",
+        borderColor: "var(--border)",
+        opacity: isHidden ? 0 : isDisabled ? 0.25 : 1,
+        isRoot: false,
       }
     }
     return {
