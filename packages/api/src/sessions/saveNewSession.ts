@@ -11,6 +11,10 @@ export default async function saveNewSession(
     shapes: input.sessionData.shapes,
     shapesCompleted: input.sessionData.shapesCompleted,
     totalNotesPlayed: input.sessionData.totalNotesPlayed,
+    ...(input.sessionData.speedWindows && { speedWindows: input.sessionData.speedWindows }),
+    ...(input.sessionData.shapeCompletionTimes && {
+      shapeCompletionTimes: input.sessionData.shapeCompletionTimes,
+    }),
   }
 
   const [session] = await db

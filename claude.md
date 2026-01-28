@@ -32,6 +32,7 @@ When working in the /frontend directory, always use shadcn components imported f
 - badge
 - slider
 - textarea
+- chart
 
 For icons, we have lucide-react and lucide-react-native installed to use in the /frontend and /mobile projects.
 

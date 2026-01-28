@@ -6,12 +6,25 @@ export const sessionTypesEnum = pgEnum("session_types", ["scales", "arpeggios", 
 
 export const timingModesEnum = pgEnum("timing_modes", ["infinite", "timed", "shapes"])
 
+export type SpeedWindow = {
+  notes: number
+  shapes: number[]
+}
+
+export type ShapeCompletionTime = {
+  shapeIndex: number
+  shapeName: string
+  durationMs: number
+}
+
 export type ScaleSessionData = {
   type: "scales"
   key: number
   shapes: number[]
   shapesCompleted: number
   totalNotesPlayed: number
+  speedWindows?: SpeedWindow[]
+  shapeCompletionTimes?: ShapeCompletionTime[]
 }
 export type ArpeggioSessionData = {
   type: "arpeggios"

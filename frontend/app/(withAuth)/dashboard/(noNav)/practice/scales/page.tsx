@@ -1,5 +1,6 @@
 import ScalesPracticeClient from "@/components/scales/scales-practice-client"
 import HoverArrow from "@/components/ui/hover-arrow/hover-arrow"
+import { SessionTrackingProvider } from "@/hooks/useSessionTracking"
 import Link from "next/link"
 
 export default function page() {
@@ -12,7 +13,9 @@ export default function page() {
         <HoverArrow className="size-4 rotate-180" />
         Back to Dashboard
       </Link>
-      <ScalesPracticeClient />
+      <SessionTrackingProvider>
+        <ScalesPracticeClient />
+      </SessionTrackingProvider>
     </div>
   )
 }

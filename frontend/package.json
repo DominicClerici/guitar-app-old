@@ -49,6 +49,7 @@
     "pitchy": "^4.1.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "recharts": "2.15.4",
     "resend": "^6.8.0",
     "server-only": "^0.0.1",
     "sonner": "^2.0.7",
