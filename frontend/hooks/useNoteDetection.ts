@@ -26,7 +26,7 @@ interface UseNoteDetectionResult {
 }
 
 const DEFAULT_BUFFER_SIZE = 2048
-const DEFAULT_MIN_CLARITY = 0.9
+const DEFAULT_MIN_CLARITY = 0.92
 
 export function useNoteDetection(options: UseNoteDetectionOptions = {}): UseNoteDetectionResult {
   const [status, setStatus] = useState<NoteDetectionStatus>("idle")

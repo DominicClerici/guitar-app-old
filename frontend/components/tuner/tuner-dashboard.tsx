@@ -36,7 +36,7 @@ function getTuningIdFromHalfSteps(halfSteps: number[]): string {
   return "standard"
 }
 
-const MAX_POINTS = 200
+const MAX_POINTS = 100
 const CENTS_RANGE = 50
 const DEFAULT_SMOOTHING = 0.2
 const IN_TUNE_CENTS = 8
@@ -414,6 +414,8 @@ export default function TunerDashboard() {
 
   const { status, error, startListening, stopListening, bufferDurationMs } = useNoteDetection({
     onPitchDetected: handlePitchDetected,
+    bufferSize: 2048,
+    minClarity: 0.95,
   })
 
   const noteName = getClosestNoteName(pitch)
