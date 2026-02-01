@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { type PitchData, useNoteDetection } from "@/hooks/useNoteDetection"
+import { useNoteDetection, type PitchData } from "@/hooks/useNoteDetection"
 import { getCentsDeviation, getClosestNoteName } from "@/lib/audio/utils"
 import { trpc } from "@/lib/trpc/react"
 import { AlertCircle, Mic } from "lucide-react"
@@ -414,8 +414,7 @@ export default function TunerDashboard() {
 
   const { status, error, startListening, stopListening, bufferDurationMs } = useNoteDetection({
     onPitchDetected: handlePitchDetected,
-    bufferSize: 2048,
-    minClarity: 0.95,
+    bufferSize: 4096,
   })
 
   const noteName = getClosestNoteName(pitch)
