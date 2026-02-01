@@ -9,3 +9,9 @@ tsconfig.tsbuildinfo
 .claude
 
 training-samples
+
+string-nn/data
+
+__pycache__
+
+librosa

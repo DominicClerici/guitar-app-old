@@ -42,3 +42,5 @@ next-env.d.ts
 
 # all .wav files that are children of the samples directory
 samples/**/*.wav
+
+public/models

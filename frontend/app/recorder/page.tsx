@@ -10,14 +10,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
 import { useSampleRecorder, type RecordedSample } from "@/hooks/useSampleRecorder"
 import { AlertTriangle, Mic, Pause, Play, Save, Trash2, Volume2, VolumeX } from "lucide-react"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 const STRING_NAMES = ["E", "A", "D", "G", "B", "e"] as const
 const FRET_COUNT = 19
 
 type SampleCounts = Record<string, number>
+
+const SAMPLES_PER_SESSION = 5
 
 export default function RecorderPage() {
   const [selectedString, setSelectedString] = useState<string>("")
@@ -25,6 +28,11 @@ export default function RecorderPage() {
   const [sampleCounts, setSampleCounts] = useState<SampleCounts>({})
   const [isSaving, setIsSaving] = useState(false)
   const [playingSampleIndex, setPlayingSampleIndex] = useState<number | null>(null)
+
+  const [recordAllStrings, setRecordAllStrings] = useState(false)
+  const [isMultiStringActive, setIsMultiStringActive] = useState(false)
+  const [currentMultiStringIndex, setCurrentMultiStringIndex] = useState(0)
+  const allStringSamplesRef = useRef<Map<number, RecordedSample[]>>(new Map())
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
@@ -39,7 +47,9 @@ export default function RecorderPage() {
     stopSession,
     discardSession,
     getSampleBlob,
-  } = useSampleRecorder()
+  } = useSampleRecorder({
+    samplesPerSession: SAMPLES_PER_SESSION,
+  })
 
   const fetchSampleCounts = useCallback(async () => {
     try {
@@ -57,36 +67,78 @@ export default function RecorderPage() {
     fetchSampleCounts()
   }, [fetchSampleCounts])
 
+  useEffect(() => {
+    if (!isMultiStringActive || sessionState !== "preview" || samples.length === 0) return
+
+    const newMap = new Map(allStringSamplesRef.current)
+    newMap.set(currentMultiStringIndex, [...samples])
+    allStringSamplesRef.current = newMap
+
+    if (currentMultiStringIndex < 5) {
+      const nextIndex = currentMultiStringIndex + 1
+      setCurrentMultiStringIndex(nextIndex)
+      setSelectedString(String(nextIndex))
+      discardSession()
+      setTimeout(() => startSession(), 300)
+    } else {
+      setIsMultiStringActive(false)
+    }
+  }, [sessionState, samples, isMultiStringActive, currentMultiStringIndex, discardSession, startSession])
+
   const handleStartRecording = () => {
+    if (recordAllStrings) {
+      setIsMultiStringActive(true)
+      setCurrentMultiStringIndex(0)
+      setSelectedString("0")
+      allStringSamplesRef.current = new Map()
+    }
     startSession()
   }
 
+  const isMultiStringPreview = recordAllStrings && !isMultiStringActive && allStringSamplesRef.current.size === 6
+
+  const previewSamplesByString = useMemo(() => {
+    if (isMultiStringPreview) {
+      return allStringSamplesRef.current
+    }
+    const map = new Map<number, RecordedSample[]>()
+    if (samples.length > 0) {
+      map.set(Number(selectedString), samples)
+    }
+    return map
+  }, [isMultiStringPreview, samples, selectedString])
+
   const handleSaveSamples = async () => {
-    if (samples.length === 0 || !selectedString || !selectedFret) return
+    if (previewSamplesByString.size === 0 || !selectedFret) return
 
     setIsSaving(true)
     try {
-      const formData = new FormData()
-      formData.append("string", selectedString)
-      formData.append("fret", selectedFret)
+      const savePromises = Array.from(previewSamplesByString.entries()).map(
+        async ([stringIndex, stringSamples]) => {
+          const formData = new FormData()
+          formData.append("string", String(stringIndex))
+          formData.append("fret", selectedFret)
 
-      for (const sample of samples) {
-        const blob = getSampleBlob(sample)
-        formData.append(`sample_${sample.index}`, blob, `sample_${sample.index}.wav`)
-      }
+          for (const sample of stringSamples) {
+            const blob = getSampleBlob(sample)
+            formData.append(`sample_${sample.index}`, blob, `sample_${sample.index}.wav`)
+          }
 
-      const response = await fetch("/recorder/create", {
-        method: "POST",
-        body: formData,
-      })
+          const response = await fetch("/recorder/create", {
+            method: "POST",
+            body: formData,
+          })
 
-      if (!response.ok) {
-        throw new Error("Failed to save samples")
-      }
+          if (!response.ok) {
+            throw new Error(`Failed to save samples for string ${stringIndex}`)
+          }
+        }
+      )
 
+      await Promise.all(savePromises)
+
+      allStringSamplesRef.current = new Map()
       discardSession()
-      setSelectedString("")
-      setSelectedFret("")
       fetchSampleCounts()
     } catch (err) {
       console.error("Failed to save samples:", err)
@@ -127,6 +179,7 @@ export default function RecorderPage() {
       audioRef.current.pause()
     }
     setPlayingSampleIndex(null)
+    allStringSamplesRef.current = new Map()
     discardSession()
   }
 
@@ -153,7 +206,7 @@ export default function RecorderPage() {
       case "ready-to-pluck":
         return <Volume2 className="size-8 animate-pulse" />
       case "recording":
-        return <Mic className="size-8 text-red-500 animate-pulse" />
+        return <Mic className="size-8 animate-pulse text-red-500" />
       default:
         return null
     }
@@ -171,23 +224,20 @@ export default function RecorderPage() {
       }
     })
 
-  const canStartRecording = selectedString !== "" && selectedFret !== "" && sessionState === "idle"
+  const canStartRecording =
+    (recordAllStrings || selectedString !== "") && selectedFret !== "" && sessionState === "idle"
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
+    <div className="container mx-auto space-y-6 p-6">
       <div className="space-y-2">
         <h1 className="text-2xl font-bold">Sample Recorder</h1>
-        <p className="text-muted-foreground">
-          Record guitar samples for neural network training
-        </p>
+        <p className="text-muted-foreground">Record guitar samples for neural network training</p>
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle>Sample Coverage</CardTitle>
-          <CardDescription>
-            Number of samples recorded at each fret position
-          </CardDescription>
+          <CardDescription>Number of samples recorded at each fret position</CardDescription>
         </CardHeader>
         <CardContent>
           <Fretboard markers={fretboardMarkers} className="w-full" />
@@ -199,26 +249,28 @@ export default function RecorderPage() {
           <CardHeader>
             <CardTitle>New Recording Session</CardTitle>
             <CardDescription>
-              Select a string and fret position to record 10 samples
+              Select a string and fret position to record {SAMPLES_PER_SESSION} samples
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex gap-4 flex-wrap">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">String</label>
-                <Select value={selectedString} onValueChange={setSelectedString}>
-                  <SelectTrigger className="w-32">
-                    <SelectValue placeholder="Select" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {STRING_NAMES.map((name, index) => (
-                      <SelectItem key={index} value={String(index)}>
-                        {name} (String {index + 1})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="flex flex-wrap items-end gap-4">
+              {!recordAllStrings && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">String</label>
+                  <Select value={selectedString} onValueChange={setSelectedString}>
+                    <SelectTrigger className="w-32">
+                      <SelectValue placeholder="Select" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {STRING_NAMES.map((name, index) => (
+                        <SelectItem key={index} value={String(index)}>
+                          {name} (String {index + 1})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <label className="text-sm font-medium">Fret</label>
@@ -235,9 +287,20 @@ export default function RecorderPage() {
                   </SelectContent>
                 </Select>
               </div>
+
+              <div className="flex items-center gap-2 pb-0.5">
+                <Switch
+                  id="record-all-strings"
+                  checked={recordAllStrings}
+                  onCheckedChange={setRecordAllStrings}
+                />
+                <label htmlFor="record-all-strings" className="text-sm font-medium">
+                  Record all strings
+                </label>
+              </div>
             </div>
 
-            {error && <p className="text-sm text-destructive">{error}</p>}
+            {error && <p className="text-destructive text-sm">{error}</p>}
 
             <Button onClick={handleStartRecording} disabled={!canStartRecording}>
               <Mic className="mr-2" />
@@ -247,18 +310,23 @@ export default function RecorderPage() {
         </Card>
       )}
 
-      {sessionState === "recording" && (
+      {(sessionState === "recording" || isMultiStringActive) && (
         <Card>
           <CardHeader>
             <CardTitle>Recording Session</CardTitle>
             <CardDescription>
-              Sample {currentSampleIndex + 1} of 10 &bull;{" "}
+              {isMultiStringActive && (
+                <>
+                  String {currentMultiStringIndex + 1} of 6 &bull;{" "}
+                </>
+              )}
+              Sample {currentSampleIndex + 1} of {SAMPLES_PER_SESSION} &bull;{" "}
               {STRING_NAMES[Number(selectedString)]} string, fret {selectedFret}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             {isClipping && (
-              <div className="flex items-center gap-2 p-3 rounded-md bg-destructive/10 text-destructive">
+              <div className="bg-destructive/10 text-destructive flex items-center gap-2 rounded-md p-3">
                 <AlertTriangle className="size-5 shrink-0" />
                 <p className="text-sm font-medium">
                   Input clipping detected - reduce microphone gain or move further from the mic
@@ -266,14 +334,14 @@ export default function RecorderPage() {
               </div>
             )}
 
-            <div className="flex flex-col items-center justify-center py-8 space-y-4">
+            <div className="flex flex-col items-center justify-center space-y-4 py-8">
               {getPhaseIcon()}
               <p className="text-xl font-medium">{getPhaseMessage()}</p>
               <div className="flex gap-1">
-                {Array.from({ length: 10 }, (_, i) => (
+                {Array.from({ length: SAMPLES_PER_SESSION }, (_, i) => (
                   <div
                     key={i}
-                    className={`w-3 h-3 rounded-full ${
+                    className={`h-3 w-3 rounded-full ${
                       i < currentSampleIndex
                         ? "bg-primary"
                         : i === currentSampleIndex
@@ -292,33 +360,80 @@ export default function RecorderPage() {
         </Card>
       )}
 
-      {sessionState === "preview" && (
+      {sessionState === "preview" && !isMultiStringActive && (
         <Card>
           <CardHeader>
             <CardTitle>Preview Samples</CardTitle>
             <CardDescription>
-              {samples.length} samples recorded for {STRING_NAMES[Number(selectedString)]} string,
-              fret {selectedFret}
+              {isMultiStringPreview ? (
+                <>
+                  {Array.from(previewSamplesByString.values()).reduce((sum, s) => sum + s.length, 0)}{" "}
+                  samples recorded across all strings, fret {selectedFret}
+                </>
+              ) : (
+                <>
+                  {samples.length} samples recorded for {STRING_NAMES[Number(selectedString)]}{" "}
+                  string, fret {selectedFret}
+                </>
+              )}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-5 gap-2">
-              {samples.map((sample) => (
-                <Button
-                  key={sample.index}
-                  variant={playingSampleIndex === sample.index ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => handlePlaySample(sample)}
-                >
-                  {playingSampleIndex === sample.index ? (
-                    <Pause className="mr-1 size-3" />
-                  ) : (
-                    <Play className="mr-1 size-3" />
-                  )}
-                  {sample.index + 1}
-                </Button>
-              ))}
-            </div>
+            {isMultiStringPreview ? (
+              <div className="space-y-3">
+                {Array.from(previewSamplesByString.entries()).map(([stringIndex, stringSamples]) => (
+                  <div key={stringIndex} className="space-y-2">
+                    <p className="text-sm font-medium">
+                      {STRING_NAMES[stringIndex]} string ({stringSamples.length} samples)
+                    </p>
+                    <div className="grid grid-cols-5 gap-2">
+                      {stringSamples.map((sample) => {
+                        const uniqueKey = `${stringIndex}-${sample.index}`
+                        return (
+                          <Button
+                            key={uniqueKey}
+                            variant={
+                              playingSampleIndex === stringIndex * 100 + sample.index
+                                ? "default"
+                                : "outline"
+                            }
+                            size="sm"
+                            onClick={() =>
+                              handlePlaySample({ ...sample, index: stringIndex * 100 + sample.index })
+                            }
+                          >
+                            {playingSampleIndex === stringIndex * 100 + sample.index ? (
+                              <Pause className="mr-1 size-3" />
+                            ) : (
+                              <Play className="mr-1 size-3" />
+                            )}
+                            {sample.index + 1}
+                          </Button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-5 gap-2">
+                {samples.map((sample) => (
+                  <Button
+                    key={sample.index}
+                    variant={playingSampleIndex === sample.index ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => handlePlaySample(sample)}
+                  >
+                    {playingSampleIndex === sample.index ? (
+                      <Pause className="mr-1 size-3" />
+                    ) : (
+                      <Play className="mr-1 size-3" />
+                    )}
+                    {sample.index + 1}
+                  </Button>
+                ))}
+              </div>
+            )}
 
             <div className="flex gap-2">
               <Button onClick={handleSaveSamples} disabled={isSaving} isLoading={isSaving}>
