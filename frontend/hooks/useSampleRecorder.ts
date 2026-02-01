@@ -31,17 +31,18 @@ interface UseSampleRecorderResult {
   currentSampleIndex: number
   samples: RecordedSample[]
   error: string | null
+  isClipping: boolean
   startSession: () => Promise<void>
   stopSession: () => void
   discardSession: () => void
   getSampleBlob: (sample: RecordedSample) => Blob
 }
 
-const DEFAULT_SAMPLES_PER_SESSION = 10
-const DEFAULT_RECORD_DURATION_MS = 750
-const DEFAULT_PRE_ROLL_DURATION_MS = 50
-const DEFAULT_SILENCE_THRESHOLD = 0.02
-const DEFAULT_PLUCK_THRESHOLD = 0.02
+const DEFAULT_SAMPLES_PER_SESSION = 5
+const DEFAULT_RECORD_DURATION_MS = 675
+const DEFAULT_PRE_ROLL_DURATION_MS = 125
+const DEFAULT_SILENCE_THRESHOLD = 0.001
+const DEFAULT_PLUCK_THRESHOLD = 0.05
 
 export function useSampleRecorder(options: UseSampleRecorderOptions = {}): UseSampleRecorderResult {
   const samplesPerSession = options.samplesPerSession ?? DEFAULT_SAMPLES_PER_SESSION
@@ -55,30 +56,35 @@ export function useSampleRecorder(options: UseSampleRecorderOptions = {}): UseSa
   const [currentSampleIndex, setCurrentSampleIndex] = useState(0)
   const [samples, setSamples] = useState<RecordedSample[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [isClipping, setIsClipping] = useState(false)
 
   const audioContextRef = useRef<AudioContext | null>(null)
   const analyserRef = useRef<AnalyserNode | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
-  const processorRef = useRef<ScriptProcessorNode | null>(null)
-  const recordingBufferRef = useRef<Float32Array[]>([])
-  const preRollBufferRef = useRef<Float32Array[]>([])
-  const preRollSamplesNeededRef = useRef(0)
-  const isCapturingPreRollRef = useRef(false)
-  const isRecordingRef = useRef(false)
-  const animationFrameRef = useRef<number | null>(null)
+  const workletNodeRef = useRef<AudioWorkletNode | null>(null)
   const stopRequestedRef = useRef(false)
+  const recordingResolveRef = useRef<((data: Float32Array | null) => void) | null>(null)
+  const clippingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const clippingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const cleanup = useCallback(() => {
     stopRequestedRef.current = true
 
-    if (animationFrameRef.current !== null) {
-      cancelAnimationFrame(animationFrameRef.current)
-      animationFrameRef.current = null
+    if (clippingTimeoutRef.current) {
+      clearTimeout(clippingTimeoutRef.current)
+      clippingTimeoutRef.current = null
     }
 
-    if (processorRef.current) {
-      processorRef.current.disconnect()
-      processorRef.current = null
+    if (clippingIntervalRef.current) {
+      clearInterval(clippingIntervalRef.current)
+      clippingIntervalRef.current = null
+    }
+
+    const worklet = workletNodeRef.current
+    if (worklet) {
+      worklet.port.postMessage({ type: "cancel" })
+      worklet.disconnect()
+      workletNodeRef.current = null
     }
 
     if (mediaStreamRef.current) {
@@ -92,89 +98,103 @@ export function useSampleRecorder(options: UseSampleRecorderOptions = {}): UseSa
     }
 
     analyserRef.current = null
+    recordingResolveRef.current = null
   }, [])
 
-  const getAmplitude = useCallback((): number => {
+  const checkClipping = useCallback((dataArray: Float32Array) => {
+    const clipThreshold = 0.99
+    for (let i = 0; i < dataArray.length; i++) {
+      if (Math.abs(dataArray[i]) >= clipThreshold) {
+        if (clippingTimeoutRef.current) {
+          clearTimeout(clippingTimeoutRef.current)
+        }
+        setIsClipping(true)
+        clippingTimeoutRef.current = setTimeout(() => {
+          setIsClipping(false)
+          clippingTimeoutRef.current = null
+        }, 1000)
+        return
+      }
+    }
+  }, [])
+
+  const pollClipping = useCallback(() => {
     const analyser = analyserRef.current
-    if (!analyser) return 0
+    if (!analyser) return
 
     const dataArray = new Float32Array(analyser.fftSize)
     analyser.getFloatTimeDomainData(dataArray)
+    checkClipping(dataArray)
+  }, [checkClipping])
 
-    let sum = 0
-    for (let i = 0; i < dataArray.length; i++) {
-      sum += Math.abs(dataArray[i])
+  const handleWorkletMessage = useCallback((event: MessageEvent) => {
+    const { type, data } = event.data
+
+    if (type === "phase-change") {
+      if (data.phase === "ready-to-pluck") {
+        setRecordingPhase("ready-to-pluck")
+      } else if (data.phase === "recording") {
+        setRecordingPhase("recording")
+      }
+    } else if (type === "recording-complete" && recordingResolveRef.current) {
+      recordingResolveRef.current(data.audioData)
+      recordingResolveRef.current = null
     }
-    return sum / dataArray.length
   }, [])
 
   const recordSample = useCallback(
-    async (
-      sampleRate: number,
-      preRollData: Float32Array | null,
-    ): Promise<RecordedSample | null> => {
+    (sampleRate: number): Promise<RecordedSample | null> => {
       return new Promise((resolve) => {
-        const processor = processorRef.current
-        if (!processor) {
+        const worklet = workletNodeRef.current
+        if (!worklet) {
           resolve(null)
           return
         }
 
-        recordingBufferRef.current = []
-        isRecordingRef.current = true
-
+        const preRollSamples = Math.ceil((preRollDurationMs / 1000) * sampleRate)
         const samplesToRecord = Math.ceil((recordDurationMs / 1000) * sampleRate)
-        let samplesRecorded = 0
 
-        const handleAudioProcess = (e: AudioProcessingEvent) => {
-          if (!isRecordingRef.current) return
-
-          const inputData = e.inputBuffer.getChannelData(0)
-          const copy = new Float32Array(inputData.length)
-          copy.set(inputData)
-          recordingBufferRef.current.push(copy)
-          samplesRecorded += inputData.length
-
-          if (samplesRecorded >= samplesToRecord) {
-            isRecordingRef.current = false
-            processor.removeEventListener("audioprocess", handleAudioProcess as EventListener)
-
-            const recordedLength = recordingBufferRef.current.reduce(
-              (acc, arr) => acc + arr.length,
-              0,
-            )
-            const preRollLength = preRollData?.length ?? 0
-            const totalLength = preRollLength + recordedLength
-            const audioData = new Float32Array(totalLength)
-
-            let offset = 0
-            if (preRollData) {
-              audioData.set(preRollData, offset)
-              offset += preRollLength
-            }
-            for (const chunk of recordingBufferRef.current) {
-              audioData.set(chunk, offset)
-              offset += chunk.length
-            }
-
-            resolve({
-              index: 0,
-              audioData,
-              sampleRate,
-            })
+        recordingResolveRef.current = (audioData) => {
+          if (!audioData) {
+            resolve(null)
+            return
           }
+
+          resolve({
+            index: 0,
+            audioData,
+            sampleRate,
+          })
         }
 
-        processor.addEventListener("audioprocess", handleAudioProcess as EventListener)
+        worklet.port.postMessage({
+          type: "start-capture",
+          data: {
+            preRollSamples,
+            samplesToRecord,
+            silenceThreshold,
+            pluckThreshold,
+          },
+        })
       })
     },
-    [recordDurationMs],
+    [preRollDurationMs, recordDurationMs, silenceThreshold, pluckThreshold],
   )
+
+  const cancelCapture = useCallback(() => {
+    const worklet = workletNodeRef.current
+    if (worklet) {
+      worklet.port.postMessage({ type: "cancel" })
+    }
+    recordingResolveRef.current = null
+  }, [])
 
   const runRecordingLoop = useCallback(
     async (sampleRate: number) => {
       const collectedSamples: RecordedSample[] = []
-      const preRollSamplesNeeded = Math.ceil((preRollDurationMs / 1000) * sampleRate)
+
+      // Start clipping detection polling (just for UI feedback)
+      clippingIntervalRef.current = setInterval(pollClipping, 50)
 
       for (let i = 0; i < samplesPerSession; i++) {
         if (stopRequestedRef.current) break
@@ -182,78 +202,16 @@ export function useSampleRecorder(options: UseSampleRecorderOptions = {}): UseSa
         setCurrentSampleIndex(i)
         setRecordingPhase("waiting-for-silence")
 
-        // Wait for silence
-        while (!stopRequestedRef.current) {
-          const amplitude = getAmplitude()
-          if (amplitude < silenceThreshold) break
-          await new Promise((r) => setTimeout(r, 50))
-        }
-        if (stopRequestedRef.current) break
+        // Worklet handles silence detection, pluck detection, and recording
+        // It sends phase-change messages to update the UI
+        const sample = await recordSample(sampleRate)
 
-        setRecordingPhase("ready-to-pluck")
-
-        // Start capturing pre-roll audio
-        preRollBufferRef.current = []
-        preRollSamplesNeededRef.current = preRollSamplesNeeded
-        isCapturingPreRollRef.current = true
-
-        const preRollHandler = (e: AudioProcessingEvent) => {
-          if (!isCapturingPreRollRef.current) return
-
-          const inputData = e.inputBuffer.getChannelData(0)
-          const copy = new Float32Array(inputData.length)
-          copy.set(inputData)
-          preRollBufferRef.current.push(copy)
-
-          // Keep only the most recent chunks needed for pre-roll
-          let totalSamples = preRollBufferRef.current.reduce((acc, arr) => acc + arr.length, 0)
-          while (
-            totalSamples > preRollSamplesNeededRef.current &&
-            preRollBufferRef.current.length > 1
-          ) {
-            const removed = preRollBufferRef.current.shift()
-            if (removed) totalSamples -= removed.length
-          }
+        if (stopRequestedRef.current) {
+          cancelCapture()
+          break
         }
 
-        const processor = processorRef.current
-        processor?.addEventListener("audioprocess", preRollHandler as EventListener)
-
-        // Wait for pluck
-        while (!stopRequestedRef.current) {
-          const amplitude = getAmplitude()
-          if (amplitude > pluckThreshold) break
-          await new Promise((r) => setTimeout(r, 10))
-        }
-
-        // Stop pre-roll capture and extract the buffer
-        isCapturingPreRollRef.current = false
-        processor?.removeEventListener("audioprocess", preRollHandler as EventListener)
-
-        if (stopRequestedRef.current) break
-
-        // Extract pre-roll data (last preRollSamplesNeeded samples)
-        let preRollData: Float32Array | null = null
-        if (preRollBufferRef.current.length > 0) {
-          const totalPreRollLength = preRollBufferRef.current.reduce(
-            (acc, arr) => acc + arr.length,
-            0,
-          )
-          const combinedPreRoll = new Float32Array(totalPreRollLength)
-          let offset = 0
-          for (const chunk of preRollBufferRef.current) {
-            combinedPreRoll.set(chunk, offset)
-            offset += chunk.length
-          }
-          // Take only the last preRollSamplesNeeded samples
-          const startIndex = Math.max(0, totalPreRollLength - preRollSamplesNeeded)
-          preRollData = combinedPreRoll.slice(startIndex)
-        }
-
-        setRecordingPhase("recording")
-
-        const sample = await recordSample(sampleRate, preRollData)
-        if (sample && !stopRequestedRef.current) {
+        if (sample) {
           collectedSamples.push({ ...sample, index: i })
         }
 
@@ -270,15 +228,7 @@ export function useSampleRecorder(options: UseSampleRecorderOptions = {}): UseSa
 
       cleanup()
     },
-    [
-      samplesPerSession,
-      preRollDurationMs,
-      getAmplitude,
-      silenceThreshold,
-      pluckThreshold,
-      recordSample,
-      cleanup,
-    ],
+    [samplesPerSession, recordSample, cancelCapture, cleanup, pollClipping],
   )
 
   const startSession = useCallback(async () => {
@@ -288,11 +238,20 @@ export function useSampleRecorder(options: UseSampleRecorderOptions = {}): UseSa
       setCurrentSampleIndex(0)
       stopRequestedRef.current = false
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+        },
+      })
+
       mediaStreamRef.current = stream
 
       const audioContext = new AudioContext()
       audioContextRef.current = audioContext
+
+      await audioContext.audioWorklet.addModule("/audio-recorder-worklet.js")
 
       const analyser = audioContext.createAnalyser()
       analyser.fftSize = 2048
@@ -301,10 +260,12 @@ export function useSampleRecorder(options: UseSampleRecorderOptions = {}): UseSa
       const source = audioContext.createMediaStreamSource(stream)
       source.connect(analyser)
 
-      const processor = audioContext.createScriptProcessor(4096, 1, 1)
-      processorRef.current = processor
-      source.connect(processor)
-      processor.connect(audioContext.destination)
+      const workletNode = new AudioWorkletNode(audioContext, "audio-recorder-processor")
+      workletNodeRef.current = workletNode
+      workletNode.port.onmessage = handleWorkletMessage
+
+      source.connect(workletNode)
+      workletNode.connect(audioContext.destination)
 
       setSessionState("recording")
       runRecordingLoop(audioContext.sampleRate)
@@ -313,7 +274,7 @@ export function useSampleRecorder(options: UseSampleRecorderOptions = {}): UseSa
       setError(err instanceof Error ? err.message : "Failed to start recording")
       cleanup()
     }
-  }, [runRecordingLoop, cleanup])
+  }, [runRecordingLoop, cleanup, handleWorkletMessage])
 
   const stopSession = useCallback(() => {
     stopRequestedRef.current = true
@@ -337,6 +298,12 @@ export function useSampleRecorder(options: UseSampleRecorderOptions = {}): UseSa
     const buffer = new ArrayBuffer(44 + dataLength)
     const view = new DataView(buffer)
 
+    // Remove DC offset
+    const mean = sample.audioData.reduce((a, b) => a + b, 0) / sample.audioData.length
+    for (let i = 0; i < sample.audioData.length; i++) {
+      sample.audioData[i] -= mean
+    }
+
     const writeString = (offset: number, str: string) => {
       for (let i = 0; i < str.length; i++) {
         view.setUint8(offset + i, str.charCodeAt(i))
@@ -357,9 +324,19 @@ export function useSampleRecorder(options: UseSampleRecorderOptions = {}): UseSa
     writeString(36, "data")
     view.setUint32(40, dataLength, true)
 
+    // Apply a short fade-out to prevent end-of-sample pops
+    const fadeOutSamples = Math.min(Math.floor(sample.sampleRate * 0.01), sample.audioData.length)
+    const fadeOutStart = sample.audioData.length - fadeOutSamples
+
     let offset = 44
     for (let i = 0; i < sample.audioData.length; i++) {
-      const s = Math.max(-1, Math.min(1, sample.audioData[i]))
+      let s = Math.max(-1, Math.min(1, sample.audioData[i]))
+
+      if (i >= fadeOutStart) {
+        const fadeProgress = (i - fadeOutStart) / fadeOutSamples
+        s *= 1 - fadeProgress
+      }
+
       view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true)
       offset += 2
     }
@@ -373,6 +350,7 @@ export function useSampleRecorder(options: UseSampleRecorderOptions = {}): UseSa
     currentSampleIndex,
     samples,
     error,
+    isClipping,
     startSession,
     stopSession,
     discardSession,

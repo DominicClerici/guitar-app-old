@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { useSampleRecorder, type RecordedSample } from "@/hooks/useSampleRecorder"
-import { Mic, Pause, Play, Save, Trash2, Volume2, VolumeX } from "lucide-react"
+import { AlertTriangle, Mic, Pause, Play, Save, Trash2, Volume2, VolumeX } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
 
 const STRING_NAMES = ["E", "A", "D", "G", "B", "e"] as const
@@ -34,6 +34,7 @@ export default function RecorderPage() {
     currentSampleIndex,
     samples,
     error,
+    isClipping,
     startSession,
     stopSession,
     discardSession,
@@ -256,6 +257,15 @@ export default function RecorderPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
+            {isClipping && (
+              <div className="flex items-center gap-2 p-3 rounded-md bg-destructive/10 text-destructive">
+                <AlertTriangle className="size-5 shrink-0" />
+                <p className="text-sm font-medium">
+                  Input clipping detected - reduce microphone gain or move further from the mic
+                </p>
+              </div>
+            )}
+
             <div className="flex flex-col items-center justify-center py-8 space-y-4">
               {getPhaseIcon()}
               <p className="text-xl font-medium">{getPhaseMessage()}</p>
