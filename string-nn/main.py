@@ -341,7 +341,8 @@ def main():
     all_features: list[WindowFeatures] = []
 
     for i, (path, string_num, fret_num) in enumerate(samples):
-        print(f"Processing [{i+1}/{len(samples)}]: String {string_num}, Fret {fret_num}, {path.name}")
+        if i % 10 == 0:
+            print(f"Processing [{i+1}/{len(samples)}]")
 
         try:
             y, sr = librosa.load(str(path), sr=None)
@@ -360,8 +361,6 @@ def main():
                     window, sr, string_num, fret_num, sample_id, win_idx
                 )
                 all_features.append(features)
-
-            print(f"  -> {len(windows)} windows extracted")
 
         except Exception as e:
             print(f"  Error processing {path}: {e}")

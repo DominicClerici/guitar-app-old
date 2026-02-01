@@ -25,6 +25,8 @@ const STRING_COLORS = [
 
 const STRING_NAMES = ["E2 (Low)", "A2", "D3", "G3", "B3", "E4 (High)"]
 
+const PRODUCTION_MODE = true
+
 function createWavFile(samples: Float32Array, sampleRate: number): ArrayBuffer {
   const numChannels = 1
   const bitsPerSample = 16

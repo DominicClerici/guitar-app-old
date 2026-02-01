@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { useNoteDetection, type PitchData } from "@/hooks/useNoteDetection"
+import { PitchResult, useAutocorrelation } from "@/hooks/useAutocorrelation"
 import { getCentsDeviation, getClosestNoteName } from "@/lib/audio/utils"
 import { trpc } from "@/lib/trpc/react"
 import { AlertCircle, Mic } from "lucide-react"
@@ -161,7 +161,6 @@ interface SeismographChartProps {
   chartHeight: number
   smoothing?: number
   inTune: boolean
-  bufferDurationMs: number
 }
 
 function SeismographChart({
@@ -172,7 +171,6 @@ function SeismographChart({
   chartHeight,
   smoothing = DEFAULT_SMOOTHING,
   inTune,
-  bufferDurationMs,
 }: SeismographChartProps) {
   const dimensions = useMemo(
     () => ({
@@ -363,7 +361,7 @@ function SeismographChart({
                 style={{
                   transform: `translate(${indicatorX}px, 0)`,
                   transitionTimingFunction: "linear",
-                  transitionDuration: `${bufferDurationMs}ms`,
+                  transitionDuration: "25ms",
                 }}
                 strokeWidth={2}
               />
@@ -401,20 +399,19 @@ export default function TunerDashboard() {
     [selectedTuning],
   )
 
-  const handlePitchDetected = useCallback((data: PitchData) => {
-    setPitch(data.pitch)
+  const handlePitchDetected = useCallback((result: PitchResult) => {
+    setPitch(result.frequency)
 
     const buffer = bufferRef.current
-    const cents = data.pitch > 0 ? getCentsDeviation(data.pitch) : null
+    const cents = result.frequency > 0 ? getCentsDeviation(result.frequency) : null
     if (cents !== null) {
       buffer.push({ cents, isActive: true })
       setBufferVersion(buffer.version)
     }
   }, [])
 
-  const { status, error, startListening, stopListening, bufferDurationMs } = useNoteDetection({
+  const { status, error, startListening, stopListening } = useAutocorrelation({
     onPitchDetected: handlePitchDetected,
-    bufferSize: 4096,
   })
 
   const noteName = getClosestNoteName(pitch)
@@ -563,7 +560,6 @@ export default function TunerDashboard() {
                 chartWidth={chartDimensions.width}
                 chartHeight={chartDimensions.height}
                 inTune={inTune}
-                bufferDurationMs={bufferDurationMs}
               />
             </div>
           </CardContent>
