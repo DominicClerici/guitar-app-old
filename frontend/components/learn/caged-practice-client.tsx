@@ -3,8 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 
 import { Button } from "@/components/ui/button"
-import { useNoteDetection } from "@/hooks/useNoteDetection"
-import { freqToMidi, STRING_OPEN_MIDI } from "@/lib/audio/utils"
+import { useStringClassifier, type StablePrediction } from "@/hooks/useStringClassifier"
 import {
   CAGED_QUIZ_QUESTIONS,
   CAGED_SHAPE_ORDER,
@@ -165,35 +164,35 @@ export default function CAGEDPracticeClient({
     currentShapeNotesRef.current = currentShapeNotes
   }, [currentShapeNotes])
 
-  const getMidiForPosition = (stringIndex: number, fretIndex: number) =>
-    STRING_OPEN_MIDI[stringIndex] + fretIndex
-
-  const handlePitchDetected = useCallback(({ pitch }: { pitch: number }) => {
+  const handleStringDetected = useCallback((prediction: StablePrediction) => {
     if (phaseRef.current !== "guided" && phaseRef.current !== "test") return
-    if (pitch <= 0) return
 
-    const detectedMidi = Math.round(freqToMidi(pitch))
+    const { stringIndex, fret } = prediction
     const shapeNotes = currentShapeNotesRef.current
 
-    const matchingNotes = shapeNotes.filter(
-      (note) => getMidiForPosition(note.stringIndex, note.fretIndex) === detectedMidi,
+    const matchingNote = shapeNotes.find(
+      (note) => note.stringIndex === stringIndex && note.fretIndex === fret,
     )
 
-    if (matchingNotes.length > 0) {
+    if (matchingNote) {
       setPlayedNotes((prev) => {
         const next = new Set(prev)
-        for (const note of matchingNotes) {
-          next.add(`${note.stringIndex}-${note.fretIndex}`)
-        }
+        next.add(`${stringIndex}-${fret}`)
         return next
       })
     }
   }, [])
 
-  const { startListening, stopListening } = useNoteDetection({
-    onPitchDetected: handlePitchDetected,
-    minClarity: 0.85,
+  const { startListening, stopListening, stablePrediction } = useStringClassifier({
+    productionMode: true,
+    minConfidence: 0.5,
   })
+
+  useEffect(() => {
+    if (stablePrediction && stablePrediction.confidence > 0.5) {
+      handleStringDetected(stablePrediction)
+    }
+  }, [stablePrediction, handleStringDetected])
 
   const getRandomKeyExcluding = useCallback((excludedKeys: number[]) => {
     const availableKeys = NOTE_NAMES.map((_, i) => i).filter((key) => !excludedKeys.includes(key))

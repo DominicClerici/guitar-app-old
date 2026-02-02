@@ -13,9 +13,9 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart"
-import { useNoteDetection } from "@/hooks/useNoteDetection"
 import { useSessionTracking } from "@/hooks/useSessionTracking"
-import { freqToMidi, NOTE_NAMES, STRING_OPEN_MIDI } from "@/lib/audio/utils"
+import { useStringClassifier } from "@/hooks/useStringClassifier"
+import { NOTE_NAMES } from "@/lib/audio/utils"
 import {
   ARPEGGIO_FORMULAS,
   CAGED_SHAPE_NAMES,
@@ -437,38 +437,32 @@ export default function ScalesPracticeClient() {
 
   const getNoteKey = (stringIndex: number, fretIndex: number) => `${stringIndex}-${fretIndex}`
 
-  const getMidiForPosition = (stringIndex: number, fretIndex: number) =>
-    STRING_OPEN_MIDI[stringIndex] + fretIndex
-
-  const handlePitchDetected = useCallback(
-    ({ pitch }: { pitch: number; clarity: number }) => {
-      if (practiceStateRef.current !== "practicing" || pitch <= 0) return
-
-      const detectedMidi = Math.round(freqToMidi(pitch))
-
-      const shapeNotes = currentShapeNotesRef.current
-      const matchingNotes = shapeNotes.filter(
-        (note) => getMidiForPosition(note.stringIndex, note.fretIndex) === detectedMidi,
-      )
-
-      if (matchingNotes.length > 0) {
-        recordNotePlayed()
-        setPlayedNoteKeys((prev) => {
-          const next = new Set(prev)
-          for (const note of matchingNotes) {
-            next.add(getNoteKey(note.stringIndex, note.fretIndex))
-          }
-          return next
-        })
-      }
-    },
-    [recordNotePlayed],
-  )
-
-  const { startListening, stopListening } = useNoteDetection({
-    onPitchDetected: handlePitchDetected,
-    minClarity: 0.85,
+  const { startListening, stopListening, stablePrediction } = useStringClassifier({
+    productionMode: true,
+    minConfidence: 0.3,
   })
+
+  useEffect(() => {
+    if (practiceStateRef.current !== "practicing" || !stablePrediction) return
+
+    const { stringIndex, fret } = stablePrediction
+    const shapeNotes = currentShapeNotesRef.current
+
+    const matchingNote = shapeNotes.find(
+      (note) => note.stringIndex === stringIndex && note.fretIndex === fret,
+    )
+
+    if (matchingNote) {
+      const noteKey = getNoteKey(stringIndex, fret)
+      setPlayedNoteKeys((prev) => {
+        if (prev.has(noteKey)) return prev
+        recordNotePlayed()
+        const next = new Set(prev)
+        next.add(noteKey)
+        return next
+      })
+    }
+  }, [stablePrediction, recordNotePlayed])
 
   const clearTimerInterval = useCallback(() => {
     if (timerIntervalRef.current) {
