@@ -24,7 +24,7 @@ const TARGET_RMS = 0.026
 const FREQUENCY_CHANGE_THRESHOLD = 0.03 // 3% change triggers new window
 const ACCUMULATION_WINDOW_MS = 800 // Time to accumulate predictions before locking
 const STRING_FREQUENCIES = [82.41, 110.0, 146.83, 196.0, 246.94, 329.63] // E2, A2, D3, G3, B3, E4
-const CONSECUTIVE_STRING_THRESHOLD = 3 // Number of consecutive same-string predictions required (1 = no check)
+const CONSECUTIVE_STRING_THRESHOLD = 2 // Number of consecutive same-string predictions required (1 = no check)
 
 function calculateRMS(samples: Float32Array): number {
   let sum = 0
