@@ -14,11 +14,17 @@ export const WINDOW_SIZE = 4096
 // 50% overlap like Python's extract_windows() with hop_size = window_size // 2
 const HOP_SIZE = WINDOW_SIZE / 2
 // Minimum RMS energy to process a window (filters silence)
-const MIN_RMS_THRESHOLD = 0.005
+const MIN_RMS_THRESHOLD = 0.0015
 // ScriptProcessor buffer size
 const PROCESSOR_BUFFER_SIZE = 2048
 // Target RMS for normalization (matches training data mean)
 const TARGET_RMS = 0.026
+
+// Production mode constants
+const FREQUENCY_CHANGE_THRESHOLD = 0.03 // 3% change triggers new window
+const ACCUMULATION_WINDOW_MS = 800 // Time to accumulate predictions before locking
+const STRING_FREQUENCIES = [82.41, 110.0, 146.83, 196.0, 246.94, 329.63] // E2, A2, D3, G3, B3, E4
+const CONSECUTIVE_STRING_THRESHOLD = 3 // Number of consecutive same-string predictions required (1 = no check)
 
 function calculateRMS(samples: Float32Array): number {
   let sum = 0
@@ -64,18 +70,36 @@ export interface PredictionResult {
   }
 }
 
+export interface StablePrediction {
+  stringIndex: number
+  stringLabel: string
+  fret: number
+  confidence: number
+  fundamental: number
+  isLocked: boolean
+}
+
+interface AccumulatedPrediction {
+  stringIndex: number
+  fret: number
+  totalWeight: number
+  count: number
+}
+
 interface UseStringClassifierOptions {
   modelPath?: string
   scalerPath?: string
   minConfidence?: number
   onPrediction?: (result: PredictionResult) => void
   debug?: boolean
+  productionMode?: boolean
 }
 
 interface UseStringClassifierResult {
   status: ClassifierStatus
   error: string | null
   prediction: PredictionResult | null
+  stablePrediction: StablePrediction | null
   startListening: () => Promise<void>
   stopListening: () => void
   loadModel: () => Promise<void>
@@ -96,12 +120,23 @@ export function useStringClassifier(
   const [error, setError] = useState<string | null>(null)
   const [prediction, setPrediction] = useState<PredictionResult | null>(null)
   const [isModelLoaded, setIsModelLoaded] = useState(false)
+  const [stablePrediction, setStablePrediction] = useState<StablePrediction | null>(null)
 
   const modelPathRef = useRef(options.modelPath ?? DEFAULT_MODEL_PATH)
   const scalerPathRef = useRef(options.scalerPath ?? DEFAULT_SCALER_PATH)
   const minConfidenceRef = useRef(options.minConfidence ?? DEFAULT_MIN_CONFIDENCE)
   const onPredictionRef = useRef(options.onPrediction)
   const debugRef = useRef(options.debug ?? false)
+  const productionModeRef = useRef(options.productionMode ?? false)
+
+  // Production mode state refs
+  const lastFundamentalRef = useRef<number | null>(null)
+  const windowStartTimeRef = useRef<number | null>(null)
+  const accumulatorRef = useRef<Map<string, AccumulatedPrediction>>(new Map())
+  const lockedPredictionRef = useRef<StablePrediction | null>(null)
+  const consecutiveStringCountRef = useRef(0)
+  const lastPredictedStringRef = useRef<number | null>(null)
+  const stringConfirmedRef = useRef(false)
 
   const sessionRef = useRef<ort.InferenceSession | null>(null)
   const scalerRef = useRef<ScalerConfig | null>(null)
@@ -125,13 +160,143 @@ export function useStringClassifier(
     minConfidenceRef.current = options.minConfidence ?? DEFAULT_MIN_CONFIDENCE
     onPredictionRef.current = options.onPrediction
     debugRef.current = options.debug ?? false
+    productionModeRef.current = options.productionMode ?? false
   }, [
     options.modelPath,
     options.scalerPath,
     options.minConfidence,
     options.onPrediction,
     options.debug,
+    options.productionMode,
   ])
+
+  const calculateFret = useCallback((fundamental: number, stringIndex: number): number => {
+    const baseFreq = STRING_FREQUENCIES[stringIndex]
+    const semitones = 12 * Math.log2(fundamental / baseFreq)
+    const fret = Math.round(semitones)
+    return Math.max(0, Math.min(24, fret))
+  }, [])
+
+  const resetProductionModeState = useCallback(() => {
+    lastFundamentalRef.current = null
+    windowStartTimeRef.current = null
+    accumulatorRef.current.clear()
+    lockedPredictionRef.current = null
+    consecutiveStringCountRef.current = 0
+    lastPredictedStringRef.current = null
+    stringConfirmedRef.current = false
+    setStablePrediction(null)
+  }, [])
+
+  const processProductionModePrediction = useCallback(
+    (result: PredictionResult) => {
+      const now = Date.now()
+      const fundamental = result.features.fundamental
+      const lastFundamental = lastFundamentalRef.current
+
+      const frequencyChanged =
+        lastFundamental !== null &&
+        Math.abs(fundamental - lastFundamental) / lastFundamental > FREQUENCY_CHANGE_THRESHOLD
+
+      if (frequencyChanged || lastFundamental === null) {
+        lastFundamentalRef.current = fundamental
+        windowStartTimeRef.current = now
+        accumulatorRef.current.clear()
+        lockedPredictionRef.current = null
+        consecutiveStringCountRef.current = 0
+        lastPredictedStringRef.current = null
+        stringConfirmedRef.current = false
+        setStablePrediction(null)
+      }
+
+      // Track consecutive same-string predictions
+      if (result.stringIndex === lastPredictedStringRef.current) {
+        consecutiveStringCountRef.current += 1
+      } else {
+        consecutiveStringCountRef.current = 1
+        lastPredictedStringRef.current = result.stringIndex
+      }
+
+      // Require N consecutive same-string predictions before showing anything
+      if (consecutiveStringCountRef.current >= CONSECUTIVE_STRING_THRESHOLD) {
+        stringConfirmedRef.current = true
+      }
+
+      if (!stringConfirmedRef.current) {
+        return
+      }
+
+      const windowStart = windowStartTimeRef.current
+      const isInAccumulationWindow =
+        windowStart !== null && now - windowStart < ACCUMULATION_WINDOW_MS
+
+      if (isInAccumulationWindow) {
+        const fret = calculateFret(fundamental, result.stringIndex)
+        const key = `${result.stringIndex}-${fret}`
+        const existing = accumulatorRef.current.get(key)
+
+        if (existing) {
+          existing.totalWeight += result.confidence
+          existing.count += 1
+        } else {
+          accumulatorRef.current.set(key, {
+            stringIndex: result.stringIndex,
+            fret,
+            totalWeight: result.confidence,
+            count: 1,
+          })
+        }
+
+        let bestPrediction: AccumulatedPrediction | null = null
+        let bestWeight = 0
+        accumulatorRef.current.forEach((pred) => {
+          if (pred.totalWeight > bestWeight) {
+            bestWeight = pred.totalWeight
+            bestPrediction = pred
+          }
+        })
+
+        if (bestPrediction) {
+          const pred = bestPrediction as AccumulatedPrediction
+          const stablePred: StablePrediction = {
+            stringIndex: pred.stringIndex,
+            stringLabel: STRING_LABELS[pred.stringIndex],
+            fret: pred.fret,
+            confidence: pred.totalWeight / pred.count,
+            fundamental,
+            isLocked: false,
+          }
+          setStablePrediction(stablePred)
+        }
+      } else if (windowStart !== null && !lockedPredictionRef.current) {
+        let bestPrediction: AccumulatedPrediction | null = null
+        let bestWeight = 0
+        accumulatorRef.current.forEach((pred) => {
+          if (pred.totalWeight > bestWeight) {
+            bestWeight = pred.totalWeight
+            bestPrediction = pred
+          }
+        })
+
+        if (bestPrediction) {
+          const pred = bestPrediction as AccumulatedPrediction
+          const stablePred: StablePrediction = {
+            stringIndex: pred.stringIndex,
+            stringLabel: STRING_LABELS[pred.stringIndex],
+            fret: pred.fret,
+            confidence: pred.totalWeight / pred.count,
+            fundamental,
+            isLocked: true,
+          }
+          lockedPredictionRef.current = stablePred
+          setStablePrediction(stablePred)
+        }
+      } else if (lockedPredictionRef.current) {
+        setStablePrediction({ ...lockedPredictionRef.current, fundamental })
+      }
+    },
+    [calculateFret],
+  )
 
   const loadModel = useCallback(async () => {
     try {
@@ -157,72 +322,79 @@ export function useStringClassifier(
     }
   }, [])
 
-  const runInference = useCallback(async (samples: Float32Array, sampleRate: number) => {
-    const session = sessionRef.current
-    const scaler = scalerRef.current
+  const runInference = useCallback(
+    async (samples: Float32Array, sampleRate: number) => {
+      const session = sessionRef.current
+      const scaler = scalerRef.current
 
-    if (!session || !scaler || isReleasedRef.current) return
-    if (isInferenceRunningRef.current) return
+      if (!session || !scaler || isReleasedRef.current) return
+      if (isInferenceRunningRef.current) return
 
-    isInferenceRunningRef.current = true
+      isInferenceRunningRef.current = true
 
-    try {
-      // Normalize audio amplitude to match training data levels
-      const normalizedSamples = normalizeAudioAmplitude(samples, TARGET_RMS)
-      const features = extractAllFeatures(normalizedSamples, sampleRate)
-      const featureVector = featuresToVector(features)
-      const normalizedFeatures = normalizeFeatures(featureVector, scaler.mean, scaler.scale)
+      try {
+        // Normalize audio amplitude to match training data levels
+        const normalizedSamples = normalizeAudioAmplitude(samples, TARGET_RMS)
+        const features = extractAllFeatures(normalizedSamples, sampleRate)
+        const featureVector = featuresToVector(features)
+        const normalizedFeatures = normalizeFeatures(featureVector, scaler.mean, scaler.scale)
 
-      if (isReleasedRef.current) return
+        if (isReleasedRef.current) return
 
-      const inputTensor = new ort.Tensor("float32", normalizedFeatures, [1, 33])
-      const results = await session.run({ features: inputTensor })
+        const inputTensor = new ort.Tensor("float32", normalizedFeatures, [1, 33])
+        const results = await session.run({ features: inputTensor })
 
-      const logits = results.logits.data as Float32Array
+        const logits = results.logits.data as Float32Array
 
-      const maxLogit = Math.max(...logits)
-      const expLogits = Array.from(logits).map((l) => Math.exp(l - maxLogit))
-      const sumExp = expLogits.reduce((a, b) => a + b, 0)
-      const probabilities = expLogits.map((e) => e / sumExp)
+        const maxLogit = Math.max(...logits)
+        const expLogits = Array.from(logits).map((l) => Math.exp(l - maxLogit))
+        const sumExp = expLogits.reduce((a, b) => a + b, 0)
+        const probabilities = expLogits.map((e) => e / sumExp)
 
-      let maxIdx = 0
-      let maxProb = probabilities[0]
-      for (let i = 1; i < probabilities.length; i++) {
-        if (probabilities[i] > maxProb) {
-          maxProb = probabilities[i]
-          maxIdx = i
-        }
-      }
-
-      if (maxProb >= minConfidenceRef.current) {
-        const result: PredictionResult = {
-          stringIndex: maxIdx,
-          stringLabel: scaler.string_labels?.[maxIdx] ?? STRING_LABELS[maxIdx],
-          confidence: maxProb,
-          allProbabilities: probabilities,
-          features,
-          debug: debugRef.current
-            ? {
-                rawFeatureVector: Array.from(featureVector),
-                normalizedFeatureVector: Array.from(normalizedFeatures),
-                sampleRate,
-                sampleCount: samples.length,
-                audioSamples: normalizedSamples,
-              }
-            : undefined,
+        let maxIdx = 0
+        let maxProb = probabilities[0]
+        for (let i = 1; i < probabilities.length; i++) {
+          if (probabilities[i] > maxProb) {
+            maxProb = probabilities[i]
+            maxIdx = i
+          }
         }
 
-        setPrediction(result)
-        onPredictionRef.current?.(result)
+        if (maxProb >= minConfidenceRef.current) {
+          const result: PredictionResult = {
+            stringIndex: maxIdx,
+            stringLabel: scaler.string_labels?.[maxIdx] ?? STRING_LABELS[maxIdx],
+            confidence: maxProb,
+            allProbabilities: probabilities,
+            features,
+            debug: debugRef.current
+              ? {
+                  rawFeatureVector: Array.from(featureVector),
+                  normalizedFeatureVector: Array.from(normalizedFeatures),
+                  sampleRate,
+                  sampleCount: samples.length,
+                  audioSamples: normalizedSamples,
+                }
+              : undefined,
+          }
+
+          setPrediction(result)
+          onPredictionRef.current?.(result)
+
+          if (productionModeRef.current) {
+            processProductionModePrediction(result)
+          }
+        }
+      } catch (err) {
+        if (!isReleasedRef.current) {
+          console.error("Inference error:", err)
+        }
+      } finally {
+        isInferenceRunningRef.current = false
       }
-    } catch (err) {
-      if (!isReleasedRef.current) {
-        console.error("Inference error:", err)
-      }
-    } finally {
-      isInferenceRunningRef.current = false
-    }
-  }, [])
+    },
+    [processProductionModePrediction],
+  )
 
   const processAudioChunk = useCallback(
     (inputData: Float32Array, sampleRate: number) => {
@@ -255,12 +427,15 @@ export function useStringClassifier(
         if (rms > MIN_RMS_THRESHOLD) {
           // Run inference on this window (non-blocking)
           runInference(window, sampleRate)
+        } else if (productionModeRef.current) {
+          // Silence detected - reset production mode state
+          resetProductionModeState()
         }
 
         samplesSinceLastWindowRef.current -= HOP_SIZE
       }
     },
-    [runInference],
+    [runInference, resetProductionModeState],
   )
 
   const startListening = useCallback(async () => {
@@ -341,12 +516,14 @@ export function useStringClassifier(
     bufferWriteIndexRef.current = 0
     samplesSinceLastWindowRef.current = 0
 
+    resetProductionModeState()
+
     if (isModelLoaded) {
       setStatus("ready")
     } else {
       setStatus("idle")
     }
-  }, [isModelLoaded])
+  }, [isModelLoaded, resetProductionModeState])
 
   const captureAudioSample = useCallback(() => {
     const audioContext = audioContextRef.current
@@ -397,6 +574,7 @@ export function useStringClassifier(
     status,
     error,
     prediction,
+    stablePrediction,
     startListening,
     stopListening,
     loadModel,

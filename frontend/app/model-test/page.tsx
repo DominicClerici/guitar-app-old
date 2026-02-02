@@ -1,5 +1,6 @@
 "use client"
 
+import { Fretboard, type Marker } from "@/components/fretboard/fretboard"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -12,7 +13,7 @@ import {
 } from "@/components/ui/select"
 import { useStringClassifier, type PredictionResult } from "@/hooks/useStringClassifier"
 import { AlertCircle, Bug, CheckCircle2, Copy, Download, Loader2, Mic, MicOff } from "lucide-react"
-import { useCallback, useRef, useState } from "react"
+import { useCallback, useMemo, useRef, useState } from "react"
 
 const STRING_COLORS = [
   "bg-red-500",
@@ -125,6 +126,7 @@ export default function ModelTestPage() {
     status,
     error,
     prediction,
+    stablePrediction,
     startListening,
     stopListening,
     loadModel,
@@ -135,7 +137,20 @@ export default function ModelTestPage() {
     onPrediction: handlePrediction,
     minConfidence: 0.25,
     debug: true,
+    productionMode: PRODUCTION_MODE,
   })
+
+  const fretboardMarkers = useMemo((): Marker[] => {
+    if (!PRODUCTION_MODE || !stablePrediction) return []
+    return [
+      {
+        stringIndex: stablePrediction.stringIndex,
+        fretIndex: stablePrediction.fret,
+        type: "played",
+        label: stablePrediction.stringLabel,
+      },
+    ]
+  }, [stablePrediction])
 
   const isRecording = status === "recording"
   const isLoading = status === "loading"
@@ -292,6 +307,38 @@ export default function ModelTestPage() {
             )}
           </CardContent>
         </Card>
+
+        {PRODUCTION_MODE && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Live Fretboard</CardTitle>
+              <CardDescription>
+                {stablePrediction
+                  ? `${stablePrediction.stringLabel} string, fret ${stablePrediction.fret} (${stablePrediction.fundamental.toFixed(1)} Hz)${stablePrediction.isLocked ? " - Locked" : " - Detecting..."}`
+                  : "Play a note to see it on the fretboard"}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Fretboard markers={fretboardMarkers} className="w-full" />
+
+              <div className="mt-4 flex h-8 items-center justify-center gap-4">
+                {stablePrediction && (
+                  <>
+                    <Badge
+                      variant={stablePrediction.isLocked ? "default" : "secondary"}
+                      className="text-sm"
+                    >
+                      {stablePrediction.isLocked ? "Locked" : "Accumulating..."}
+                    </Badge>
+                    <span className="text-muted-foreground text-sm">
+                      Confidence: {(stablePrediction.confidence * 100).toFixed(1)}%
+                    </span>
+                  </>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {showDebug && (
           <Card>
