@@ -14,6 +14,7 @@ from utils.freq_estimation import (
     freq_from_hps,
 )
 from augment import AudioAugmenter, AugmentationConfig, create_augmenter
+from sequential_notes import SequentialNoteGenerator, SequentialAudioResult, NoteRegion
 
 
 WINDOW_SIZE = 4096  # ~93ms at 44.1kHz, matches browser inference
@@ -43,6 +44,15 @@ ADJACENT_STRINGS = {
     4: [3, 5],     # B -> G, High E
     5: [4],        # High E -> B
 }
+
+# Sequential note generation - simulates fast playing with note transitions
+USE_SEQUENTIAL_NOTES = True
+SEQUENTIAL_RATIO = 0.10  # Generate 10% of sample count as sequential clips
+SEQUENTIAL_GAP_MIN_MS = 1.0  # Minimum gap between notes
+SEQUENTIAL_GAP_MAX_MS = 15.0  # Maximum gap between notes
+SEQUENTIAL_LENGTH_MIN = 3  # Minimum notes per sequence
+SEQUENTIAL_LENGTH_MAX = 5  # Maximum notes per sequence
+SEQUENTIAL_NOTE_DURATION_MS = 150.0  # How much of each note to include
 
 # Open string frequencies by string number (0-5, matching sample directory structure)
 # String 0 = low E (thickest), String 5 = high E (thinnest)
@@ -212,12 +222,26 @@ class DiscardedSample(TypedDict):
     expected_freq: float
 
 
+def should_skip_frequency_validation(sample_id: str) -> bool:
+    """
+    Check if a sample should skip frequency validation.
+
+    Layered samples and sequential samples are excluded because:
+    - Layered samples have adjacent string interference that affects frequency detection
+    - Sequential samples may contain multiple notes, so detected frequency won't match label
+    """
+    return "_layer" in sample_id or sample_id.startswith("seq")
+
+
 def validate_fundamental_frequencies(
     features: list["WindowFeatures"],
     tolerance: float = 0.05
-) -> tuple[list["WindowFeatures"], list[DiscardedSample]]:
+) -> tuple[list["WindowFeatures"], list[DiscardedSample], int]:
     """
     Validate that detected fundamental frequencies are within tolerance of expected values.
+
+    Layered and sequential samples are automatically passed through without validation
+    since their frequency detection is expected to be unreliable.
 
     Args:
         features: List of extracted window features
@@ -228,12 +252,19 @@ def validate_fundamental_frequencies(
     """
     valid_features = []
     discarded: dict[str, DiscardedSample] = {}
+    skipped_count = 0
 
     for feature in features:
         string = feature["string"]
         fret = feature["fret"]
         detected_freq = feature["fundamental_freq"]
         sample_id = feature["sample_id"]
+
+        # Skip validation for layered and sequential samples
+        if should_skip_frequency_validation(sample_id):
+            valid_features.append(feature)
+            skipped_count += 1
+            continue
 
         expected_freq = calculate_expected_frequency(string, fret)
 
@@ -260,7 +291,7 @@ def validate_fundamental_frequencies(
                 expected_freq=expected_freq,
             )
 
-    return valid_features, sorted(discarded.values(), key=lambda x: x["sample_id"])
+    return valid_features, sorted(discarded.values(), key=lambda x: x["sample_id"]), skipped_count
 
 
 def calculate_rms(samples: np.ndarray) -> float:
@@ -728,6 +759,61 @@ def process_audio_with_augmentation(
     return all_features
 
 
+def process_sequential_audio(
+    seq_result: SequentialAudioResult,
+    sr: int,
+    extractor: FeatureExtractor,
+    generator: SequentialNoteGenerator,
+    window_size: int = WINDOW_SIZE,
+) -> list[WindowFeatures]:
+    """
+    Process sequential audio and extract features with proper labeling.
+
+    Each window is labeled based on which note is dominant (has most overlap
+    with the window). This teaches the model to identify the main note even
+    when there are remnants of previous/next notes in the window.
+
+    Args:
+        seq_result: Sequential audio result with audio and note regions
+        sr: Sample rate
+        extractor: Feature extractor instance
+        generator: Sequential note generator (for label calculation)
+        window_size: Size of extraction window
+
+    Returns:
+        List of WindowFeatures with labels based on dominant note per window
+    """
+    features = []
+    audio = seq_result.audio
+    note_regions = seq_result.note_regions
+
+    # Normalize the combined audio
+    audio = normalize_audio_amplitude(audio, TARGET_RMS)
+
+    # Extract windows with 50% overlap
+    hop_size = window_size // 2
+
+    for win_idx, start in enumerate(range(0, len(audio) - window_size + 1, hop_size)):
+        window = audio[start:start + window_size]
+        window_end = start + window_size
+
+        # Determine dominant note for this window
+        string, fret = generator.get_window_label(start, window_end, note_regions)
+
+        # Extract features with the dominant note's label
+        window_features = extractor.extract_window_features(
+            window=window,
+            sr=sr,
+            string=string,
+            fret=fret,
+            sample_id=seq_result.sequence_id,
+            window_index=win_idx,
+        )
+        features.append(window_features)
+
+    return features
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Extract features from guitar audio samples with optional augmentation."
@@ -811,6 +897,49 @@ def parse_args():
         type=str,
         default=None,
         help="Directory containing layer samples (default: ../frontend/layer_samples)"
+    )
+
+    # Sequential note generation options
+    parser.add_argument(
+        "--no-sequential",
+        action="store_true",
+        help="Disable sequential note generation for fast-playing training"
+    )
+    parser.add_argument(
+        "--sequential-ratio",
+        type=float,
+        default=SEQUENTIAL_RATIO,
+        help=f"Ratio of sequential samples to generate (default: {SEQUENTIAL_RATIO})"
+    )
+    parser.add_argument(
+        "--sequential-gap-min",
+        type=float,
+        default=SEQUENTIAL_GAP_MIN_MS,
+        help=f"Minimum gap between notes in ms (default: {SEQUENTIAL_GAP_MIN_MS})"
+    )
+    parser.add_argument(
+        "--sequential-gap-max",
+        type=float,
+        default=SEQUENTIAL_GAP_MAX_MS,
+        help=f"Maximum gap between notes in ms (default: {SEQUENTIAL_GAP_MAX_MS})"
+    )
+    parser.add_argument(
+        "--sequential-length-min",
+        type=int,
+        default=SEQUENTIAL_LENGTH_MIN,
+        help=f"Minimum notes per sequence (default: {SEQUENTIAL_LENGTH_MIN})"
+    )
+    parser.add_argument(
+        "--sequential-length-max",
+        type=int,
+        default=SEQUENTIAL_LENGTH_MAX,
+        help=f"Maximum notes per sequence (default: {SEQUENTIAL_LENGTH_MAX})"
+    )
+    parser.add_argument(
+        "--sequential-note-duration",
+        type=float,
+        default=SEQUENTIAL_NOTE_DURATION_MS,
+        help=f"Duration of each note in sequence in ms (default: {SEQUENTIAL_NOTE_DURATION_MS})"
     )
 
     return parser.parse_args()
@@ -897,6 +1026,29 @@ def main():
             print(f"Save them in: {layer_samples_dir}/{{string_num}}/{{sample_name}}.wav")
             layer_mixer = None
 
+    # Set up sequential note generator for fast-playing training
+    sequential_generator = None
+    use_sequential = USE_SEQUENTIAL_NOTES and not args.no_sequential
+
+    if use_sequential:
+        num_sequential = max(1, int(len(samples) * args.sequential_ratio))
+        print(f"\nSequential note generation enabled")
+        print(f"  Generating {num_sequential} sequential clips ({args.sequential_ratio:.0%} of {len(samples)} samples)")
+        print(f"  Sequence length: {args.sequential_length_min}-{args.sequential_length_max} notes")
+        print(f"  Gap between notes: {args.sequential_gap_min}-{args.sequential_gap_max}ms")
+        print(f"  Note duration: {args.sequential_note_duration}ms")
+
+        sequential_generator = SequentialNoteGenerator(
+            samples=samples,
+            target_sr=44100,
+            gap_min_ms=args.sequential_gap_min,
+            gap_max_ms=args.sequential_gap_max,
+            sequence_length_min=args.sequential_length_min,
+            sequence_length_max=args.sequential_length_max,
+            note_duration_ms=args.sequential_note_duration,
+            seed=random_seed,
+        )
+
     extractor = FeatureExtractor(n_harmonics=12)
     all_features: list[WindowFeatures] = []
     augmentation_stats = {"total_augmented": 0, "effects_applied": defaultdict(int)}
@@ -925,13 +1077,40 @@ def main():
 
         except Exception as e:
             print(f"  Error processing {path}: {e}")
-    print(f"Processed {len(all_features)} windows from {len(samples)} samples with {augmentation_stats['total_augmented']} augmented samples")
+    print(f"Processed {len(all_features)} windows from {len(samples)} samples")
+
+    # Generate and process sequential note samples
+    sequential_count = 0
+    if sequential_generator is not None:
+        num_sequential = max(1, int(len(samples) * args.sequential_ratio))
+        print(f"\nGenerating {num_sequential} sequential note samples...")
+
+        sequential_results = sequential_generator.generate_samples(num_sequential)
+
+        for seq_result in sequential_results:
+            try:
+                seq_features = process_sequential_audio(
+                    seq_result=seq_result,
+                    sr=44100,
+                    extractor=extractor,
+                    generator=sequential_generator,
+                    window_size=WINDOW_SIZE,
+                )
+                all_features.extend(seq_features)
+                sequential_count += len(seq_features)
+            except Exception as e:
+                print(f"  Error processing sequence {seq_result.sequence_id}: {e}")
+
+        print(f"Added {sequential_count} windows from {len(sequential_results)} sequential samples")
 
     # Validate fundamental frequencies
     print("\n--- Frequency Validation ---")
     original_count = len(all_features)
-    all_features, discarded_samples = validate_fundamental_frequencies(all_features, tolerance=0.05)
+    all_features, discarded_samples, skipped_validation_count = validate_fundamental_frequencies(all_features, tolerance=0.05)
     discarded_count = original_count - len(all_features)
+
+    if skipped_validation_count > 0:
+        print(f"Skipped validation for {skipped_validation_count} windows (layered/sequential samples)")
 
     if discarded_samples:
         print(f"Discarded {discarded_count} windows from {len(discarded_samples)} samples with invalid fundamental frequencies (>5% deviation):")
@@ -955,6 +1134,11 @@ def main():
         "string_layering_enabled": layer_mixer is not None,
         "string_layering_probability": args.layer_probability if layer_mixer else None,
         "string_layering_volume_range": [args.layer_volume_min, args.layer_volume_max] if layer_mixer else None,
+        "sequential_notes_enabled": sequential_generator is not None,
+        "sequential_notes_ratio": args.sequential_ratio if sequential_generator else None,
+        "sequential_notes_gap_range_ms": [args.sequential_gap_min, args.sequential_gap_max] if sequential_generator else None,
+        "sequential_notes_length_range": [args.sequential_length_min, args.sequential_length_max] if sequential_generator else None,
+        "sequential_notes_duration_ms": args.sequential_note_duration if sequential_generator else None,
         "feature_names": [
             "harmonic_ratios",
             "spectral_centroid",
@@ -994,15 +1178,18 @@ def main():
     print(f"\nFeatures saved to: {output_path}")
 
     # Count different sample types
-    original_count = sum(1 for f in all_features if "_aug" not in f["sample_id"] and "_layer" not in f["sample_id"])
+    original_count = sum(1 for f in all_features if "_aug" not in f["sample_id"] and "_layer" not in f["sample_id"] and not f["sample_id"].startswith("seq"))
     augmented_count = sum(1 for f in all_features if "_aug" in f["sample_id"])
     layered_count = sum(1 for f in all_features if "_layer" in f["sample_id"])
+    sequential_window_count = sum(1 for f in all_features if f["sample_id"].startswith("seq"))
 
     print(f"  Original windows: {original_count}")
     if augmented_count > 0:
         print(f"  Augmented windows: {augmented_count}")
     if layered_count > 0:
         print(f"  String-layered windows: {layered_count}")
+    if sequential_window_count > 0:
+        print(f"  Sequential note windows: {sequential_window_count}")
 
     # Print summary statistics
     if all_features:

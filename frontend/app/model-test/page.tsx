@@ -12,7 +12,17 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { useStringClassifier, type PredictionResult } from "@/hooks/useStringClassifier"
-import { AlertCircle, Bug, CheckCircle2, Copy, Download, Loader2, Mic, MicOff, User } from "lucide-react"
+import {
+  AlertCircle,
+  Bug,
+  CheckCircle2,
+  Copy,
+  Download,
+  Loader2,
+  Mic,
+  MicOff,
+  User,
+} from "lucide-react"
 import { useCallback, useMemo, useRef, useState } from "react"
 
 const STRING_COLORS = [
