@@ -17,6 +17,11 @@ from pathlib import Path
 import numpy as np
 
 from main import FeatureExtractor, WINDOW_SIZE
+from features_config import (
+    ALL_FEATURE_NAMES,
+    get_enabled_feature_names,
+    get_enabled_indices,
+)
 
 # Target RMS to match browser normalization (from useStringClassifier.ts)
 TARGET_RMS = 0.026
@@ -91,30 +96,58 @@ def extract_python_features(samples: np.ndarray, sample_rate: int) -> dict:
     }
 
 
-FEATURE_NAMES = [
-    "harmonic_ratio_1", "harmonic_ratio_2", "harmonic_ratio_3", "harmonic_ratio_4",
-    "harmonic_ratio_5", "harmonic_ratio_6", "harmonic_ratio_7", "harmonic_ratio_8",
-    "harmonic_ratio_9", "harmonic_ratio_10", "harmonic_ratio_11", "harmonic_ratio_12",
-    "spectral_centroid", "spectral_rolloff", "inharmonicity", "rms_energy", "energy_slope",
-    "log_frequency", "semitones_from_e2", "octave_number",
-    "mfcc_0", "mfcc_1", "mfcc_2", "mfcc_3", "mfcc_4",
-    "mfcc_5", "mfcc_6", "mfcc_7", "mfcc_8", "mfcc_9",
-    "mfcc_10", "mfcc_11", "mfcc_12",
-]
 
 STRING_LABELS = ["E2 (Low)", "A2", "D3", "G3", "B3", "E4 (High)"]
 
 
-def compare_features(browser_features: list, python_features: list) -> list:
-    """Compare browser vs Python feature vectors and return significant differences."""
+def filter_features(features: list, indices: list[int]) -> list:
+    """Filter feature vector to only include features at given indices."""
+    return [features[i] for i in indices]
+
+
+def compare_features(
+    browser_features: list,
+    python_features: list,
+) -> list:
+    """Compare browser vs Python feature vectors and return significant differences.
+
+    Args:
+        browser_features: Feature vector from browser (may be filtered to enabled only)
+        python_features: Full feature vector from Python (all 33 features)
+    """
     significant_diffs = []
+
+    enabled_indices = get_enabled_indices()
+    enabled_names = get_enabled_feature_names()
+    num_enabled = len(enabled_names)
+
+    # Browser may send all features or just enabled features - detect by length
+    if len(browser_features) == num_enabled:
+        # Browser already filtered to enabled features
+        browser_filtered = browser_features
+        python_filtered = filter_features(python_features, enabled_indices)
+        feature_names = enabled_names
+        print(f"\nComparing {num_enabled} ENABLED features (browser pre-filtered)")
+    elif len(browser_features) == len(ALL_FEATURE_NAMES):
+        # Browser sent all features, filter both
+        browser_filtered = filter_features(browser_features, enabled_indices)
+        python_filtered = filter_features(python_features, enabled_indices)
+        feature_names = enabled_names
+        print(f"\nComparing {num_enabled} ENABLED features (of {len(ALL_FEATURE_NAMES)} total)")
+    else:
+        # Unexpected length - compare as-is with warning
+        print(f"\nWARNING: Browser has {len(browser_features)} features, expected {num_enabled} or {len(ALL_FEATURE_NAMES)}")
+        print("Comparing features up to browser length")
+        browser_filtered = browser_features
+        python_filtered = python_features[:len(browser_features)]
+        feature_names = [f"feature_{i}" for i in range(len(browser_features))]
 
     print(f"\n{'Feature':<25} {'Browser':>12} {'Python':>12} {'Diff':>12} {'%Diff':>10}")
     print("-" * 80)
 
-    for i, name in enumerate(FEATURE_NAMES):
-        browser_val = browser_features[i]
-        python_val = python_features[i]
+    for i, name in enumerate(feature_names):
+        browser_val = browser_filtered[i]
+        python_val = python_filtered[i]
         diff = browser_val - python_val
 
         if abs(python_val) > 1e-6:
@@ -244,7 +277,12 @@ def main():
 
                 string_labels = ["E2", "A2", "D3", "G3", "B3", "E4"]
 
-                # Predict with browser features
+                # Filter to enabled features only
+                enabled_indices = get_enabled_indices()
+                enabled_names = get_enabled_feature_names()
+                print(f"\n   Using {len(enabled_names)} enabled features for predictions")
+
+                # Predict with browser features (already filtered/normalized by browser)
                 print("\n1. Using BROWSER-extracted features:")
                 browser_tensor = torch.FloatTensor([browser_normalized_features])
                 with torch.no_grad():
@@ -253,10 +291,11 @@ def main():
                 print(f"   Prediction: {string_labels[browser_pred]} ({browser_probs[browser_pred]*100:.1f}%)")
                 print(f"   All: {[f'{string_labels[i]}:{p*100:.0f}%' for i, p in enumerate(browser_probs.tolist())]}")
 
-                # Normalize and predict with Python features from browser audio
+                # Filter Python features to enabled only, then normalize
+                python_filtered = filter_features(python_features, enabled_indices)
                 python_normalized = [
                     (v - scaler["mean"][i]) / scaler["scale"][i]
-                    for i, v in enumerate(python_features)
+                    for i, v in enumerate(python_filtered)
                 ]
                 print("\n2. Using PYTHON-extracted features (from same audio):")
                 py_tensor = torch.FloatTensor([python_normalized])
