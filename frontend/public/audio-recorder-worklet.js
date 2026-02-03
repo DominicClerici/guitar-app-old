@@ -12,6 +12,8 @@ class AudioRecorderProcessor extends AudioWorkletProcessor {
     this.silenceThreshold = 0.01
     this.pluckThreshold = 0.015
     this.pluckSampleIndex = 0
+    this.consecutiveSilentFrames = 0
+    this.requiredSilentFrames = 20 // ~50ms at 48kHz with 128-sample frames
 
     this.port.onmessage = (event) => {
       const { type, data } = event.data
@@ -28,6 +30,7 @@ class AudioRecorderProcessor extends AudioWorkletProcessor {
           this.phase = "waiting-for-silence"
           this.samplesAfterPluck = 0
           this.pluckSampleIndex = 0
+          this.consecutiveSilentFrames = 0
           this.isActive = true
           break
 
@@ -66,8 +69,13 @@ class AudioRecorderProcessor extends AudioWorkletProcessor {
 
     if (this.phase === "waiting-for-silence") {
       if (amplitude < this.silenceThreshold) {
-        this.phase = "ready-to-pluck"
-        this.port.postMessage({ type: "phase-change", data: { phase: "ready-to-pluck" } })
+        this.consecutiveSilentFrames++
+        if (this.consecutiveSilentFrames >= this.requiredSilentFrames) {
+          this.phase = "ready-to-pluck"
+          this.port.postMessage({ type: "phase-change", data: { phase: "ready-to-pluck" } })
+        }
+      } else {
+        this.consecutiveSilentFrames = 0
       }
     } else if (this.phase === "ready-to-pluck") {
       // Find exact sample where pluck occurs for sample-accurate timing

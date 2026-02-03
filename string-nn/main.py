@@ -28,6 +28,22 @@ AUGMENTATION_PRESET = "moderate"
 
 USE_FINETUNE_SAMPLES = False
 
+# String layering configuration - simulates adjacent string interference
+USE_STRING_LAYERING = True
+STRING_LAYER_PROBABILITY = 0.25  # 25% of samples get layered (1 in 4)
+STRING_LAYER_VOLUME_MIN = 0.15   # Minimum volume ratio for layer (relative to main)
+STRING_LAYER_VOLUME_MAX = 0.35   # Maximum volume ratio for layer
+
+# Adjacent strings that can interfere (indexed 0-5: low E, A, D, G, B, high E)
+ADJACENT_STRINGS = {
+    0: [1],        # Low E -> A
+    1: [0, 2],     # A -> Low E, D
+    2: [1, 3],     # D -> A, G
+    3: [2, 4],     # G -> D, B
+    4: [3, 5],     # B -> G, High E
+    5: [4],        # High E -> B
+}
+
 # Open string frequencies by string number (0-5, matching sample directory structure)
 # String 0 = low E (thickest), String 5 = high E (thinnest)
 OPEN_STRING_FREQS_BY_NUMBER = {
@@ -38,6 +54,146 @@ OPEN_STRING_FREQS_BY_NUMBER = {
     4: 246.94,  # B
     5: 329.63,  # high E
 }
+
+
+class StringLayerMixer:
+    """
+    Loads and mixes open string layer samples to simulate adjacent string interference.
+
+    This helps train the model to be robust when a player accidentally bumps
+    or doesn't fully mute adjacent strings while playing.
+    """
+
+    def __init__(
+        self,
+        layer_samples_dir: Path,
+        target_sr: int = 44100,
+        volume_min: float = STRING_LAYER_VOLUME_MIN,
+        volume_max: float = STRING_LAYER_VOLUME_MAX,
+        seed: int | None = None,
+    ):
+        self.layer_samples_dir = layer_samples_dir
+        self.target_sr = target_sr
+        self.volume_min = volume_min
+        self.volume_max = volume_max
+        self._rng = np.random.default_rng(seed)
+
+        # Cache of loaded layer samples: {string_num: [audio_arrays]}
+        self._layer_cache: dict[int, list[np.ndarray]] = {}
+        self._load_layer_samples()
+
+    def _load_layer_samples(self):
+        """Load all layer samples from disk into memory."""
+        if not self.layer_samples_dir.exists():
+            print(f"Warning: Layer samples directory not found: {self.layer_samples_dir}")
+            return
+
+        total_loaded = 0
+        for string_num in range(6):
+            string_dir = self.layer_samples_dir / str(string_num)
+            if not string_dir.exists():
+                continue
+
+            self._layer_cache[string_num] = []
+            for wav_file in string_dir.glob("*.wav"):
+                try:
+                    y, sr = librosa.load(str(wav_file), sr=self.target_sr)
+                    # Normalize the layer sample
+                    rms = np.sqrt(np.mean(y ** 2))
+                    if rms > 1e-10:
+                        y = y / rms  # Normalize to unit RMS for easier mixing
+                    self._layer_cache[string_num].append(y)
+                    total_loaded += 1
+                except Exception as e:
+                    print(f"Warning: Failed to load layer sample {wav_file}: {e}")
+
+        print(f"Loaded {total_loaded} layer samples for {len(self._layer_cache)} strings")
+
+    def has_samples(self) -> bool:
+        """Check if any layer samples were loaded."""
+        return len(self._layer_cache) > 0
+
+    def get_adjacent_strings(self, string_num: int) -> list[int]:
+        """Get list of adjacent strings that have loaded layer samples."""
+        adjacent = ADJACENT_STRINGS.get(string_num, [])
+        return [s for s in adjacent if s in self._layer_cache and self._layer_cache[s]]
+
+    def get_random_layer(self, string_num: int) -> np.ndarray | None:
+        """Get a random layer sample for the specified string."""
+        if string_num not in self._layer_cache or not self._layer_cache[string_num]:
+            return None
+        return self._rng.choice(self._layer_cache[string_num])
+
+    def mix_with_layer(
+        self,
+        main_audio: np.ndarray,
+        main_string: int,
+        layer_string: int | None = None,
+    ) -> tuple[np.ndarray, int | None]:
+        """
+        Mix the main audio with a layer sample from an adjacent string.
+
+        Args:
+            main_audio: The primary audio sample
+            main_string: String number of the main audio (0-5)
+            layer_string: Specific string to layer (None = random adjacent)
+
+        Returns:
+            Tuple of (mixed_audio, layer_string_used) or (main_audio, None) if no layer applied
+        """
+        # Get available adjacent strings
+        available_adjacent = self.get_adjacent_strings(main_string)
+        if not available_adjacent:
+            return main_audio, None
+
+        # Select which adjacent string to use
+        if layer_string is not None and layer_string in available_adjacent:
+            selected_string = layer_string
+        else:
+            selected_string = self._rng.choice(available_adjacent)
+
+        # Get a random layer sample
+        layer_audio = self.get_random_layer(selected_string)
+        if layer_audio is None:
+            return main_audio, None
+
+        # Calculate random volume ratio
+        volume_ratio = self._rng.uniform(self.volume_min, self.volume_max)
+
+        # Calculate the RMS of the main audio to scale the layer appropriately
+        main_rms = np.sqrt(np.mean(main_audio ** 2))
+        if main_rms < 1e-10:
+            return main_audio, None
+
+        # Scale layer to target volume relative to main
+        scaled_layer = layer_audio * (main_rms * volume_ratio)
+
+        # Handle length differences
+        main_len = len(main_audio)
+        layer_len = len(scaled_layer)
+
+        if layer_len >= main_len:
+            # Layer is longer or equal - randomly select starting position
+            max_start = layer_len - main_len
+            start_pos = self._rng.integers(0, max_start + 1)
+            layer_segment = scaled_layer[start_pos:start_pos + main_len]
+        else:
+            # Layer is shorter - pad with zeros or loop
+            # Use random start position within main audio
+            layer_segment = np.zeros(main_len)
+            max_start = main_len - layer_len
+            start_pos = self._rng.integers(0, max_start + 1)
+            layer_segment[start_pos:start_pos + layer_len] = scaled_layer
+
+        # Mix the audio
+        mixed = main_audio + layer_segment
+
+        # Soft clip to prevent harsh distortion while preserving dynamics
+        max_val = np.max(np.abs(mixed))
+        if max_val > 1.0:
+            mixed = np.tanh(mixed / max_val) * 0.99
+
+        return mixed, selected_string
 
 
 def calculate_expected_frequency(string: int, fret: int) -> float:
@@ -492,6 +648,9 @@ def process_audio_with_augmentation(
     sample_id: str,
     extractor: FeatureExtractor,
     augmenter: AudioAugmenter | None = None,
+    layer_mixer: StringLayerMixer | None = None,
+    layer_probability: float = STRING_LAYER_PROBABILITY,
+    rng: np.random.Generator | None = None,
 ) -> list[WindowFeatures]:
     """
     Process audio and optionally generate augmented versions.
@@ -504,11 +663,16 @@ def process_audio_with_augmentation(
         sample_id: Unique sample identifier
         extractor: Feature extractor instance
         augmenter: Optional augmenter for data augmentation
+        layer_mixer: Optional mixer for adjacent string interference
+        layer_probability: Probability of applying string layering (0.0-1.0)
+        rng: Random number generator for layering decisions
 
     Returns:
         List of WindowFeatures from original and augmented audio
     """
     all_features = []
+    if rng is None:
+        rng = np.random.default_rng()
 
     # Process original audio
     y_trimmed, _ = librosa.effects.trim(y, top_db=20)
@@ -522,6 +686,25 @@ def process_audio_with_augmentation(
             window, sr, string_num, fret_num, sample_id, win_idx
         )
         all_features.append(features)
+
+    # Generate string-layered version (simulates adjacent string interference)
+    if layer_mixer is not None and layer_mixer.has_samples():
+        if rng.random() < layer_probability:
+            layered_audio, layer_string = layer_mixer.mix_with_layer(y, string_num)
+            if layer_string is not None:
+                # Trim layered audio
+                layered_trimmed, _ = librosa.effects.trim(layered_audio, top_db=20)
+                if len(layered_trimmed) > sr * 0.1:
+                    layered_audio = layered_trimmed
+
+                layer_windows = extract_windows(layered_audio, WINDOW_SIZE)
+                layer_sample_id = f"{sample_id}_layer{layer_string}"
+
+                for win_idx, window in enumerate(layer_windows):
+                    features = extractor.extract_window_features(
+                        window, sr, string_num, fret_num, layer_sample_id, win_idx
+                    )
+                    all_features.append(features)
 
     # Generate augmented versions
     if augmenter is not None:
@@ -599,6 +782,37 @@ def parse_args():
     parser.add_argument("--no-noise", action="store_true", help="Disable noise augmentation")
     parser.add_argument("--no-pitch-drift", action="store_true", help="Disable pitch drift augmentation")
 
+    # String layering options
+    parser.add_argument(
+        "--no-layer",
+        action="store_true",
+        help="Disable adjacent string layering augmentation"
+    )
+    parser.add_argument(
+        "--layer-probability",
+        type=float,
+        default=STRING_LAYER_PROBABILITY,
+        help=f"Probability of applying string layering (default: {STRING_LAYER_PROBABILITY})"
+    )
+    parser.add_argument(
+        "--layer-volume-min",
+        type=float,
+        default=STRING_LAYER_VOLUME_MIN,
+        help=f"Minimum layer volume ratio (default: {STRING_LAYER_VOLUME_MIN})"
+    )
+    parser.add_argument(
+        "--layer-volume-max",
+        type=float,
+        default=STRING_LAYER_VOLUME_MAX,
+        help=f"Maximum layer volume ratio (default: {STRING_LAYER_VOLUME_MAX})"
+    )
+    parser.add_argument(
+        "--layer-samples-dir",
+        type=str,
+        default=None,
+        help="Directory containing layer samples (default: ../frontend/layer_samples)"
+    )
+
     return parser.parse_args()
 
 
@@ -635,6 +849,10 @@ def main():
 
     print(f"Found {len(samples)} total audio files")
 
+    # Set up random seed for reproducibility
+    random_seed = args.seed if args.seed is not None else int(time.time())
+    main_rng = np.random.default_rng(random_seed)
+
     augmenter = None
     use_augmentation = USE_AUGMENTATION and not args.no_augment
 
@@ -650,9 +868,34 @@ def main():
             pitch_drift_enabled=True,
         )
 
-        random_seed = int(time.time())
         augmenter.config.random_seed = random_seed
         augmenter._rng = np.random.default_rng(random_seed)
+
+    # Set up string layer mixer for adjacent string interference simulation
+    layer_mixer = None
+    use_layering = USE_STRING_LAYERING and not args.no_layer
+
+    if use_layering:
+        if args.layer_samples_dir:
+            layer_samples_dir = Path(args.layer_samples_dir)
+        else:
+            layer_samples_dir = script_dir.parent / "frontend" / "layer_samples"
+
+        print(f"\nString layering enabled (probability: {args.layer_probability:.0%})")
+        print(f"Looking for layer samples in: {layer_samples_dir}")
+
+        layer_mixer = StringLayerMixer(
+            layer_samples_dir=layer_samples_dir,
+            volume_min=args.layer_volume_min,
+            volume_max=args.layer_volume_max,
+            seed=random_seed,
+        )
+
+        if not layer_mixer.has_samples():
+            print("Warning: No layer samples found. String layering will be skipped.")
+            print("To record layer samples, create .wav files of open strings ringing (sustain only, no attack)")
+            print(f"Save them in: {layer_samples_dir}/{{string_num}}/{{sample_name}}.wav")
+            layer_mixer = None
 
     extractor = FeatureExtractor(n_harmonics=12)
     all_features: list[WindowFeatures] = []
@@ -674,6 +917,9 @@ def main():
                 sample_id=sample_id,
                 extractor=extractor,
                 augmenter=augmenter,
+                layer_mixer=layer_mixer,
+                layer_probability=args.layer_probability,
+                rng=main_rng,
             )
             all_features.extend(features)
 
@@ -706,6 +952,9 @@ def main():
         "augmentation_enabled": use_augmentation and args.augment,
         "augmentation_preset": args.augment_preset if (use_augmentation and args.augment) else None,
         "n_augmentations_per_sample": NUM_AUGMENTATIONS,
+        "string_layering_enabled": layer_mixer is not None,
+        "string_layering_probability": args.layer_probability if layer_mixer else None,
+        "string_layering_volume_range": [args.layer_volume_min, args.layer_volume_max] if layer_mixer else None,
         "feature_names": [
             "harmonic_ratios",
             "spectral_centroid",
@@ -743,11 +992,17 @@ def main():
         json.dump(output_data, f, indent=2, cls=NumpyEncoder)
 
     print(f"\nFeatures saved to: {output_path}")
-    if use_augmentation and args.augment:
-        original_count = sum(1 for f in all_features if "_aug" not in f["sample_id"])
-        augmented_count = len(all_features) - original_count
-        print(f"  Original windows: {original_count}")
+
+    # Count different sample types
+    original_count = sum(1 for f in all_features if "_aug" not in f["sample_id"] and "_layer" not in f["sample_id"])
+    augmented_count = sum(1 for f in all_features if "_aug" in f["sample_id"])
+    layered_count = sum(1 for f in all_features if "_layer" in f["sample_id"])
+
+    print(f"  Original windows: {original_count}")
+    if augmented_count > 0:
         print(f"  Augmented windows: {augmented_count}")
+    if layered_count > 0:
+        print(f"  String-layered windows: {layered_count}")
 
     # Print summary statistics
     if all_features:

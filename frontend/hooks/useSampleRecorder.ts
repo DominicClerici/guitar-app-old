@@ -25,6 +25,11 @@ interface UseSampleRecorderOptions {
   pluckThreshold?: number
 }
 
+export interface TrimOptions {
+  trimStartMs: number
+  trimEndMs: number
+}
+
 interface UseSampleRecorderResult {
   sessionState: SessionState
   recordingPhase: RecordingPhase
@@ -36,6 +41,7 @@ interface UseSampleRecorderResult {
   stopSession: () => void
   discardSession: () => void
   getSampleBlob: (sample: RecordedSample) => Blob
+  getTrimmedSampleBlob: (sample: RecordedSample, options: TrimOptions) => Blob
 }
 
 const DEFAULT_SAMPLES_PER_SESSION = 5
@@ -291,58 +297,83 @@ export function useSampleRecorder(options: UseSampleRecorderOptions = {}): UseSa
     setRecordingPhase("idle")
   }, [])
 
-  const getSampleBlob = useCallback((sample: RecordedSample): Blob => {
-    const numChannels = 1
-    const bytesPerSample = 2
-    const dataLength = sample.audioData.length * bytesPerSample
-    const buffer = new ArrayBuffer(44 + dataLength)
-    const view = new DataView(buffer)
+  const createWavBlob = useCallback(
+    (audioData: Float32Array, sampleRate: number): Blob => {
+      const numChannels = 1
+      const bytesPerSample = 2
+      const dataLength = audioData.length * bytesPerSample
+      const buffer = new ArrayBuffer(44 + dataLength)
+      const view = new DataView(buffer)
 
-    // Remove DC offset
-    const mean = sample.audioData.reduce((a, b) => a + b, 0) / sample.audioData.length
-    for (let i = 0; i < sample.audioData.length; i++) {
-      sample.audioData[i] -= mean
-    }
-
-    const writeString = (offset: number, str: string) => {
-      for (let i = 0; i < str.length; i++) {
-        view.setUint8(offset + i, str.charCodeAt(i))
-      }
-    }
-
-    writeString(0, "RIFF")
-    view.setUint32(4, 36 + dataLength, true)
-    writeString(8, "WAVE")
-    writeString(12, "fmt ")
-    view.setUint32(16, 16, true)
-    view.setUint16(20, 1, true)
-    view.setUint16(22, numChannels, true)
-    view.setUint32(24, sample.sampleRate, true)
-    view.setUint32(28, sample.sampleRate * numChannels * bytesPerSample, true)
-    view.setUint16(32, numChannels * bytesPerSample, true)
-    view.setUint16(34, bytesPerSample * 8, true)
-    writeString(36, "data")
-    view.setUint32(40, dataLength, true)
-
-    // Apply a short fade-out to prevent end-of-sample pops
-    const fadeOutSamples = Math.min(Math.floor(sample.sampleRate * 0.01), sample.audioData.length)
-    const fadeOutStart = sample.audioData.length - fadeOutSamples
-
-    let offset = 44
-    for (let i = 0; i < sample.audioData.length; i++) {
-      let s = Math.max(-1, Math.min(1, sample.audioData[i]))
-
-      if (i >= fadeOutStart) {
-        const fadeProgress = (i - fadeOutStart) / fadeOutSamples
-        s *= 1 - fadeProgress
+      // Remove DC offset
+      const mean = audioData.reduce((a, b) => a + b, 0) / audioData.length
+      const dcCorrectedData = new Float32Array(audioData.length)
+      for (let i = 0; i < audioData.length; i++) {
+        dcCorrectedData[i] = audioData[i] - mean
       }
 
-      view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true)
-      offset += 2
-    }
+      const writeString = (offset: number, str: string) => {
+        for (let i = 0; i < str.length; i++) {
+          view.setUint8(offset + i, str.charCodeAt(i))
+        }
+      }
 
-    return new Blob([buffer], { type: "audio/wav" })
-  }, [])
+      writeString(0, "RIFF")
+      view.setUint32(4, 36 + dataLength, true)
+      writeString(8, "WAVE")
+      writeString(12, "fmt ")
+      view.setUint32(16, 16, true)
+      view.setUint16(20, 1, true)
+      view.setUint16(22, numChannels, true)
+      view.setUint32(24, sampleRate, true)
+      view.setUint32(28, sampleRate * numChannels * bytesPerSample, true)
+      view.setUint16(32, numChannels * bytesPerSample, true)
+      view.setUint16(34, bytesPerSample * 8, true)
+      writeString(36, "data")
+      view.setUint32(40, dataLength, true)
+
+      // Apply a short fade-out to prevent end-of-sample pops
+      const fadeOutSamples = Math.min(Math.floor(sampleRate * 0.01), dcCorrectedData.length)
+      const fadeOutStart = dcCorrectedData.length - fadeOutSamples
+
+      let offset = 44
+      for (let i = 0; i < dcCorrectedData.length; i++) {
+        let s = Math.max(-1, Math.min(1, dcCorrectedData[i]))
+
+        if (i >= fadeOutStart) {
+          const fadeProgress = (i - fadeOutStart) / fadeOutSamples
+          s *= 1 - fadeProgress
+        }
+
+        view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true)
+        offset += 2
+      }
+
+      return new Blob([buffer], { type: "audio/wav" })
+    },
+    [],
+  )
+
+  const getSampleBlob = useCallback(
+    (sample: RecordedSample): Blob => {
+      return createWavBlob(sample.audioData, sample.sampleRate)
+    },
+    [createWavBlob],
+  )
+
+  const getTrimmedSampleBlob = useCallback(
+    (sample: RecordedSample, options: TrimOptions): Blob => {
+      const startSample = Math.floor((options.trimStartMs / 1000) * sample.sampleRate)
+      const endSample = Math.floor((options.trimEndMs / 1000) * sample.sampleRate)
+
+      const clampedStart = Math.max(0, Math.min(startSample, sample.audioData.length))
+      const clampedEnd = Math.max(clampedStart, Math.min(endSample, sample.audioData.length))
+
+      const trimmedData = sample.audioData.slice(clampedStart, clampedEnd)
+      return createWavBlob(trimmedData, sample.sampleRate)
+    },
+    [createWavBlob],
+  )
 
   return {
     sessionState,
@@ -355,5 +386,6 @@ export function useSampleRecorder(options: UseSampleRecorderOptions = {}): UseSa
     stopSession,
     discardSession,
     getSampleBlob,
+    getTrimmedSampleBlob,
   }
 }
