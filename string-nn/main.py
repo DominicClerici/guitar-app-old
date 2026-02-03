@@ -17,6 +17,28 @@ from augment import AudioAugmenter, AugmentationConfig, create_augmenter
 
 WINDOW_SIZE = 4096  # ~93ms at 44.1kHz, matches browser inference
 
+# Amplitude normalization to match browser inference exactly
+# See: frontend/hooks/useStringClassifier.ts
+TARGET_RMS = 0.026
+
+
+def calculate_rms(samples: np.ndarray) -> float:
+    """Calculate RMS energy of audio samples. Matches browser's calculateRMS."""
+    return float(np.sqrt(np.mean(samples ** 2)))
+
+
+def normalize_audio_amplitude(samples: np.ndarray, target_rms: float = TARGET_RMS) -> np.ndarray:
+    """
+    Normalize audio amplitude to target RMS level.
+    Matches browser's normalizeAudioAmplitude exactly.
+    """
+    current_rms = calculate_rms(samples)
+    if current_rms < 1e-10:
+        return samples
+
+    gain = target_rms / current_rms
+    return samples * gain
+
 
 class WindowFeatures(TypedDict):
     string: int
@@ -249,6 +271,9 @@ class FeatureExtractor:
         self, window: np.ndarray, sr: int, string: int, fret: int, sample_id: str, window_index: int
     ) -> WindowFeatures:
         """Extract features from a single 4096-sample window."""
+        # Normalize amplitude to match browser inference exactly
+        window = normalize_audio_amplitude(window, TARGET_RMS)
+
         fundamental = self.extract_fundamental(window, sr)
         harmonic_ratios = self.extract_harmonic_ratios(window, sr, fundamental)
         spectral_centroid = self.extract_spectral_centroid(window, sr)
@@ -505,6 +530,7 @@ def main():
     output_data = {
         "extracted_at": datetime.now().isoformat(),
         "window_size": WINDOW_SIZE,
+        "target_rms": TARGET_RMS,
         "total_windows": len(all_features),
         "total_audio_files": len(samples),
         "strings_covered": sorted(list(set(f["string"] for f in all_features))),

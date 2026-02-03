@@ -1,5 +1,6 @@
 import json
 import pickle
+import re
 from pathlib import Path
 
 import numpy as np
@@ -24,8 +25,41 @@ class GuitarStringDataset(Dataset):
         return self.features[idx], self.labels[idx]
 
 
-def load_features(features_dir: Path) -> tuple[np.ndarray, np.ndarray]:
-    """Load features from the latest JSON file."""
+def get_base_sample_id(sample_id: str) -> str:
+    """Extract base sample ID by removing _augN suffix."""
+    return re.sub(r"_aug\d+$", "", sample_id)
+
+
+def sample_to_feature_vector(sample: dict) -> list:
+    """Convert a sample dict to a feature vector."""
+    feature_vec = []
+    # Harmonic features (12 values)
+    feature_vec.extend(sample["harmonic_ratios"])
+    # Spectral features (2 values)
+    feature_vec.append(sample["spectral_centroid"])
+    feature_vec.append(sample["spectral_rolloff"])
+    # Timbral features (3 values)
+    feature_vec.append(sample["inharmonicity"])
+    feature_vec.append(sample["rms_energy"])
+    feature_vec.append(sample["energy_slope"])
+    # Frequency-relative features (3 values)
+    feature_vec.append(sample["log_frequency"])
+    feature_vec.append(sample["semitones_from_e2"])
+    feature_vec.append(sample["octave_number"])
+    # MFCCs (13 values)
+    feature_vec.extend(sample["mfcc"])
+    return feature_vec
+
+
+def load_features_with_file_split(
+    features_dir: Path, test_size: float = 0.2, random_state: int = 42
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Load features and split by audio file (not by window) to prevent data leakage.
+
+    Windows from the same audio file (including augmented versions) are kept together
+    in either train or validation set, never split across both.
+    """
     json_files = sorted(features_dir.glob("*.json"))
     if not json_files:
         raise FileNotFoundError(f"No feature files found in {features_dir}")
@@ -37,33 +71,67 @@ def load_features(features_dir: Path) -> tuple[np.ndarray, np.ndarray]:
         data = json.load(f)
 
     samples = data["samples"]
-    print(f"Loaded {len(samples)} samples")
+    print(f"Loaded {len(samples)} windows")
 
-    features_list = []
-    labels_list = []
-
+    # Group samples by base audio file (original recording, ignoring augmentations)
+    file_to_samples: dict[str, list[dict]] = {}
     for sample in samples:
-        feature_vec = []
-        # Harmonic features (12 values)
-        feature_vec.extend(sample["harmonic_ratios"])
-        # Spectral features (2 values)
-        feature_vec.append(sample["spectral_centroid"])
-        feature_vec.append(sample["spectral_rolloff"])
-        # Timbral features (3 values)
-        feature_vec.append(sample["inharmonicity"])
-        feature_vec.append(sample["rms_energy"])
-        feature_vec.append(sample["energy_slope"])
-        # Frequency-relative features (3 values)
-        feature_vec.append(sample["log_frequency"])
-        feature_vec.append(sample["semitones_from_e2"])
-        feature_vec.append(sample["octave_number"])
-        # MFCCs (13 values)
-        feature_vec.extend(sample["mfcc"])
+        base_id = get_base_sample_id(sample["sample_id"])
+        # Create a unique key combining string, fret, and base sample ID
+        file_key = f"{sample['string']}_{sample['fret']}_{base_id}"
+        if file_key not in file_to_samples:
+            file_to_samples[file_key] = []
+        file_to_samples[file_key].append(sample)
 
-        features_list.append(feature_vec)
-        labels_list.append(sample["string"])
+    print(f"Found {len(file_to_samples)} unique audio files")
 
-    return np.array(features_list), np.array(labels_list)
+    # Get unique file keys and their string labels for stratification
+    file_keys = list(file_to_samples.keys())
+    file_labels = [file_to_samples[k][0]["string"] for k in file_keys]
+
+    # Split at the file level
+    unique_labels = set(file_labels)
+    if len(unique_labels) < 2:
+        print(f"\nWarning: Only {len(unique_labels)} class(es) found.")
+        print("Using all data for both train and validation.")
+        train_keys = file_keys
+        val_keys = file_keys
+    elif len(file_keys) < 10:
+        print("\nWarning: Very few audio files. Using all data for both train and validation.")
+        train_keys = file_keys
+        val_keys = file_keys
+    else:
+        train_keys, val_keys = train_test_split(
+            file_keys,
+            test_size=test_size,
+            stratify=file_labels,
+            random_state=random_state,
+        )
+
+    print(f"Train files: {len(train_keys)}, Validation files: {len(val_keys)}")
+
+    # Collect windows for train and validation sets
+    train_features, train_labels = [], []
+    val_features, val_labels = [], []
+
+    for file_key in train_keys:
+        for sample in file_to_samples[file_key]:
+            train_features.append(sample_to_feature_vector(sample))
+            train_labels.append(sample["string"])
+
+    for file_key in val_keys:
+        for sample in file_to_samples[file_key]:
+            val_features.append(sample_to_feature_vector(sample))
+            val_labels.append(sample["string"])
+
+    print(f"Train windows: {len(train_features)}, Validation windows: {len(val_features)}")
+
+    return (
+        np.array(train_features),
+        np.array(val_features),
+        np.array(train_labels),
+        np.array(val_labels),
+    )
 
 
 def compute_class_weights(labels: np.ndarray, num_classes: int = 6) -> torch.Tensor:
@@ -143,30 +211,26 @@ def train(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    features, labels = load_features(features_dir)
-    print(f"Feature shape: {features.shape}")
-    print(f"Labels shape: {labels.shape}")
-    print(f"Unique labels: {np.unique(labels)}")
-    print(f"Label distribution: {np.bincount(labels, minlength=6)}")
+    # Load features with file-level split to prevent data leakage
+    X_train_raw, X_val_raw, y_train, y_val = load_features_with_file_split(features_dir)
 
-    num_unique_labels = len(np.unique(labels))
+    print(f"\nTrain feature shape: {X_train_raw.shape}")
+    print(f"Val feature shape: {X_val_raw.shape}")
+    print(f"Train label distribution: {np.bincount(y_train, minlength=6)}")
+    print(f"Val label distribution: {np.bincount(y_val, minlength=6)}")
+
+    all_labels = np.concatenate([y_train, y_val])
+    num_unique_labels = len(np.unique(all_labels))
     if num_unique_labels < 2:
         print(f"\nWarning: Only {num_unique_labels} class(es) found in data.")
         print("Need samples from at least 2 different strings to train a classifier.")
         print("Collect more samples and run feature extraction first.")
         return
 
+    # Fit scaler on training data only, then transform both sets
     scaler = StandardScaler()
-    features_scaled = scaler.fit_transform(features)
-
-    if len(features) < 10:
-        print("\nWarning: Very few samples. Using all data for training (no validation).")
-        X_train, y_train = features_scaled, labels
-        X_val, y_val = features_scaled, labels
-    else:
-        X_train, X_val, y_train, y_val = train_test_split(
-            features_scaled, labels, test_size=0.2, stratify=labels, random_state=42
-        )
+    X_train = scaler.fit_transform(X_train_raw)
+    X_val = scaler.transform(X_val_raw)
 
     print(f"\nTraining samples: {len(X_train)}")
     print(f"Validation samples: {len(X_val)}")
@@ -178,11 +242,11 @@ def train(
     train_loader = DataLoader(train_dataset, batch_size=actual_batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=actual_batch_size)
 
-    input_size = features.shape[1]
+    input_size = X_train.shape[1]
     model = StringClassifier(input_size=input_size, num_classes=6).to(device)
     print(f"\nModel parameters: {count_parameters(model):,}")
 
-    class_weights = compute_class_weights(labels).to(device)
+    class_weights = compute_class_weights(y_train).to(device)
     criterion = nn.CrossEntropyLoss(weight=class_weights)
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=0.01)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
