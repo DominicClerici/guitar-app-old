@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-MODEL_SIZE_BASE = 32
+MODEL_SIZE_BASE = 64
 
 class StringClassifier(nn.Module):
     """

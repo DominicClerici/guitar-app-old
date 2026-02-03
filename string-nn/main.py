@@ -6,6 +6,7 @@ import librosa
 from datetime import datetime
 from pathlib import Path
 from typing import TypedDict
+import time
 
 from collections import defaultdict
 from utils.freq_estimation import (
@@ -20,6 +21,88 @@ WINDOW_SIZE = 4096  # ~93ms at 44.1kHz, matches browser inference
 # Amplitude normalization to match browser inference exactly
 # See: frontend/hooks/useStringClassifier.ts
 TARGET_RMS = 0.026
+
+USE_AUGMENTATION = True
+NUM_AUGMENTATIONS = 2
+AUGMENTATION_PRESET = "moderate"
+
+# Open string frequencies by string number (0-5, matching sample directory structure)
+# String 0 = low E (thickest), String 5 = high E (thinnest)
+OPEN_STRING_FREQS_BY_NUMBER = {
+    0: 82.41,   # low E
+    1: 110.00,  # A
+    2: 146.83,  # D
+    3: 196.00,  # G
+    4: 246.94,  # B
+    5: 329.63,  # high E
+}
+
+
+def calculate_expected_frequency(string: int, fret: int) -> float:
+    """Calculate the expected fundamental frequency for a given string and fret."""
+    if string not in OPEN_STRING_FREQS_BY_NUMBER:
+        return 0.0
+    open_freq = OPEN_STRING_FREQS_BY_NUMBER[string]
+    return open_freq * (2 ** (fret / 12))
+
+
+class DiscardedSample(TypedDict):
+    sample_id: str
+    string: int
+    fret: int
+    detected_freq: float
+    expected_freq: float
+
+
+def validate_fundamental_frequencies(
+    features: list["WindowFeatures"],
+    tolerance: float = 0.05
+) -> tuple[list["WindowFeatures"], list[DiscardedSample]]:
+    """
+    Validate that detected fundamental frequencies are within tolerance of expected values.
+
+    Args:
+        features: List of extracted window features
+        tolerance: Allowed deviation from expected frequency (0.05 = ±5%)
+
+    Returns:
+        Tuple of (valid_features, discarded_samples)
+    """
+    valid_features = []
+    discarded: dict[str, DiscardedSample] = {}
+
+    for feature in features:
+        string = feature["string"]
+        fret = feature["fret"]
+        detected_freq = feature["fundamental_freq"]
+        sample_id = feature["sample_id"]
+
+        expected_freq = calculate_expected_frequency(string, fret)
+
+        if expected_freq <= 0 or detected_freq <= 0:
+            if sample_id not in discarded:
+                discarded[sample_id] = DiscardedSample(
+                    sample_id=sample_id,
+                    string=string,
+                    fret=fret,
+                    detected_freq=detected_freq,
+                    expected_freq=expected_freq,
+                )
+            continue
+
+        deviation = abs(detected_freq - expected_freq) / expected_freq
+        if deviation <= tolerance:
+            valid_features.append(feature)
+        elif sample_id not in discarded:
+            discarded[sample_id] = DiscardedSample(
+                sample_id=sample_id,
+                string=string,
+                fret=fret,
+                detected_freq=detected_freq,
+                expected_freq=expected_freq,
+            )
+
+    return valid_features, sorted(discarded.values(), key=lambda x: x["sample_id"])
 
 
 def calculate_rms(samples: np.ndarray) -> float:
@@ -356,7 +439,6 @@ def process_audio_with_augmentation(
     sample_id: str,
     extractor: FeatureExtractor,
     augmenter: AudioAugmenter | None = None,
-    n_augmentations: int = 0,
 ) -> list[WindowFeatures]:
     """
     Process audio and optionally generate augmented versions.
@@ -369,7 +451,6 @@ def process_audio_with_augmentation(
         sample_id: Unique sample identifier
         extractor: Feature extractor instance
         augmenter: Optional augmenter for data augmentation
-        n_augmentations: Number of augmented versions to generate (0 = none)
 
     Returns:
         List of WindowFeatures from original and augmented audio
@@ -390,8 +471,8 @@ def process_audio_with_augmentation(
         all_features.append(features)
 
     # Generate augmented versions
-    if augmenter is not None and n_augmentations > 0:
-        for aug_idx in range(n_augmentations):
+    if augmenter is not None:
+        for aug_idx in range(NUM_AUGMENTATIONS):
             augmented_audio, applied = augmenter.augment(y)
 
             # Trim augmented audio
@@ -471,40 +552,29 @@ def main():
 
     # Setup augmenter if requested
     augmenter = None
-    n_augmentations = 0
 
-    if args.augment:
-        print(f"\nAugmentation enabled (preset: {args.augment_preset}, {args.n_augmentations} versions per sample)")
+    if USE_AUGMENTATION:
+        print(f"\nAugmentation enabled, creating {NUM_AUGMENTATIONS} augmented versions per sample")
 
         augmenter = create_augmenter(
-            preset=args.augment_preset,
-            reverb_enabled=not args.no_reverb,
-            chorus_enabled=not args.no_chorus,
-            eq_enabled=not args.no_eq,
-            noise_enabled=not args.no_noise,
-            pitch_drift_enabled=not args.no_pitch_drift,
+            preset=AUGMENTATION_PRESET,
+            reverb_enabled=True,
+            chorus_enabled=True,
+            eq_enabled=True,
+            noise_enabled=True,
+            pitch_drift_enabled=True,
         )
 
-        if args.seed is not None:
-            augmenter.config.random_seed = args.seed
-            augmenter._rng = np.random.default_rng(args.seed)
-
-        n_augmentations = args.n_augmentations
-
-        # Print augmentation settings
-        print("  Reverb:", "enabled" if augmenter.config.reverb.enabled else "disabled")
-        print("  Chorus:", "enabled" if augmenter.config.chorus.enabled else "disabled")
-        print("  EQ:", "enabled" if augmenter.config.eq.enabled else "disabled")
-        print("  Noise:", "enabled" if augmenter.config.noise.enabled else "disabled")
-        print("  Pitch drift:", "enabled" if augmenter.config.pitch_drift.enabled else "disabled")
-        print()
+        random_seed = int(time.time())
+        augmenter.config.random_seed = random_seed
+        augmenter._rng = np.random.default_rng(random_seed)
 
     extractor = FeatureExtractor(n_harmonics=12)
     all_features: list[WindowFeatures] = []
     augmentation_stats = {"total_augmented": 0, "effects_applied": defaultdict(int)}
 
     for i, (path, string_num, fret_num) in enumerate(samples):
-        if i % 10 == 0:
+        if i % 25 == 0:
             print(f"Processing [{i+1}/{len(samples)}]")
 
         try:
@@ -519,12 +589,26 @@ def main():
                 sample_id=sample_id,
                 extractor=extractor,
                 augmenter=augmenter,
-                n_augmentations=n_augmentations,
             )
             all_features.extend(features)
 
         except Exception as e:
             print(f"  Error processing {path}: {e}")
+    print(f"Processed {len(all_features)} windows from {len(samples)} samples with {augmentation_stats['total_augmented']} augmented samples")
+
+    # Validate fundamental frequencies
+    print("\n--- Frequency Validation ---")
+    original_count = len(all_features)
+    all_features, discarded_samples = validate_fundamental_frequencies(all_features, tolerance=0.05)
+    discarded_count = original_count - len(all_features)
+
+    if discarded_samples:
+        print(f"Discarded {discarded_count} windows from {len(discarded_samples)} samples with invalid fundamental frequencies (>5% deviation):")
+        for sample in discarded_samples:
+            print(f"  - {sample['sample_id']} (string {sample['string']}, fret {sample['fret']}): "
+                  f"detected {sample['detected_freq']:.1f} Hz, expected {sample['expected_freq']:.1f} Hz")
+    else:
+        print("All samples passed frequency validation (within ±5% of expected)")
 
     # Create output with metadata
     output_data = {
@@ -534,9 +618,9 @@ def main():
         "total_windows": len(all_features),
         "total_audio_files": len(samples),
         "strings_covered": sorted(list(set(f["string"] for f in all_features))),
-        "augmentation_enabled": args.augment,
-        "augmentation_preset": args.augment_preset if args.augment else None,
-        "n_augmentations_per_sample": n_augmentations,
+        "augmentation_enabled": USE_AUGMENTATION and args.augment,
+        "augmentation_preset": args.augment_preset if (USE_AUGMENTATION and args.augment) else None,
+        "n_augmentations_per_sample": NUM_AUGMENTATIONS,
         "feature_names": [
             "harmonic_ratios",
             "spectral_centroid",
@@ -572,9 +656,7 @@ def main():
         json.dump(output_data, f, indent=2, cls=NumpyEncoder)
 
     print(f"\nFeatures saved to: {output_path}")
-    print(f"Total windows processed: {len(all_features)}")
-    print(f"From {len(samples)} audio files")
-    if args.augment:
+    if USE_AUGMENTATION and args.augment:
         original_count = sum(1 for f in all_features if "_aug" not in f["sample_id"])
         augmented_count = len(all_features) - original_count
         print(f"  Original windows: {original_count}")

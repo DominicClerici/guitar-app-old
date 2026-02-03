@@ -203,6 +203,7 @@ def train(
     learning_rate: float = 0.001,
     patience: int = 30,
 ):
+    print("\n ------ Training ------")
     script_dir = Path(__file__).parent
     features_dir = script_dir / "data" / "features"
     output_dir = script_dir / "data" / "models"
