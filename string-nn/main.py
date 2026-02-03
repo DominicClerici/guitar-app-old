@@ -1,5 +1,6 @@
 import os
 import json
+import argparse
 import numpy as np
 import librosa
 from datetime import datetime
@@ -11,6 +12,7 @@ from utils.freq_estimation import (
     freq_from_autocorr,
     freq_from_hps,
 )
+from augment import AudioAugmenter, AugmentationConfig, create_augmenter
 
 
 WINDOW_SIZE = 4096  # ~93ms at 44.1kHz, matches browser inference
@@ -321,7 +323,112 @@ def extract_windows(y: np.ndarray, window_size: int = WINDOW_SIZE, hop_size: int
     return windows
 
 
+def process_audio_with_augmentation(
+    y: np.ndarray,
+    sr: int,
+    string_num: int,
+    fret_num: int,
+    sample_id: str,
+    extractor: FeatureExtractor,
+    augmenter: AudioAugmenter | None = None,
+    n_augmentations: int = 0,
+) -> list[WindowFeatures]:
+    """
+    Process audio and optionally generate augmented versions.
+
+    Args:
+        y: Audio signal
+        sr: Sample rate
+        string_num: Guitar string number
+        fret_num: Fret number
+        sample_id: Unique sample identifier
+        extractor: Feature extractor instance
+        augmenter: Optional augmenter for data augmentation
+        n_augmentations: Number of augmented versions to generate (0 = none)
+
+    Returns:
+        List of WindowFeatures from original and augmented audio
+    """
+    all_features = []
+
+    # Process original audio
+    y_trimmed, _ = librosa.effects.trim(y, top_db=20)
+    if len(y_trimmed) > sr * 0.1:
+        y = y_trimmed
+
+    windows = extract_windows(y, WINDOW_SIZE)
+
+    for win_idx, window in enumerate(windows):
+        features = extractor.extract_window_features(
+            window, sr, string_num, fret_num, sample_id, win_idx
+        )
+        all_features.append(features)
+
+    # Generate augmented versions
+    if augmenter is not None and n_augmentations > 0:
+        for aug_idx in range(n_augmentations):
+            augmented_audio, applied = augmenter.augment(y)
+
+            # Trim augmented audio
+            aug_trimmed, _ = librosa.effects.trim(augmented_audio, top_db=20)
+            if len(aug_trimmed) > sr * 0.1:
+                augmented_audio = aug_trimmed
+
+            aug_windows = extract_windows(augmented_audio, WINDOW_SIZE)
+            aug_sample_id = f"{sample_id}_aug{aug_idx}"
+
+            for win_idx, window in enumerate(aug_windows):
+                features = extractor.extract_window_features(
+                    window, sr, string_num, fret_num, aug_sample_id, win_idx
+                )
+                all_features.append(features)
+
+    return all_features
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Extract features from guitar audio samples with optional augmentation."
+    )
+
+    parser.add_argument(
+        "--augment",
+        action="store_true",
+        help="Enable data augmentation"
+    )
+    parser.add_argument(
+        "--augment-preset",
+        type=str,
+        choices=["subtle", "moderate", "aggressive"],
+        default="moderate",
+        help="Augmentation preset (default: moderate)"
+    )
+    parser.add_argument(
+        "--n-augmentations",
+        type=int,
+        default=2,
+        help="Number of augmented versions per sample (default: 2)"
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Random seed for reproducible augmentations"
+    )
+
+    # Individual augmentation toggles
+    parser.add_argument("--no-reverb", action="store_true", help="Disable reverb augmentation")
+    parser.add_argument("--no-chorus", action="store_true", help="Disable chorus augmentation")
+    parser.add_argument("--no-eq", action="store_true", help="Disable EQ augmentation")
+    parser.add_argument("--no-noise", action="store_true", help="Disable noise augmentation")
+    parser.add_argument("--no-pitch-drift", action="store_true", help="Disable pitch drift augmentation")
+
+    return parser.parse_args()
+
+
 def main():
+    args = parse_args()
+
     script_dir = Path(__file__).parent
     samples_dir = script_dir.parent / "frontend" / "samples"
     output_dir = script_dir / "data" / "features"
@@ -337,8 +444,39 @@ def main():
 
     print(f"Found {len(samples)} audio files")
 
+    # Setup augmenter if requested
+    augmenter = None
+    n_augmentations = 0
+
+    if args.augment:
+        print(f"\nAugmentation enabled (preset: {args.augment_preset}, {args.n_augmentations} versions per sample)")
+
+        augmenter = create_augmenter(
+            preset=args.augment_preset,
+            reverb_enabled=not args.no_reverb,
+            chorus_enabled=not args.no_chorus,
+            eq_enabled=not args.no_eq,
+            noise_enabled=not args.no_noise,
+            pitch_drift_enabled=not args.no_pitch_drift,
+        )
+
+        if args.seed is not None:
+            augmenter.config.random_seed = args.seed
+            augmenter._rng = np.random.default_rng(args.seed)
+
+        n_augmentations = args.n_augmentations
+
+        # Print augmentation settings
+        print("  Reverb:", "enabled" if augmenter.config.reverb.enabled else "disabled")
+        print("  Chorus:", "enabled" if augmenter.config.chorus.enabled else "disabled")
+        print("  EQ:", "enabled" if augmenter.config.eq.enabled else "disabled")
+        print("  Noise:", "enabled" if augmenter.config.noise.enabled else "disabled")
+        print("  Pitch drift:", "enabled" if augmenter.config.pitch_drift.enabled else "disabled")
+        print()
+
     extractor = FeatureExtractor(n_harmonics=12)
     all_features: list[WindowFeatures] = []
+    augmentation_stats = {"total_augmented": 0, "effects_applied": defaultdict(int)}
 
     for i, (path, string_num, fret_num) in enumerate(samples):
         if i % 10 == 0:
@@ -346,21 +484,19 @@ def main():
 
         try:
             y, sr = librosa.load(str(path), sr=None)
-
-            # Trim silence
-            y_trimmed, _ = librosa.effects.trim(y, top_db=20)
-            if len(y_trimmed) > sr * 0.1:
-                y = y_trimmed
-
-            # Extract windows
-            windows = extract_windows(y, WINDOW_SIZE)
             sample_id = path.stem
 
-            for win_idx, window in enumerate(windows):
-                features = extractor.extract_window_features(
-                    window, sr, string_num, fret_num, sample_id, win_idx
-                )
-                all_features.append(features)
+            features = process_audio_with_augmentation(
+                y=y,
+                sr=sr,
+                string_num=string_num,
+                fret_num=fret_num,
+                sample_id=sample_id,
+                extractor=extractor,
+                augmenter=augmenter,
+                n_augmentations=n_augmentations,
+            )
+            all_features.extend(features)
 
         except Exception as e:
             print(f"  Error processing {path}: {e}")
@@ -372,6 +508,9 @@ def main():
         "total_windows": len(all_features),
         "total_audio_files": len(samples),
         "strings_covered": sorted(list(set(f["string"] for f in all_features))),
+        "augmentation_enabled": args.augment,
+        "augmentation_preset": args.augment_preset if args.augment else None,
+        "n_augmentations_per_sample": n_augmentations,
         "feature_names": [
             "harmonic_ratios",
             "spectral_centroid",
@@ -389,7 +528,8 @@ def main():
 
     # Save with timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_path = output_dir / f"{timestamp}.json"
+    suffix = "_augmented" if args.augment else ""
+    output_path = output_dir / f"{timestamp}{suffix}.json"
 
     # Custom encoder to handle numpy types
     class NumpyEncoder(json.JSONEncoder):
@@ -408,6 +548,11 @@ def main():
     print(f"\nFeatures saved to: {output_path}")
     print(f"Total windows processed: {len(all_features)}")
     print(f"From {len(samples)} audio files")
+    if args.augment:
+        original_count = sum(1 for f in all_features if "_aug" not in f["sample_id"])
+        augmented_count = len(all_features) - original_count
+        print(f"  Original windows: {original_count}")
+        print(f"  Augmented windows: {augmented_count}")
 
     # Print summary statistics
     if all_features:

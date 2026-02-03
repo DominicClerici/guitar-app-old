@@ -44,7 +44,14 @@ def export_to_onnx(
             },
             dynamo=False,
         )
-    print(f"ONNX model saved to: {onnx_path}")
+    model_size_bytes = onnx_path.stat().st_size
+    if model_size_bytes < 1024:
+        size_str = f"{model_size_bytes} bytes"
+    elif model_size_bytes < 1024 * 1024:
+        size_str = f"{model_size_bytes / 1024:.1f} KB"
+    else:
+        size_str = f"{model_size_bytes / (1024 * 1024):.2f} MB"
+    print(f"ONNX model saved to: {onnx_path} ({size_str})")
 
     with open(scaler_path, "rb") as f:
         scaler = pickle.load(f)

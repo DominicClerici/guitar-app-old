@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 
+MODEL_SIZE_BASE = 32
 
 class StringClassifier(nn.Module):
     """
@@ -12,15 +13,15 @@ class StringClassifier(nn.Module):
         super().__init__()
 
         self.network = nn.Sequential(
-            nn.Linear(input_size, 64),
-            nn.BatchNorm1d(64),
+            nn.Linear(input_size, MODEL_SIZE_BASE),
+            nn.BatchNorm1d(MODEL_SIZE_BASE),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(64, 32),
-            nn.BatchNorm1d(32),
+            nn.Linear(MODEL_SIZE_BASE, MODEL_SIZE_BASE // 2),
+            nn.BatchNorm1d(MODEL_SIZE_BASE // 2),
             nn.ReLU(),
             nn.Dropout(dropout * 0.67),
-            nn.Linear(32, num_classes),
+            nn.Linear(MODEL_SIZE_BASE // 2, num_classes),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
