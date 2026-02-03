@@ -33,17 +33,19 @@ def get_base_sample_id(sample_id: str) -> str:
 
 
 def _sample_to_full_feature_vector(sample: dict) -> list:
-    """Convert a sample dict to the full feature vector (all 33 features)."""
+    """Convert a sample dict to the full feature vector (all 35 features)."""
     feature_vec = []
     # Harmonic features (12 values)
     feature_vec.extend(sample["harmonic_ratios"])
     # Spectral features (2 values)
     feature_vec.append(sample["spectral_centroid"])
     feature_vec.append(sample["spectral_rolloff"])
-    # Timbral features (3 values)
+    # Timbral features (5 values)
     feature_vec.append(sample["inharmonicity"])
     feature_vec.append(sample["rms_energy"])
     feature_vec.append(sample["energy_slope"])
+    feature_vec.append(sample["zcr"])
+    feature_vec.append(sample["odd_even_harmonic_ratio"])
     # Frequency-relative features (3 values)
     feature_vec.append(sample["log_frequency"])
     feature_vec.append(sample["semitones_from_e2"])

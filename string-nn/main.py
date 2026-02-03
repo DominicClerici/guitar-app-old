@@ -23,7 +23,7 @@ WINDOW_SIZE = 4096  # ~93ms at 44.1kHz, matches browser inference
 TARGET_RMS = 0.026
 
 USE_AUGMENTATION = True
-NUM_AUGMENTATIONS = 1
+NUM_AUGMENTATIONS = 2
 AUGMENTATION_PRESET = "moderate"
 
 USE_FINETUNE_SAMPLES = False
@@ -137,6 +137,8 @@ class WindowFeatures(TypedDict):
     inharmonicity: float
     rms_energy: float
     energy_slope: float  # positive=onset, negative=decay, ~0=sustain
+    zcr: float  # zero crossing rate - captures brightness/noisiness
+    odd_even_harmonic_ratio: float  # ratio of odd to even harmonic energy
     # Frequency-relative features
     log_frequency: float
     semitones_from_e2: float
@@ -304,6 +306,51 @@ class FeatureExtractor:
         # Return mean absolute deviation as inharmonicity coefficient
         return float(np.mean(np.abs(deviations)))
 
+    def extract_zcr(self, y: np.ndarray) -> float:
+        """Extract zero crossing rate - captures brightness/noisiness of signal."""
+        if len(y) < 2:
+            return 0.0
+        signs = np.sign(y)
+        signs[signs == 0] = 1  # Treat zeros as positive
+        crossings = np.sum(signs[1:] != signs[:-1])
+        return float(crossings / (len(y) - 1))
+
+    def extract_odd_even_harmonic_ratio(self, y: np.ndarray, sr: int, fundamental: float) -> float:
+        """
+        Extract ratio of odd to even harmonic energy.
+        Captures harmonic character that differs between strings.
+        """
+        if fundamental <= 0:
+            return 0.0
+
+        n_fft = WINDOW_SIZE
+        fft = np.abs(np.fft.rfft(y, n=n_fft))
+        freqs = np.fft.rfftfreq(n_fft, 1/sr)
+
+        odd_energy = 0.0
+        even_energy = 0.0
+
+        for h in range(1, self.n_harmonics + 1):
+            target_freq = fundamental * h
+            tolerance_hz = fundamental * 0.05
+
+            mask = np.abs(freqs - target_freq) < tolerance_hz
+            if np.any(mask):
+                amp = np.max(fft[mask])
+            else:
+                idx = np.argmin(np.abs(freqs - target_freq))
+                amp = fft[idx]
+
+            if h % 2 == 1:  # Odd harmonic (1, 3, 5, ...)
+                odd_energy += amp
+            else:  # Even harmonic (2, 4, 6, ...)
+                even_energy += amp
+
+        if even_energy < 1e-10:
+            return 0.0
+
+        return float(odd_energy / even_energy)
+
     def extract_frequency_relative_features(
         self, fundamental: float
     ) -> tuple[float, float, int]:
@@ -366,6 +413,8 @@ class FeatureExtractor:
         inharmonicity = self.extract_inharmonicity(window, sr, fundamental)
         rms_energy = self.extract_rms_energy(window)
         energy_slope = self.extract_energy_slope(window)
+        zcr = self.extract_zcr(window)
+        odd_even_harmonic_ratio = self.extract_odd_even_harmonic_ratio(window, sr, fundamental)
         log_frequency, semitones_from_e2, octave_number = self.extract_frequency_relative_features(fundamental)
         mfcc = self.extract_mfcc_single(window, sr)
 
@@ -381,6 +430,8 @@ class FeatureExtractor:
             inharmonicity=inharmonicity,
             rms_energy=rms_energy,
             energy_slope=energy_slope,
+            zcr=zcr,
+            odd_even_harmonic_ratio=odd_even_harmonic_ratio,
             log_frequency=log_frequency,
             semitones_from_e2=semitones_from_e2,
             octave_number=octave_number,
@@ -662,6 +713,8 @@ def main():
             "inharmonicity",
             "rms_energy",
             "energy_slope",
+            "zcr",
+            "odd_even_harmonic_ratio",
             "log_frequency",
             "semitones_from_e2",
             "octave_number",

@@ -12,7 +12,7 @@ Filtering happens at training time.
 ALL_FEATURE_NAMES = (
     [f"harmonic_ratio_{i+1}" for i in range(12)] +
     ["spectral_centroid", "spectral_rolloff"] +
-    ["inharmonicity", "rms_energy", "energy_slope"] +
+    ["inharmonicity", "rms_energy", "energy_slope", "zcr", "odd_even_harmonic_ratio"] +
     ["log_frequency", "semitones_from_e2", "octave_number"] +
     [f"mfcc_{i}" for i in range(13)]
 )
@@ -31,21 +31,23 @@ ENABLED_FEATURES = [
     "harmonic_ratio_4",
     "harmonic_ratio_5",
     "harmonic_ratio_6",
-    # "harmonic_ratio_7",
-    # "harmonic_ratio_8",
-    # "harmonic_ratio_9",
-    # "harmonic_ratio_10",
-    # "harmonic_ratio_11",
-    # "harmonic_ratio_12",
+    "harmonic_ratio_7",
+    "harmonic_ratio_8",
+    "harmonic_ratio_9",
+    "harmonic_ratio_10",
+    "harmonic_ratio_11",
+    "harmonic_ratio_12",
 
     # Spectral features (2 features)
-    # "spectral_centroid",
-    # "spectral_rolloff",
+    "spectral_centroid",
+    "spectral_rolloff",
 
-    # Timbral features (3 features)
+    # Timbral features (5 features)
     "inharmonicity",
     # "rms_energy",
     "energy_slope",
+    "zcr",
+    "odd_even_harmonic_ratio",
 
     # Frequency-relative features (3 features)
     "log_frequency",
@@ -53,17 +55,17 @@ ENABLED_FEATURES = [
     "octave_number",
 
     # MFCCs (13 features) - mel-frequency cepstral coefficients
-    # "mfcc_0",
+    "mfcc_0",
     "mfcc_1",
     "mfcc_2",
-    # "mfcc_3",
+    "mfcc_3",
     "mfcc_4",
     "mfcc_5",
-    # "mfcc_6",
+    "mfcc_6",
     "mfcc_7",
     "mfcc_8",
     "mfcc_9",
-    # "mfcc_10",
+    "mfcc_10",
     "mfcc_11",
     "mfcc_12",
 ]
@@ -74,7 +76,7 @@ ENABLED_FEATURES = [
 FEATURE_GROUPS = {
     "harmonic_ratios": [f"harmonic_ratio_{i+1}" for i in range(12)],
     "spectral": ["spectral_centroid", "spectral_rolloff"],
-    "timbral": ["inharmonicity", "rms_energy", "energy_slope"],
+    "timbral": ["inharmonicity", "rms_energy", "energy_slope", "zcr", "odd_even_harmonic_ratio"],
     "frequency_relative": ["log_frequency", "semitones_from_e2", "octave_number"],
     "mfcc": [f"mfcc_{i}" for i in range(13)],
 }

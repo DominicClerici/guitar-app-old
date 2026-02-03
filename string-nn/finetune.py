@@ -28,6 +28,9 @@ from train import GuitarStringDataset, sample_to_feature_vector, compute_class_w
 from features_config import get_enabled_feature_names
 
 
+ADD_NOISE = False
+NUM_AUGMENTATIONS = 2
+
 FINETUNE_EPOCHS = 200
 FINETUNE_LR = 0.0005  # Lower LR for fine-tuning stability
 FINETUNE_BATCH_SIZE = 8
@@ -111,7 +114,7 @@ def prepare_finetune_data(
 def augment_features(
     features: np.ndarray,
     labels: np.ndarray,
-    num_augmentations: int = 3,
+    num_augmentations: int = NUM_AUGMENTATIONS,
     noise_std: float = 0.1,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
@@ -379,10 +382,14 @@ def finetune_from_samples(
     print(f"Train/Val split: {len(train_labels)} / {len(val_labels)}")
 
     # Only augment training data (not validation)
-    train_features_aug, train_labels_aug = augment_features(
-        train_features, train_labels, num_augmentations=5
-    )
-    print(f"Augmented training to {len(train_labels_aug)} samples")
+    if ADD_NOISE:
+        train_features_aug, train_labels_aug = augment_features(
+            train_features, train_labels, num_augmentations=NUM_AUGMENTATIONS
+        )
+        print(f"Augmented training to {len(train_labels_aug)} samples")
+    else:
+        train_features_aug = train_features
+        train_labels_aug = train_labels
 
     stats = finetune(
         model, train_features_aug, train_labels_aug, val_features, val_labels, device

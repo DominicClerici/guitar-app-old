@@ -13,6 +13,8 @@ export interface AudioFeatures {
   inharmonicity: number
   rmsEnergy: number
   energySlope: number
+  zcr: number
+  oddEvenHarmonicRatio: number
   fundamental: number
   logFrequency: number
   semitonesFromE2: number
@@ -378,6 +380,89 @@ export function extractOctaveNumber(fundamental: number): number {
   return Math.max(0, Math.min(octave, 3))
 }
 
+export function extractZeroCrossingRate(samples: Float32Array): number {
+  if (samples.length < 2) return 0
+  let crossings = 0
+  for (let i = 1; i < samples.length; i++) {
+    const sign1 = samples[i - 1] >= 0 ? 1 : -1
+    const sign2 = samples[i] >= 0 ? 1 : -1
+    if (sign1 !== sign2) crossings++
+  }
+  return crossings / (samples.length - 1)
+}
+
+export function extractOddEvenHarmonicRatio(
+  samples: Float32Array,
+  sampleRate: number,
+  fundamental: number,
+): number {
+  if (fundamental <= 0) return 0
+
+  const nFft = WINDOW_SIZE
+  const fft = new FFT(nFft)
+
+  const paddedSamples = new Float32Array(nFft)
+  const copyLength = Math.min(samples.length, nFft)
+  paddedSamples.set(samples.subarray(0, copyLength))
+
+  const out = fft.createComplexArray()
+  fft.realTransform(out, paddedSamples)
+
+  const magnitudes = new Float32Array(nFft / 2 + 1)
+  for (let i = 0; i <= nFft / 2; i++) {
+    const re = out[2 * i]
+    const im = out[2 * i + 1]
+    magnitudes[i] = Math.sqrt(re * re + im * im)
+  }
+
+  const freqResolution = sampleRate / nFft
+
+  let oddEnergy = 0
+  let evenEnergy = 0
+
+  for (let h = 1; h <= N_HARMONICS; h++) {
+    const targetFreq = fundamental * h
+    const toleranceHz = fundamental * 0.05
+
+    let maxAmp = 0
+    let foundWithinTolerance = false
+
+    for (let bin = 0; bin < magnitudes.length; bin++) {
+      const binFreq = bin * freqResolution
+      if (Math.abs(binFreq - targetFreq) < toleranceHz) {
+        foundWithinTolerance = true
+        if (magnitudes[bin] > maxAmp) {
+          maxAmp = magnitudes[bin]
+        }
+      }
+    }
+
+    if (!foundWithinTolerance) {
+      let nearestBin = 0
+      let minDist = Infinity
+      for (let bin = 0; bin < magnitudes.length; bin++) {
+        const binFreq = bin * freqResolution
+        const dist = Math.abs(binFreq - targetFreq)
+        if (dist < minDist) {
+          minDist = dist
+          nearestBin = bin
+        }
+      }
+      maxAmp = magnitudes[nearestBin]
+    }
+
+    if (h % 2 === 1) {
+      oddEnergy += maxAmp
+    } else {
+      evenEnergy += maxAmp
+    }
+  }
+
+  if (evenEnergy < 1e-10) return 0
+
+  return oddEnergy / evenEnergy
+}
+
 // MFCC extraction using librosa-compatible implementation
 export function extractMfccs(
   samples: Float32Array,
@@ -396,7 +481,6 @@ export function extractMfcc(
 }
 
 export function extractAllFeatures(samples: Float32Array, sampleRate: number): AudioFeatures {
-  // const fundamental = freqFromAutocorr(samples, sampleRate)
   const { pitch: fundamental } = extractFundamental(samples, sampleRate)
   const mfcc = extractMfcc(samples, sampleRate)
 
@@ -407,6 +491,8 @@ export function extractAllFeatures(samples: Float32Array, sampleRate: number): A
     inharmonicity: extractInharmonicity(samples, sampleRate, fundamental),
     rmsEnergy: extractRmsEnergy(samples),
     energySlope: extractEnergySlope(samples),
+    zcr: extractZeroCrossingRate(samples),
+    oddEvenHarmonicRatio: extractOddEvenHarmonicRatio(samples, sampleRate, fundamental),
     fundamental,
     logFrequency: extractLogFrequency(fundamental),
     semitonesFromE2: extractSemitonesFromE2(fundamental),
@@ -416,24 +502,32 @@ export function extractAllFeatures(samples: Float32Array, sampleRate: number): A
 }
 
 export function featuresToVector(features: AudioFeatures): Float32Array {
-  const vector = new Float32Array(33)
+  const vector = new Float32Array(35)
 
+  // Harmonic ratios (12 features)
   for (let i = 0; i < 12; i++) {
     vector[i] = features.harmonicRatios[i] || 0
   }
 
+  // Spectral features (2 features)
   vector[12] = features.spectralCentroid
   vector[13] = features.spectralRolloff
+
+  // Timbral features (5 features)
   vector[14] = features.inharmonicity
   vector[15] = features.rmsEnergy
   vector[16] = features.energySlope
+  vector[17] = features.zcr
+  vector[18] = features.oddEvenHarmonicRatio
 
-  vector[17] = features.logFrequency
-  vector[18] = features.semitonesFromE2
-  vector[19] = features.octaveNumber
+  // Frequency-relative features (3 features)
+  vector[19] = features.logFrequency
+  vector[20] = features.semitonesFromE2
+  vector[21] = features.octaveNumber
 
+  // MFCCs (13 features)
   for (let i = 0; i < 13; i++) {
-    vector[20 + i] = features.mfcc[i] || 0
+    vector[22 + i] = features.mfcc[i] || 0
   }
 
   return vector

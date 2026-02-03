@@ -32,7 +32,7 @@ const STRING_DESCRIPTIONS = [
 // Adjust these to find optimal balance between accuracy and UX
 // const FRET_POSITIONS = [0, 5, 12]
 // we have done 0 5 12
-const FRET_POSITIONS = [1, 6, 11]
+const FRET_POSITIONS = [1, 4, 7, 11]
 const SAMPLES_PER_POSITION = 5
 // Total: 6 strings × 3 frets × 3 samples = 54 samples
 // ==============================================

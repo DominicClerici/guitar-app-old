@@ -58,6 +58,8 @@ def extract_python_features(samples: np.ndarray, sample_rate: int) -> dict:
     inharmonicity = extractor.extract_inharmonicity(window, sample_rate, fundamental)
     rms_energy = extractor.extract_rms_energy(window)
     energy_slope = extractor.extract_energy_slope(window)
+    zcr = extractor.extract_zcr(window)
+    odd_even_harmonic_ratio = extractor.extract_odd_even_harmonic_ratio(window, sample_rate, fundamental)
 
     log_frequency, semitones_from_e2, octave_number = (
         extractor.extract_frequency_relative_features(fundamental)
@@ -65,7 +67,7 @@ def extract_python_features(samples: np.ndarray, sample_rate: int) -> dict:
 
     mfcc = extractor.extract_mfcc_single(window, sample_rate)
 
-    # Build feature vector in same order as train.py
+    # Build feature vector in same order as train.py (35 features total)
     feature_vector = []
     feature_vector.extend(harmonic_ratios)  # 12 values
     feature_vector.append(spectral_centroid)
@@ -73,6 +75,8 @@ def extract_python_features(samples: np.ndarray, sample_rate: int) -> dict:
     feature_vector.append(inharmonicity)
     feature_vector.append(rms_energy)
     feature_vector.append(energy_slope)
+    feature_vector.append(zcr)
+    feature_vector.append(odd_even_harmonic_ratio)
     feature_vector.append(log_frequency)
     feature_vector.append(semitones_from_e2)
     feature_vector.append(octave_number)
@@ -88,6 +92,8 @@ def extract_python_features(samples: np.ndarray, sample_rate: int) -> dict:
             "inharmonicity": inharmonicity,
             "rms_energy": rms_energy,
             "energy_slope": energy_slope,
+            "zcr": zcr,
+            "odd_even_harmonic_ratio": odd_even_harmonic_ratio,
             "log_frequency": log_frequency,
             "semitones_from_e2": semitones_from_e2,
             "octave_number": octave_number,
@@ -113,7 +119,7 @@ def compare_features(
 
     Args:
         browser_features: Feature vector from browser (may be filtered to enabled only)
-        python_features: Full feature vector from Python (all 33 features)
+        python_features: Full feature vector from Python (all 35 features)
     """
     significant_diffs = []
 

@@ -27,10 +27,12 @@ export const ALL_FEATURE_NAMES = [
   // Spectral features (2 features)
   "spectral_centroid",
   "spectral_rolloff",
-  // Timbral features (3 features)
+  // Timbral features (5 features)
   "inharmonicity",
   "rms_energy",
   "energy_slope",
+  "zcr",
+  "odd_even_harmonic_ratio",
   // Frequency-relative features (3 features)
   "log_frequency",
   "semitones_from_e2",
