@@ -26,6 +26,8 @@ USE_AUGMENTATION = True
 NUM_AUGMENTATIONS = 1
 AUGMENTATION_PRESET = "moderate"
 
+USE_FINETUNE_SAMPLES = False
+
 # Open string frequencies by string number (0-5, matching sample directory structure)
 # String 0 = low E (thickest), String 5 = high E (thinnest)
 OPEN_STRING_FREQS_BY_NUMBER = {
@@ -498,9 +500,26 @@ def parse_args():
     )
 
     parser.add_argument(
+        "--samples-dir",
+        type=str,
+        default=None,
+        help="Directory containing samples (default: ../frontend/samples)"
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default=None,
+        help="Directory to save features (default: ./data/features)"
+    )
+    parser.add_argument(
         "--augment",
         action="store_true",
         help="Enable data augmentation"
+    )
+    parser.add_argument(
+        "--no-augment",
+        action="store_true",
+        help="Disable data augmentation (overrides USE_AUGMENTATION)"
     )
     parser.add_argument(
         "--augment-preset",
@@ -536,24 +555,39 @@ def main():
     args = parse_args()
 
     script_dir = Path(__file__).parent
-    samples_dir = script_dir.parent / "frontend" / "samples"
-    output_dir = script_dir / "data" / "features"
+
+    if args.samples_dir:
+        samples_dir = Path(args.samples_dir)
+    else:
+        samples_dir = script_dir.parent / "frontend" / "samples"
+
+    if args.output_dir:
+        output_dir = Path(args.output_dir)
+    else:
+        output_dir = script_dir / "data" / "features"
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Looking for samples in: {samples_dir}")
     samples = find_samples(samples_dir)
 
+    if USE_FINETUNE_SAMPLES:
+        finetune_samples_dir = script_dir.parent / "frontend" / "finetune_samples"
+        print(f"Looking for finetune samples in: {finetune_samples_dir}")
+        finetune_samples = find_samples(finetune_samples_dir)
+        print(f"Found {len(finetune_samples)} finetune audio files")
+        samples.extend(finetune_samples)
+
     if not samples:
         print("No samples found!")
         return
 
-    print(f"Found {len(samples)} audio files")
+    print(f"Found {len(samples)} total audio files")
 
-    # Setup augmenter if requested
     augmenter = None
+    use_augmentation = USE_AUGMENTATION and not args.no_augment
 
-    if USE_AUGMENTATION:
+    if use_augmentation:
         print(f"\nAugmentation enabled, creating {NUM_AUGMENTATIONS} augmented versions per sample")
 
         augmenter = create_augmenter(
@@ -618,8 +652,8 @@ def main():
         "total_windows": len(all_features),
         "total_audio_files": len(samples),
         "strings_covered": sorted(list(set(f["string"] for f in all_features))),
-        "augmentation_enabled": USE_AUGMENTATION and args.augment,
-        "augmentation_preset": args.augment_preset if (USE_AUGMENTATION and args.augment) else None,
+        "augmentation_enabled": use_augmentation and args.augment,
+        "augmentation_preset": args.augment_preset if (use_augmentation and args.augment) else None,
         "n_augmentations_per_sample": NUM_AUGMENTATIONS,
         "feature_names": [
             "harmonic_ratios",
@@ -656,7 +690,7 @@ def main():
         json.dump(output_data, f, indent=2, cls=NumpyEncoder)
 
     print(f"\nFeatures saved to: {output_path}")
-    if USE_AUGMENTATION and args.augment:
+    if use_augmentation and args.augment:
         original_count = sum(1 for f in all_features if "_aug" not in f["sample_id"])
         augmented_count = len(all_features) - original_count
         print(f"  Original windows: {original_count}")

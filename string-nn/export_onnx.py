@@ -1,3 +1,4 @@
+import argparse
 import json
 import pickle
 import warnings
@@ -14,6 +15,7 @@ def export_to_onnx(
     scaler_path: Path,
     output_dir: Path,
     opset_version: int = 17,
+    copy_to_frontend: bool = True,
 ):
     """Export trained model and scaler to ONNX format for browser inference."""
     checkpoint = torch.load(model_path, map_location="cpu", weights_only=True)
@@ -22,7 +24,17 @@ def export_to_onnx(
         input_size=checkpoint["input_size"],
         num_classes=checkpoint["num_classes"],
     )
+
+    # Add adapter BEFORE loading state_dict if the checkpoint has one
+    has_adapter = checkpoint.get("has_adapter", False)
+    if has_adapter:
+        from finetune import ADAPTER_DROPOUT
+        model.add_adapter(dropout=ADAPTER_DROPOUT)
+        print("Fine-tuned model with adapter layer detected")
+
+    # Now load the state_dict (includes adapter weights if present)
     model.load_state_dict(checkpoint["model_state_dict"])
+
     model.eval()
 
     dummy_input = torch.randn(1, checkpoint["input_size"])
@@ -70,17 +82,47 @@ def export_to_onnx(
     print(f"Scaler config saved to: {scaler_json_path}")
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Export trained model to ONNX format for browser inference."
+    )
+    parser.add_argument(
+        "--model-path",
+        type=str,
+        default=None,
+        help="Path to PyTorch model file (default: ./data/models/string_classifier.pt)"
+    )
+    parser.add_argument(
+        "--scaler-path",
+        type=str,
+        default=None,
+        help="Path to scaler pickle file (default: ./data/models/scaler.pkl)"
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default=None,
+        help="Output directory for ONNX files (default: ./data/onnx)"
+    )
+    parser.add_argument(
+        "--no-copy-to-frontend",
+        action="store_true",
+        help="Don't copy files to frontend public directory"
+    )
+    return parser.parse_args()
+
+
 def main():
+    args = parse_args()
+
     script_dir = Path(__file__).parent
     models_dir = script_dir / "data" / "models"
-    output_dir = script_dir / "data" / "onnx"
-    frontend_dir = script_dir.parent / "frontend" / "public" / "models"
+
+    model_path = Path(args.model_path) if args.model_path else models_dir / "string_classifier.pt"
+    scaler_path = Path(args.scaler_path) if args.scaler_path else models_dir / "scaler.pkl"
+    output_dir = Path(args.output_dir) if args.output_dir else script_dir / "data" / "onnx"
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    frontend_dir.mkdir(parents=True, exist_ok=True)
-
-    model_path = models_dir / "string_classifier.pt"
-    scaler_path = models_dir / "scaler.pkl"
 
     if not model_path.exists():
         print(f"Model not found: {model_path}")
@@ -94,10 +136,13 @@ def main():
 
     export_to_onnx(model_path, scaler_path, output_dir)
 
-    import shutil
-    shutil.copy(output_dir / "string_classifier.onnx", frontend_dir / "string_classifier.onnx")
-    shutil.copy(output_dir / "scaler.json", frontend_dir / "scaler.json")
-    print(f"\nCopied to frontend: {frontend_dir}")
+    if not args.no_copy_to_frontend and not args.output_dir:
+        import shutil
+        frontend_dir = script_dir.parent / "frontend" / "public" / "models"
+        frontend_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy(output_dir / "string_classifier.onnx", frontend_dir / "string_classifier.onnx")
+        shutil.copy(output_dir / "scaler.json", frontend_dir / "scaler.json")
+        print(f"\nCopied to frontend: {frontend_dir}")
 
     print("\nExport complete! Files ready for browser deployment.")
 

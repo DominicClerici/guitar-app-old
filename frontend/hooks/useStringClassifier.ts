@@ -95,6 +95,7 @@ interface UseStringClassifierOptions {
   onPrediction?: (result: PredictionResult) => void
   debug?: boolean
   productionMode?: boolean
+  usePersonalizedModel?: boolean
 }
 
 interface UseStringClassifierResult {
@@ -104,16 +105,32 @@ interface UseStringClassifierResult {
   stablePrediction: StablePrediction | null
   startListening: () => Promise<void>
   stopListening: () => void
-  loadModel: () => Promise<void>
+  loadModel: (forceDefault?: boolean) => Promise<void>
   isModelLoaded: boolean
   captureAudioSample: () => { samples: Float32Array; sampleRate: number } | null
   scaler: ScalerConfig | null
+  isUsingPersonalizedModel: boolean
 }
 
 const DEFAULT_MODEL_PATH = "/models/string_classifier.onnx"
 const DEFAULT_SCALER_PATH = "/models/scaler.json"
 const DEFAULT_MIN_CONFIDENCE = 0.3
 const STRING_LABELS = ["E2", "A2", "D3", "G3", "B3", "E4"]
+
+function getModelPaths(usePersonalized: boolean): { modelPath: string; scalerPath: string; isPersonalized: boolean } {
+  if (typeof window === "undefined" || !usePersonalized) {
+    return { modelPath: DEFAULT_MODEL_PATH, scalerPath: DEFAULT_SCALER_PATH, isPersonalized: false }
+  }
+
+  const customModel = localStorage.getItem("stringflow_custom_model")
+  const customScaler = localStorage.getItem("stringflow_custom_scaler")
+
+  if (customModel && customScaler) {
+    return { modelPath: customModel, scalerPath: customScaler, isPersonalized: true }
+  }
+
+  return { modelPath: DEFAULT_MODEL_PATH, scalerPath: DEFAULT_SCALER_PATH, isPersonalized: false }
+}
 
 export function useStringClassifier(
   options: UseStringClassifierOptions = {},
@@ -123,9 +140,13 @@ export function useStringClassifier(
   const [prediction, setPrediction] = useState<PredictionResult | null>(null)
   const [isModelLoaded, setIsModelLoaded] = useState(false)
   const [stablePrediction, setStablePrediction] = useState<StablePrediction | null>(null)
+  const [isUsingPersonalizedModel, setIsUsingPersonalizedModel] = useState(false)
 
-  const modelPathRef = useRef(options.modelPath ?? DEFAULT_MODEL_PATH)
-  const scalerPathRef = useRef(options.scalerPath ?? DEFAULT_SCALER_PATH)
+  const usePersonalized = options.usePersonalizedModel ?? true
+  const paths = getModelPaths(usePersonalized)
+
+  const modelPathRef = useRef(options.modelPath ?? paths.modelPath)
+  const scalerPathRef = useRef(options.scalerPath ?? paths.scalerPath)
   const minConfidenceRef = useRef(options.minConfidence ?? DEFAULT_MIN_CONFIDENCE)
   const onPredictionRef = useRef(options.onPrediction)
   const debugRef = useRef(options.debug ?? false)
@@ -300,19 +321,38 @@ export function useStringClassifier(
     [calculateFret],
   )
 
-  const loadModel = useCallback(async () => {
+  const loadModel = useCallback(async (forceDefault?: boolean) => {
     try {
       setStatus("loading")
       setError(null)
       isReleasedRef.current = false
 
+      const shouldUsePersonalized = forceDefault ? false : usePersonalized
+      const currentPaths = getModelPaths(shouldUsePersonalized)
+      modelPathRef.current = options.modelPath ?? currentPaths.modelPath
+      scalerPathRef.current = options.scalerPath ?? currentPaths.scalerPath
+
       const scalerResponse = await fetch(scalerPathRef.current)
       if (!scalerResponse.ok) {
-        throw new Error(`Failed to load scaler config from ${scalerPathRef.current}`)
+        if (currentPaths.isPersonalized) {
+          console.warn("Failed to load personalized model, falling back to default")
+          modelPathRef.current = DEFAULT_MODEL_PATH
+          scalerPathRef.current = DEFAULT_SCALER_PATH
+          const fallbackResponse = await fetch(DEFAULT_SCALER_PATH)
+          if (!fallbackResponse.ok) {
+            throw new Error(`Failed to load scaler config from ${DEFAULT_SCALER_PATH}`)
+          }
+          scalerRef.current = await fallbackResponse.json()
+          sessionRef.current = await ort.InferenceSession.create(DEFAULT_MODEL_PATH)
+          setIsUsingPersonalizedModel(false)
+        } else {
+          throw new Error(`Failed to load scaler config from ${scalerPathRef.current}`)
+        }
+      } else {
+        scalerRef.current = await scalerResponse.json()
+        sessionRef.current = await ort.InferenceSession.create(modelPathRef.current)
+        setIsUsingPersonalizedModel(currentPaths.isPersonalized)
       }
-      scalerRef.current = await scalerResponse.json()
-
-      sessionRef.current = await ort.InferenceSession.create(modelPathRef.current)
 
       setIsModelLoaded(true)
       setStatus("ready")
@@ -322,7 +362,7 @@ export function useStringClassifier(
       setStatus("error")
       setIsModelLoaded(false)
     }
-  }, [])
+  }, [usePersonalized, options.modelPath, options.scalerPath])
 
   const runInference = useCallback(
     async (samples: Float32Array, sampleRate: number) => {
@@ -586,5 +626,6 @@ export function useStringClassifier(
     isModelLoaded,
     captureAudioSample,
     scaler: scalerRef.current,
+    isUsingPersonalizedModel,
   }
 }

@@ -12,7 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { useStringClassifier, type PredictionResult } from "@/hooks/useStringClassifier"
-import { AlertCircle, Bug, CheckCircle2, Copy, Download, Loader2, Mic, MicOff } from "lucide-react"
+import { AlertCircle, Bug, CheckCircle2, Copy, Download, Loader2, Mic, MicOff, User } from "lucide-react"
 import { useCallback, useMemo, useRef, useState } from "react"
 
 const STRING_COLORS = [
@@ -133,6 +133,7 @@ export default function ModelTestPage() {
     isModelLoaded,
     captureAudioSample,
     scaler,
+    isUsingPersonalizedModel,
   } = useStringClassifier({
     onPrediction: handlePrediction,
     minConfidence: 0.25,
@@ -266,19 +267,32 @@ export default function ModelTestPage() {
                 <AlertCircle className="h-5 w-5 text-yellow-500" />
               )}
             </CardTitle>
-            <CardDescription>
+            <CardDescription className="flex items-center gap-2">
               {isModelLoaded
                 ? "Model loaded and ready for inference"
                 : "Load the ONNX model to start"}
+              {isModelLoaded && isUsingPersonalizedModel && (
+                <Badge variant="secondary" className="gap-1">
+                  <User className="size-3" />
+                  Personalized
+                </Badge>
+              )}
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-3">
               {!isModelLoaded && (
-                <Button onClick={loadModel} disabled={isLoading}>
-                  {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Load Model
-                </Button>
+                <>
+                  <Button onClick={() => loadModel()} disabled={isLoading}>
+                    {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    <User className="mr-2 h-4 w-4" />
+                    Load Personalized
+                  </Button>
+                  <Button onClick={() => loadModel(true)} disabled={isLoading} variant="outline">
+                    {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Load Default
+                  </Button>
+                </>
               )}
               <Button
                 onClick={isRecording ? stopListening : startListening}
