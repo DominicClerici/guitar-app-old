@@ -1,7 +1,10 @@
 import { WINDOW_SIZE } from "@/hooks/useStringClassifier"
 import FFT from "fft.js"
+import { filterFeatureVector } from "./features-config"
 import { extractMfccSingle, mfcc as librosaMfcc } from "./mfcc"
 import { spectralCentroid as librosaCentroid, spectralRolloff as librosaRolloff } from "./spectral"
+
+export { filterFeatureVector } from "./features-config"
 
 export interface AudioFeatures {
   harmonicRatios: number[]

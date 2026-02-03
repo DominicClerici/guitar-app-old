@@ -3,6 +3,7 @@
 import {
   extractAllFeatures,
   featuresToVector,
+  filterFeatureVector,
   normalizeFeatures,
   type AudioFeatures,
 } from "@/lib/audio/feature-extraction"
@@ -67,6 +68,7 @@ export interface PredictionResult {
     sampleRate: number
     sampleCount: number
     audioSamples: Float32Array
+    enabledFeatures: string[]
   }
 }
 
@@ -336,12 +338,14 @@ export function useStringClassifier(
         // Normalize audio amplitude to match training data levels
         const normalizedSamples = normalizeAudioAmplitude(samples, TARGET_RMS)
         const features = extractAllFeatures(normalizedSamples, sampleRate)
-        const featureVector = featuresToVector(features)
+        const fullFeatureVector = featuresToVector(features)
+        // Filter to only enabled features (matching training configuration)
+        const featureVector = filterFeatureVector(fullFeatureVector, scaler.feature_names)
         const normalizedFeatures = normalizeFeatures(featureVector, scaler.mean, scaler.scale)
 
         if (isReleasedRef.current) return
 
-        const inputTensor = new ort.Tensor("float32", normalizedFeatures, [1, 33])
+        const inputTensor = new ort.Tensor("float32", normalizedFeatures, [1, scaler.feature_names.length])
         const results = await session.run({ features: inputTensor })
 
         const logits = results.logits.data as Float32Array
@@ -374,6 +378,7 @@ export function useStringClassifier(
                   sampleRate,
                   sampleCount: samples.length,
                   audioSamples: normalizedSamples,
+                  enabledFeatures: scaler.feature_names,
                 }
               : undefined,
           }

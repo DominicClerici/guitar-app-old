@@ -23,7 +23,7 @@ WINDOW_SIZE = 4096  # ~93ms at 44.1kHz, matches browser inference
 TARGET_RMS = 0.026
 
 USE_AUGMENTATION = True
-NUM_AUGMENTATIONS = 2
+NUM_AUGMENTATIONS = 1
 AUGMENTATION_PRESET = "moderate"
 
 # Open string frequencies by string number (0-5, matching sample directory structure)

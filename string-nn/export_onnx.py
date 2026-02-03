@@ -6,6 +6,7 @@ from pathlib import Path
 import torch
 
 from model import StringClassifier
+from features_config import get_enabled_feature_names
 
 
 def export_to_onnx(
@@ -59,46 +60,7 @@ def export_to_onnx(
     scaler_config = {
         "mean": scaler.mean_.tolist(),
         "scale": scaler.scale_.tolist(),
-        "feature_names": [
-            # Harmonic ratios (12)
-            "harmonic_ratio_1",
-            "harmonic_ratio_2",
-            "harmonic_ratio_3",
-            "harmonic_ratio_4",
-            "harmonic_ratio_5",
-            "harmonic_ratio_6",
-            "harmonic_ratio_7",
-            "harmonic_ratio_8",
-            "harmonic_ratio_9",
-            "harmonic_ratio_10",
-            "harmonic_ratio_11",
-            "harmonic_ratio_12",
-            # Spectral (2)
-            "spectral_centroid",
-            "spectral_rolloff",
-            # Timbral (3)
-            "inharmonicity",
-            "rms_energy",
-            "energy_slope",
-            # Frequency-relative (3)
-            "log_frequency",
-            "semitones_from_e2",
-            "octave_number",
-            # MFCCs (13)
-            "mfcc_0",
-            "mfcc_1",
-            "mfcc_2",
-            "mfcc_3",
-            "mfcc_4",
-            "mfcc_5",
-            "mfcc_6",
-            "mfcc_7",
-            "mfcc_8",
-            "mfcc_9",
-            "mfcc_10",
-            "mfcc_11",
-            "mfcc_12",
-        ],
+        "feature_names": get_enabled_feature_names(),
         "string_labels": ["E2", "A2", "D3", "G3", "B3", "E4"],
     }
 

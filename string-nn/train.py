@@ -9,8 +9,10 @@ import torch.nn as nn
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader, Dataset
+import time
 
 from model import StringClassifier, count_parameters
+from features_config import get_enabled_indices, get_enabled_feature_names, print_feature_summary
 
 
 class GuitarStringDataset(Dataset):
@@ -30,8 +32,8 @@ def get_base_sample_id(sample_id: str) -> str:
     return re.sub(r"_aug\d+$", "", sample_id)
 
 
-def sample_to_feature_vector(sample: dict) -> list:
-    """Convert a sample dict to a feature vector."""
+def _sample_to_full_feature_vector(sample: dict) -> list:
+    """Convert a sample dict to the full feature vector (all 33 features)."""
     feature_vec = []
     # Harmonic features (12 values)
     feature_vec.extend(sample["harmonic_ratios"])
@@ -49,6 +51,20 @@ def sample_to_feature_vector(sample: dict) -> list:
     # MFCCs (13 values)
     feature_vec.extend(sample["mfcc"])
     return feature_vec
+
+
+# Cache enabled indices for performance
+_ENABLED_INDICES = None
+
+
+def sample_to_feature_vector(sample: dict) -> list:
+    """Convert a sample dict to a feature vector with only enabled features."""
+    global _ENABLED_INDICES
+    if _ENABLED_INDICES is None:
+        _ENABLED_INDICES = get_enabled_indices()
+
+    full_vector = _sample_to_full_feature_vector(sample)
+    return [full_vector[i] for i in _ENABLED_INDICES]
 
 
 def load_features_with_file_split(
@@ -199,12 +215,18 @@ def train(
     patience: int = 30,
 ):
     print("\n ------ Training ------")
+    print_feature_summary()
+
     script_dir = Path(__file__).parent
     features_dir = script_dir / "data" / "features"
     output_dir = script_dir / "data" / "models"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    start_time = time.time()
+
+    # lol 9950x is faster than a 4060 for training
+    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = 'cpu'
     print(f"Using device: {device}")
 
     # Load features with file-level split to prevent data leakage
@@ -288,10 +310,14 @@ def train(
             "model_state_dict": model.state_dict(),
             "input_size": input_size,
             "num_classes": 6,
+            "enabled_features": get_enabled_feature_names(),
         },
         model_path,
     )
     print(f"\nModel saved to: {model_path}")
+
+    end_time = time.time()
+    print(f"Training time: {end_time - start_time:.2f} seconds")
 
     scaler_path = output_dir / "scaler.pkl"
     with open(scaler_path, "wb") as f:
