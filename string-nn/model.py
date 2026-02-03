@@ -9,7 +9,7 @@ class StringClassifier(nn.Module):
     Designed to be lightweight for real-time browser inference via ONNX.
     """
 
-    def __init__(self, input_size: int = 17, num_classes: int = 6, dropout: float = 0.3):
+    def __init__(self, input_size: int = 33, num_classes: int = 6, dropout: float = 0.3):
         super().__init__()
 
         self.network = nn.Sequential(

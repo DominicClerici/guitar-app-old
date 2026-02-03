@@ -71,7 +71,6 @@ def load_features_with_file_split(
         data = json.load(f)
 
     samples = data["samples"]
-    print(f"Loaded {len(samples)} windows")
 
     # Group samples by base audio file (original recording, ignoring augmentations)
     file_to_samples: dict[str, list[dict]] = {}
@@ -82,8 +81,6 @@ def load_features_with_file_split(
         if file_key not in file_to_samples:
             file_to_samples[file_key] = []
         file_to_samples[file_key].append(sample)
-
-    print(f"Found {len(file_to_samples)} unique audio files")
 
     # Get unique file keys and their string labels for stratification
     file_keys = list(file_to_samples.keys())
@@ -108,7 +105,6 @@ def load_features_with_file_split(
             random_state=random_state,
         )
 
-    print(f"Train files: {len(train_keys)}, Validation files: {len(val_keys)}")
 
     # Collect windows for train and validation sets
     train_features, train_labels = [], []
@@ -123,8 +119,7 @@ def load_features_with_file_split(
         for sample in file_to_samples[file_key]:
             val_features.append(sample_to_feature_vector(sample))
             val_labels.append(sample["string"])
-
-    print(f"Train windows: {len(train_features)}, Validation windows: {len(val_features)}")
+    print(f"\nLoaded (files, windows): ({len(train_keys)}, {len(train_features)}) Train / ({len(val_keys)}, {len(val_features)}) Validation")
 
     return (
         np.array(train_features),
@@ -215,10 +210,8 @@ def train(
     # Load features with file-level split to prevent data leakage
     X_train_raw, X_val_raw, y_train, y_val = load_features_with_file_split(features_dir)
 
-    print(f"\nTrain feature shape: {X_train_raw.shape}")
-    print(f"Val feature shape: {X_val_raw.shape}")
-    print(f"Train label distribution: {np.bincount(y_train, minlength=6)}")
-    print(f"Val label distribution: {np.bincount(y_val, minlength=6)}")
+    print(f"\nTrain shape: {X_train_raw.shape} / Val shape: {X_val_raw.shape}")
+    print(f"Train dist: {np.bincount(y_train, minlength=6)} / Val dist: {np.bincount(y_val, minlength=6)}")
 
     all_labels = np.concatenate([y_train, y_val])
     num_unique_labels = len(np.unique(all_labels))
@@ -232,9 +225,6 @@ def train(
     scaler = StandardScaler()
     X_train = scaler.fit_transform(X_train_raw)
     X_val = scaler.transform(X_val_raw)
-
-    print(f"\nTraining samples: {len(X_train)}")
-    print(f"Validation samples: {len(X_val)}")
 
     train_dataset = GuitarStringDataset(X_train, y_train)
     val_dataset = GuitarStringDataset(X_val, y_val)
@@ -259,9 +249,7 @@ def train(
     epochs_without_improvement = 0
     best_model_state = None
 
-    print("\n" + "=" * 60)
-    print("Starting training...")
-    print("=" * 60)
+    print("\n----- Starting training -----\n")
 
     for epoch in range(epochs):
         train_loss, train_acc = train_epoch(model, train_loader, criterion, optimizer, device)
@@ -288,11 +276,8 @@ def train(
             print(f"\nEarly stopping at epoch {epoch+1}")
             break
 
-    print("\n" + "=" * 60)
-    print("Training complete!")
-    print(f"Best validation loss: {best_val_loss:.4f}")
-    print(f"Best validation accuracy: {best_val_acc:.4f}")
-    print("=" * 60)
+    print("\n----- Training complete -----\n")
+    print(f"Best validation loss: {best_val_loss:.4f} / Best validation accuracy: {best_val_acc:.4f}")
 
     if best_model_state:
         model.load_state_dict(best_model_state)
