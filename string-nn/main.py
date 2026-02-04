@@ -25,7 +25,7 @@ WINDOW_SIZE = 4096  # ~69ms at 44.1kHz, matches browser inference
 TARGET_RMS = 0.035
 
 USE_AUGMENTATION = True
-NUM_AUGMENTATIONS = 1
+NUM_AUGMENTATIONS = 10
 AUGMENTATION_PRESET = "moderate"
 
 USE_FINETUNE_SAMPLES = True
@@ -49,7 +49,7 @@ ADJACENT_STRINGS = {
 # Sequential note generation - simulates fast playing with note transitions
 USE_SEQUENTIAL_NOTES = True
 SEQUENTIAL_RATIO = 0.25  # Generate 20% of sample count as sequential clips
-SEQUENTIAL_GAP_MIN_MS = 1.0  # Minimum gap between notes
+SEQUENTIAL_GAP_MIN_MS = 0.0  # Minimum gap between notes
 SEQUENTIAL_GAP_MAX_MS = 15.0  # Maximum gap between notes
 SEQUENTIAL_LENGTH_MIN = 3  # Minimum notes per sequence
 SEQUENTIAL_LENGTH_MAX = 5  # Maximum notes per sequence
@@ -1004,14 +1004,17 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Looking for samples in: {samples_dir}")
-    samples = find_samples(samples_dir)
+    base_samples = find_samples(samples_dir)
+    print(f"Found {len(base_samples)} base audio files")
 
+    finetune_samples: list[tuple[Path, int, int]] = []
     if USE_FINETUNE_SAMPLES:
         finetune_samples_dir = script_dir.parent / "frontend" / "finetune_samples"
         print(f"Looking for finetune samples in: {finetune_samples_dir}")
         finetune_samples = find_samples(finetune_samples_dir)
         print(f"Found {len(finetune_samples)} finetune audio files")
-        samples.extend(finetune_samples)
+
+    samples = base_samples + finetune_samples
 
     if not samples:
         print("No samples found!")
@@ -1067,28 +1070,46 @@ def main():
             print(f"Save them in: {layer_samples_dir}/{{string_num}}/{{sample_name}}.wav")
             layer_mixer = None
 
-    # Set up sequential note generator for fast-playing training
-    sequential_generator = None
+    # Set up sequential note generators for fast-playing training
+    # We create separate generators for base and finetune samples to ensure
+    # sequences don't mix samples from different categories
+    base_sequential_generator = None
+    finetune_sequential_generator = None
     use_sequential = USE_SEQUENTIAL_NOTES and not args.no_sequential
 
     if use_sequential:
-        num_sequential = max(1, int(len(samples) * args.sequential_ratio))
         print(f"\nSequential note generation enabled")
-        print(f"  Generating {num_sequential} sequential clips ({args.sequential_ratio:.0%} of {len(samples)} samples)")
         print(f"  Sequence length: {args.sequential_length_min}-{args.sequential_length_max} notes")
         print(f"  Gap between notes: {args.sequential_gap_min}-{args.sequential_gap_max}ms")
         print(f"  Note duration: {args.sequential_note_duration}ms")
 
-        sequential_generator = SequentialNoteGenerator(
-            samples=samples,
-            target_sr=44100,
-            gap_min_ms=args.sequential_gap_min,
-            gap_max_ms=args.sequential_gap_max,
-            sequence_length_min=args.sequential_length_min,
-            sequence_length_max=args.sequential_length_max,
-            note_duration_ms=args.sequential_note_duration,
-            seed=random_seed,
-        )
+        if base_samples:
+            num_base_sequential = max(1, int(len(base_samples) * args.sequential_ratio))
+            print(f"  Base samples: generating {num_base_sequential} sequential clips ({args.sequential_ratio:.0%} of {len(base_samples)} samples)")
+            base_sequential_generator = SequentialNoteGenerator(
+                samples=base_samples,
+                target_sr=44100,
+                gap_min_ms=args.sequential_gap_min,
+                gap_max_ms=args.sequential_gap_max,
+                sequence_length_min=args.sequential_length_min,
+                sequence_length_max=args.sequential_length_max,
+                note_duration_ms=args.sequential_note_duration,
+                seed=random_seed,
+            )
+
+        if finetune_samples:
+            num_finetune_sequential = max(1, int(len(finetune_samples) * args.sequential_ratio))
+            print(f"  Finetune samples: generating {num_finetune_sequential} sequential clips ({args.sequential_ratio:.0%} of {len(finetune_samples)} samples)")
+            finetune_sequential_generator = SequentialNoteGenerator(
+                samples=finetune_samples,
+                target_sr=44100,
+                gap_min_ms=args.sequential_gap_min,
+                gap_max_ms=args.sequential_gap_max,
+                sequence_length_min=args.sequential_length_min,
+                sequence_length_max=args.sequential_length_max,
+                note_duration_ms=args.sequential_note_duration + 1,
+                seed=random_seed + 1,
+            )
 
     extractor = FeatureExtractor(n_harmonics=12)
     all_features: list[WindowFeatures] = []
@@ -1121,20 +1142,24 @@ def main():
     print(f"Processed {len(all_features)} windows from {len(samples)} samples")
 
     # Generate and process sequential note samples
+    # Process base and finetune sequences separately to avoid mixing categories
     sequential_count = 0
-    if sequential_generator is not None:
-        num_sequential = max(1, int(len(samples) * args.sequential_ratio))
-        print(f"\nGenerating {num_sequential} sequential note samples...")
+    total_sequential_results = 0
 
-        sequential_results = sequential_generator.generate_samples(num_sequential)
+    if base_sequential_generator is not None:
+        num_base_sequential = max(1, int(len(base_samples) * args.sequential_ratio))
+        print(f"\nGenerating {num_base_sequential} sequential note samples from base samples...")
 
-        for seq_result in sequential_results:
+        base_sequential_results = base_sequential_generator.generate_samples(num_base_sequential)
+        total_sequential_results += len(base_sequential_results)
+
+        for seq_result in base_sequential_results:
             try:
                 seq_features = process_sequential_audio(
                     seq_result=seq_result,
                     sr=44100,
                     extractor=extractor,
-                    generator=sequential_generator,
+                    generator=base_sequential_generator,
                     window_size=WINDOW_SIZE,
                 )
                 all_features.extend(seq_features)
@@ -1142,7 +1167,29 @@ def main():
             except Exception as e:
                 print(f"  Error processing sequence {seq_result.sequence_id}: {e}")
 
-        print(f"Added {sequential_count} windows from {len(sequential_results)} sequential samples")
+    if finetune_sequential_generator is not None:
+        num_finetune_sequential = max(1, int(len(finetune_samples) * args.sequential_ratio))
+        print(f"\nGenerating {num_finetune_sequential} sequential note samples from finetune samples...")
+
+        finetune_sequential_results = finetune_sequential_generator.generate_samples(num_finetune_sequential)
+        total_sequential_results += len(finetune_sequential_results)
+
+        for seq_result in finetune_sequential_results:
+            try:
+                seq_features = process_sequential_audio(
+                    seq_result=seq_result,
+                    sr=44100,
+                    extractor=extractor,
+                    generator=finetune_sequential_generator,
+                    window_size=WINDOW_SIZE,
+                )
+                all_features.extend(seq_features)
+                sequential_count += len(seq_features)
+            except Exception as e:
+                print(f"  Error processing sequence {seq_result.sequence_id}: {e}")
+
+    if sequential_count > 0:
+        print(f"Added {sequential_count} windows from {total_sequential_results} sequential samples")
 
     # Validate fundamental frequencies
     print("\n--- Frequency Validation ---")
@@ -1175,11 +1222,11 @@ def main():
         "string_layering_enabled": layer_mixer is not None,
         "string_layering_probability": args.layer_probability if layer_mixer else None,
         "string_layering_volume_range": [args.layer_volume_min, args.layer_volume_max] if layer_mixer else None,
-        "sequential_notes_enabled": sequential_generator is not None,
-        "sequential_notes_ratio": args.sequential_ratio if sequential_generator else None,
-        "sequential_notes_gap_range_ms": [args.sequential_gap_min, args.sequential_gap_max] if sequential_generator else None,
-        "sequential_notes_length_range": [args.sequential_length_min, args.sequential_length_max] if sequential_generator else None,
-        "sequential_notes_duration_ms": args.sequential_note_duration if sequential_generator else None,
+        "sequential_notes_enabled": base_sequential_generator is not None or finetune_sequential_generator is not None,
+        "sequential_notes_ratio": args.sequential_ratio if use_sequential else None,
+        "sequential_notes_gap_range_ms": [args.sequential_gap_min, args.sequential_gap_max] if use_sequential else None,
+        "sequential_notes_length_range": [args.sequential_length_min, args.sequential_length_max] if use_sequential else None,
+        "sequential_notes_duration_ms": args.sequential_note_duration if use_sequential else None,
         "feature_names": [
             "harmonic_ratios",
             "spectral_centroid",
