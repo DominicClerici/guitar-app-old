@@ -7,6 +7,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
 import { AlertCircle, Mic, MicOff, Volume2 } from "lucide-react"
@@ -104,8 +105,10 @@ interface TunerControlsProps {
   error: string | null
   isMicEnabled: boolean
   selectedTuning: string
+  averagingSamples: number
   onMicToggle: () => void
   onTuningChange: (tuningId: string) => void
+  onAveragingSamplesChange: (samples: number) => void
 }
 
 export default function TunerControls({
@@ -113,8 +116,10 @@ export default function TunerControls({
   error,
   isMicEnabled,
   selectedTuning,
+  averagingSamples,
   onMicToggle,
   onTuningChange,
+  onAveragingSamplesChange,
 }: TunerControlsProps) {
   const getStatusDisplay = () => {
     switch (status) {
@@ -205,6 +210,26 @@ export default function TunerControls({
             ))}
           </SelectContent>
         </Select>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between">
+          <label
+            id="smoothing-label"
+            className="text-muted-foreground text-xs font-medium tracking-wide uppercase"
+          >
+            Smoothing
+          </label>
+          <span className="text-muted-foreground text-xs">{averagingSamples} samples</span>
+        </div>
+        <Slider
+          value={[averagingSamples]}
+          onValueChange={([value]) => onAveragingSamplesChange(value)}
+          min={1}
+          max={10}
+          step={1}
+          aria-labelledby="smoothing-label"
+        />
       </div>
 
       {status === "recording" && (

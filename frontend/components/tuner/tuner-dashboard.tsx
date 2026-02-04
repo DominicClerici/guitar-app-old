@@ -40,6 +40,7 @@ const MAX_POINTS = 100
 const CENTS_RANGE = 50
 const DEFAULT_SMOOTHING = 0.2
 const IN_TUNE_CENTS = 8
+const DEFAULT_AVERAGING_SAMPLES = 4
 
 const GRADIENT_ID = "dashboard-tuner-gradient"
 
@@ -377,6 +378,8 @@ export default function TunerDashboard() {
   const [pitch, setPitch] = useState(-1)
   const bufferRef = useRef<CircularBuffer>(new CircularBuffer(MAX_POINTS))
   const [bufferVersion, setBufferVersion] = useState(0)
+  const [averagingSamples, setAveragingSamples] = useState(DEFAULT_AVERAGING_SAMPLES)
+  const pitchSamplesRef = useRef<number[]>([])
   const [chartDimensions, setChartDimensions] = useState({ width: 600, height: 400 })
   const [selectedTuning, setSelectedTuning] = useState("standard")
   const [selectedString, setSelectedString] = useState<number | null>(null)
@@ -399,16 +402,32 @@ export default function TunerDashboard() {
     [selectedTuning],
   )
 
-  const handlePitchDetected = useCallback((result: PitchResult) => {
-    setPitch(result.frequency)
+  const handlePitchDetected = useCallback(
+    (result: PitchResult) => {
+      const samples = pitchSamplesRef.current
 
-    const buffer = bufferRef.current
-    const cents = result.frequency > 0 ? getCentsDeviation(result.frequency) : null
-    if (cents !== null) {
-      buffer.push({ cents, isActive: true })
-      setBufferVersion(buffer.version)
-    }
-  }, [])
+      if (result.frequency > 0) {
+        samples.push(result.frequency)
+        if (samples.length > averagingSamples) {
+          samples.shift()
+        }
+
+        const averagedPitch = samples.reduce((sum, f) => sum + f, 0) / samples.length
+        setPitch(averagedPitch)
+
+        const cents = getCentsDeviation(averagedPitch)
+        if (cents !== null) {
+          const buffer = bufferRef.current
+          buffer.push({ cents, isActive: true })
+          setBufferVersion(buffer.version)
+        }
+      } else {
+        samples.length = 0
+        setPitch(-1)
+      }
+    },
+    [averagingSamples],
+  )
 
   const { status, error, startListening, stopListening } = useAutocorrelation({
     onPitchDetected: handlePitchDetected,
@@ -540,8 +559,10 @@ export default function TunerDashboard() {
                 error={error}
                 isMicEnabled={isMicEnabled}
                 selectedTuning={selectedTuning}
+                averagingSamples={averagingSamples}
                 onMicToggle={handleMicToggle}
                 onTuningChange={handleTuningChange}
+                onAveragingSamplesChange={setAveragingSamples}
               />
             </CardContent>
           </Card>
