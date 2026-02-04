@@ -15,13 +15,13 @@ import {
 } from "@/lib/caged-practice/practice-data"
 import type { PracticePhase, QuizResults } from "@/lib/caged-practice/types"
 import {
-  type FretboardNote,
   generateFretboardNotes,
   getCAGEDShapeNotes,
   getNotesByDegrees,
   getRootNotes,
   NOTE_NAMES,
   SCALE_FORMULAS,
+  type FretboardNote,
 } from "@/lib/theory"
 import { cn } from "@/lib/utils"
 import { ArrowRight, CheckCircle2, X } from "lucide-react"
@@ -39,6 +39,7 @@ type PracticeType = "roots" | "chordTones" | "pentatonic"
 interface CAGEDPracticeClientProps {
   initialKeyIndex: number
   practiceType?: PracticeType
+  autoStart?: boolean
   onExit: () => void
   onComplete: () => void
 }
@@ -105,6 +106,7 @@ function KeyProgressIndicator({
 export default function CAGEDPracticeClient({
   initialKeyIndex,
   practiceType = "roots",
+  autoStart = false,
   onExit,
   onComplete,
 }: CAGEDPracticeClientProps) {
@@ -127,6 +129,9 @@ export default function CAGEDPracticeClient({
   const [currentRound, setCurrentRound] = useState(1)
   const [keysCompleted, setKeysCompleted] = useState(0)
   const [playedNotes, setPlayedNotes] = useState<Set<string>>(new Set())
+  const [wrongNote, setWrongNote] = useState<{ stringIndex: number; fretIndex: number } | null>(
+    null,
+  )
   const [countdownValue, setCountdownValue] = useState(5)
   const [completedShapeName, setCompletedShapeName] = useState<string | null>(null)
   const [quizQuestions, setQuizQuestions] = useState(() =>
@@ -136,6 +141,7 @@ export default function CAGEDPracticeClient({
 
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const transitionTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const wrongNoteTimerRef = useRef<NodeJS.Timeout | null>(null)
   const phaseRef = useRef(phase)
 
   useEffect(() => {
@@ -180,6 +186,20 @@ export default function CAGEDPracticeClient({
         next.add(`${stringIndex}-${fret}`)
         return next
       })
+      setWrongNote(null)
+      if (wrongNoteTimerRef.current) {
+        clearTimeout(wrongNoteTimerRef.current)
+        wrongNoteTimerRef.current = null
+      }
+    } else {
+      setWrongNote({ stringIndex, fretIndex: fret })
+      if (wrongNoteTimerRef.current) {
+        clearTimeout(wrongNoteTimerRef.current)
+      }
+      wrongNoteTimerRef.current = setTimeout(() => {
+        setWrongNote(null)
+        wrongNoteTimerRef.current = null
+      }, 1000)
     }
   }, [])
 
@@ -251,6 +271,12 @@ export default function CAGEDPracticeClient({
       }
     }, 1000)
   }, [startListening])
+
+  useEffect(() => {
+    if (autoStart && phase === "idle") {
+      handleStartPractice()
+    }
+  }, [autoStart, phase, handleStartPractice])
 
   const handleTestIntroComplete = useCallback(() => {
     setCurrentShapeIndex(0)
@@ -325,6 +351,9 @@ export default function CAGEDPracticeClient({
       if (transitionTimerRef.current) {
         clearTimeout(transitionTimerRef.current)
       }
+      if (wrongNoteTimerRef.current) {
+        clearTimeout(wrongNoteTimerRef.current)
+      }
       stopListening()
     }
   }, [stopListening])
@@ -387,45 +416,74 @@ export default function CAGEDPracticeClient({
 
   if (phase === "countdown") {
     return (
-      <div className="bg-background/60 absolute inset-0 z-50 flex flex-col items-center justify-center gap-4">
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div
-            className="border-primary/20 absolute size-32 animate-ping rounded-full border-2"
-            style={{ animationDuration: "1s" }}
+      <div className="relative flex flex-col gap-6">
+        <div className="flex items-center justify-between opacity-50">
+          <ShapeProgressIndicator
+            currentShapeIndex={currentShapeIndex}
+            totalShapes={shapeOrder.length}
+            shapeOrder={shapeOrder}
           />
-          <div
-            className="border-primary/10 absolute size-48 animate-ping rounded-full border"
-            style={{ animationDuration: "1s", animationDelay: "0.2s" }}
+          <KeyProgressIndicator
+            keysCompleted={keysCompleted}
+            totalKeys={TOTAL_KEYS}
+            currentKeyName={NOTE_NAMES[currentKeyIndex]}
           />
         </div>
 
-        <span className="text-muted-foreground relative z-10 text-sm font-semibold tracking-[0.3em] uppercase">
-          Get Ready
-        </span>
+        <div className="pointer-events-none opacity-50">
+          <GuidedPracticePhase
+            currentShapeName={currentShapeName}
+            currentShapeNotes={currentShapeNotes}
+            playedNotes={playedNotes}
+            wrongNote={null}
+            currentRound={currentRound}
+            totalRounds={GUIDED_ROUNDS}
+            currentShapeIndex={currentShapeIndex}
+            totalShapes={shapeOrder.length}
+            practiceType={practiceType}
+          />
+        </div>
 
-        <div className="relative z-10 flex size-32 items-center justify-center">
-          <div className="from-primary/20 to-primary/5 absolute inset-0 rounded-full bg-gradient-to-br" />
-          <span
-            key={countdownValue}
-            className="font-display animate-scale-in text-7xl font-bold tabular-nums"
-          >
-            {countdownValue}
+        <div className="bg-background/80 absolute inset-0 z-50 flex flex-col items-center justify-center gap-4">
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div
+              className="border-primary/20 absolute size-32 animate-ping rounded-full border-2"
+              style={{ animationDuration: "1s" }}
+            />
+            <div
+              className="border-primary/10 absolute size-48 animate-ping rounded-full border"
+              style={{ animationDuration: "1s", animationDelay: "0.2s" }}
+            />
+          </div>
+
+          <span className="text-muted-foreground relative z-10 text-sm font-semibold tracking-[0.3em] uppercase">
+            Get Ready
           </span>
+
+          <div className="relative z-10 flex size-32 items-center justify-center">
+            <div className="from-primary/20 to-primary/5 absolute inset-0 rounded-full bg-gradient-to-br" />
+            <span
+              key={countdownValue}
+              className="font-display animate-scale-in text-7xl font-bold tabular-nums"
+            >
+              {countdownValue}
+            </span>
+          </div>
+
+          <p className="text-muted-foreground relative z-10 text-sm">
+            Position your hands on the fretboard
+          </p>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleExit}
+            className="text-muted-foreground relative z-10 mt-4"
+          >
+            <X className="size-4" />
+            Cancel
+          </Button>
         </div>
-
-        <p className="text-muted-foreground relative z-10 text-sm">
-          Position your hands on the fretboard
-        </p>
-
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={handleExit}
-          className="text-muted-foreground relative z-10 mt-4"
-        >
-          <X className="size-4" />
-          Cancel
-        </Button>
       </div>
     )
   }
@@ -450,6 +508,7 @@ export default function CAGEDPracticeClient({
           currentShapeName={currentShapeName}
           currentShapeNotes={currentShapeNotes}
           playedNotes={playedNotes}
+          wrongNote={wrongNote}
           currentRound={currentRound}
           totalRounds={GUIDED_ROUNDS}
           currentShapeIndex={currentShapeIndex}
@@ -521,6 +580,7 @@ export default function CAGEDPracticeClient({
           currentShapeName={currentShapeName}
           currentShapeNotes={currentShapeNotes}
           playedNotes={playedNotes}
+          wrongNote={wrongNote}
           currentShapeIndex={currentShapeIndex}
           totalShapes={shapeOrder.length}
           practiceType={practiceType}

@@ -11,6 +11,7 @@ interface GuidedPracticePhaseProps {
   currentShapeName: string
   currentShapeNotes: FretboardNote[]
   playedNotes: Set<string>
+  wrongNote: { stringIndex: number; fretIndex: number } | null
   currentRound: number
   totalRounds: number
   currentShapeIndex: number
@@ -22,6 +23,7 @@ export default function GuidedPracticePhase({
   currentShapeName,
   currentShapeNotes,
   playedNotes,
+  wrongNote,
   currentRound,
   totalRounds,
   currentShapeIndex,
@@ -47,6 +49,15 @@ export default function GuidedPracticePhase({
       degree: note.degree,
     }
   })
+
+  if (wrongNote) {
+    markers.push({
+      stringIndex: wrongNote.stringIndex,
+      fretIndex: wrongNote.fretIndex,
+      type: "wrong",
+      label: "",
+    })
+  }
 
   const notesPlayed = playedNotes.size
   const totalNotes = currentShapeNotes.length

@@ -22,6 +22,7 @@ import MinorPentatonicArticle from "./articles/minor-pentatonic-article"
 import CAGEDPracticeClient from "./caged-practice-client"
 import LearnHeader from "./learn-header"
 import LearnPreview from "./learn-preview"
+import PracticeInfo from "./practice-info"
 
 type ViewMode = "article" | "preview" | "practice"
 type PreviewShape = "full" | "C" | "A" | "G" | "E" | "D"
@@ -147,7 +148,7 @@ export default function LearnModuleClient({ module }: LearnModuleClientProps) {
         <div className="animate-fade-in">
           <ArticleComponent onEnterPreview={handleEnterPreview} />
         </div>
-      ) : (
+      ) : viewMode === "preview" ? (
         <div className="animate-fade-in flex flex-col gap-6">
           <LearnPreview
             previewShape={previewShape}
@@ -161,31 +162,33 @@ export default function LearnModuleClient({ module }: LearnModuleClientProps) {
             <Fretboard markers={markers} showDegree={showDegree} className="w-full" />
           </div>
 
+          <PracticeInfo
+            practiceType={
+              module === "cagedPentatonic"
+                ? "pentatonic"
+                : module === "chordTones"
+                  ? "chordTones"
+                  : "roots"
+            }
+            keyIndex={selectedKeyIndex}
+            handleEnterPractice={() => setViewMode("practice")}
+            handleBackToArticle={handleBackToArticle}
+          />
+
           <div className="flex flex-col items-center gap-4">
             <div className="flex items-center gap-3">
-              <Button variant="outline" size="lg" onClick={handleBackToArticle}>
+              <Button variant="outline" size="xl" onClick={handleBackToArticle}>
                 <BookOpen className="size-4" />
                 Back to Article
               </Button>
-              <Button size="lg" onClick={() => setViewMode("practice")}>
+              <Button size="xl" onClick={() => setViewMode("practice")}>
                 <Play className="size-4 fill-current" />
                 Start Practice
               </Button>
             </div>
-            <p className="text-muted-foreground text-xs">
-              Play along with guided practice to master CAGED{" "}
-              {module === "cagedPentatonic"
-                ? "pentatonic"
-                : module === "chordTones"
-                  ? "chord tone"
-                  : "root"}{" "}
-              positions
-            </p>
           </div>
         </div>
-      )}
-
-      {viewMode === "practice" && (
+      ) : (
         <div className="animate-fade-in">
           <CAGEDPracticeClient
             initialKeyIndex={selectedKeyIndex}
@@ -196,6 +199,7 @@ export default function LearnModuleClient({ module }: LearnModuleClientProps) {
                   ? "chordTones"
                   : "roots"
             }
+            autoStart
             onExit={() => setViewMode("preview")}
             onComplete={() => setViewMode("preview")}
           />

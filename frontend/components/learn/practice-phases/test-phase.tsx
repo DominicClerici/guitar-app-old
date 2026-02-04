@@ -11,6 +11,7 @@ interface TestPhaseProps {
   currentShapeName: string
   currentShapeNotes: FretboardNote[]
   playedNotes: Set<string>
+  wrongNote: { stringIndex: number; fretIndex: number } | null
   currentShapeIndex: number
   totalShapes: number
   practiceType?: "roots" | "chordTones" | "pentatonic"
@@ -20,6 +21,7 @@ export default function TestPhase({
   currentShapeName,
   currentShapeNotes,
   playedNotes,
+  wrongNote,
   currentShapeIndex,
   totalShapes,
   practiceType = "roots",
@@ -43,6 +45,15 @@ export default function TestPhase({
       degree: note.degree,
     }
   })
+
+  if (wrongNote) {
+    markers.push({
+      stringIndex: wrongNote.stringIndex,
+      fretIndex: wrongNote.fretIndex,
+      type: "wrong",
+      label: "",
+    })
+  }
 
   const notesFound = playedNotes.size
   const totalNotes = currentShapeNotes.length

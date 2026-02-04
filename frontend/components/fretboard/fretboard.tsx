@@ -24,6 +24,7 @@ type MarkerType =
   | "chord-tone-disabled"
   | "chord-tone-hidden"
   | "played"
+  | "wrong"
 
 type Marker = {
   stringIndex: number
@@ -67,6 +68,15 @@ export function Fretboard({
     const isDisabled = type.includes("disabled")
     const isRoot = type.includes("root")
     const isChordTone = type.includes("chord-tone")
+    if (type === "wrong") {
+      return {
+        fill: "var(--destructive)",
+        textColor: "var(--destructive-foreground)",
+        borderColor: "var(--destructive)",
+        opacity: 1,
+        isRoot: false,
+      }
+    }
     if (type === "played") {
       return {
         fill: "var(--primary)",
@@ -225,6 +235,7 @@ export function Fretboard({
       const cy = getStringY(marker.stringIndex)
       const displayLabel =
         showDegree && marker.degree !== undefined ? String(marker.degree) : marker.label
+      const showLabel = marker.type !== "wrong"
 
       return (
         <g
@@ -253,17 +264,19 @@ export function Fretboard({
               strokeWidth={1}
             />
           )}
-          <text
-            x={cx}
-            y={cy}
-            textAnchor="middle"
-            dominantBaseline="central"
-            fill={style.textColor}
-            className={`font-bold`}
-            style={{ fontSize: 12 }}
-          >
-            {displayLabel}
-          </text>
+          {showLabel && (
+            <text
+              x={cx}
+              y={cy}
+              textAnchor="middle"
+              dominantBaseline="central"
+              fill={style.textColor}
+              className={`font-bold`}
+              style={{ fontSize: 12 }}
+            >
+              {displayLabel}
+            </text>
+          )}
         </g>
       )
     })
