@@ -14,6 +14,7 @@ from utils.freq_estimation import (
     freq_from_hps,
 )
 from augment import AudioAugmenter, AugmentationConfig, create_augmenter
+from dataclasses import dataclass
 from sequential_notes import SequentialNoteGenerator, SequentialAudioResult, NoteRegion
 
 
@@ -25,7 +26,7 @@ WINDOW_SIZE = 4096  # ~69ms at 44.1kHz, matches browser inference
 TARGET_RMS = 0.035
 
 USE_AUGMENTATION = True
-NUM_AUGMENTATIONS = 10
+NUM_AUGMENTATIONS = 2
 AUGMENTATION_PRESET = "moderate"
 
 USE_FINETUNE_SAMPLES = True
@@ -54,6 +55,18 @@ SEQUENTIAL_GAP_MAX_MS = 15.0  # Maximum gap between notes
 SEQUENTIAL_LENGTH_MIN = 3  # Minimum notes per sequence
 SEQUENTIAL_LENGTH_MAX = 5  # Maximum notes per sequence
 SEQUENTIAL_NOTE_DURATION_MS = 100.0  # How much of each note to include
+
+# Sliding window sequence generation - simulates production rolling window environment
+# This creates long sequences of notes and extracts windows with a hop size matching production
+USE_SLIDING_WINDOW_SEQUENCES = True
+SLIDING_WINDOW_HOP_SIZE = 512  # Hop size in samples (matches production inference)
+SLIDING_WINDOW_GAP_MIN_MS = 0.0  # Minimum gap between notes in ms
+SLIDING_WINDOW_GAP_MAX_MS = 50.0  # Maximum gap between notes in ms
+SLIDING_WINDOW_NUM_TRAIN_SEQUENCES = 100  # Number of training sequences to generate
+SLIDING_WINDOW_NUM_VAL_SEQUENCES = 25  # Number of validation sequences to generate
+SLIDING_WINDOW_NOTES_PER_SEQUENCE = 15  # Number of notes per sequence
+SLIDING_WINDOW_NOTE_DURATION_MS = 400.0  # Duration of each note in sequence (longer for realism)
+SLIDING_WINDOW_ONLY_MODE = False  # If True, train ONLY on sliding window sequences
 
 # Open string frequencies by string number (0-5, matching sample directory structure)
 # String 0 = low E (thickest), String 5 = high E (thinnest)
@@ -207,6 +220,318 @@ class StringLayerMixer:
         return mixed, selected_string
 
 
+@dataclass
+class SlidingWindowNoteRegion:
+    """Represents a note's position in a sliding window sequence."""
+    start_sample: int
+    end_sample: int
+    string: int
+    fret: int
+    source_path: Path
+
+
+@dataclass
+class SlidingWindowSequenceResult:
+    """Result of generating a sliding window sequence."""
+    audio: np.ndarray
+    note_regions: list[SlidingWindowNoteRegion]
+    sequence_id: str
+    is_validation: bool
+
+
+class SlidingWindowSequenceGenerator:
+    """
+    Generates long audio sequences from individual note samples, then extracts
+    overlapping windows with a fixed hop size to simulate production inference.
+
+    This better replicates the production environment where the model processes
+    a rolling window of audio with significant overlap between consecutive windows.
+
+    Key differences from SequentialNoteGenerator:
+    - Uses configurable hop size (default 512 samples) instead of 50% overlap
+    - Labels transition windows with the INCOMING note (not dominant overlap)
+    - Designed for longer sequences with more notes
+    - Augmentation is applied to entire sequences, not individual notes
+    """
+
+    def __init__(
+        self,
+        samples: list[tuple[Path, int, int]],
+        target_sr: int = 44100,
+        window_size: int = WINDOW_SIZE,
+        hop_size: int = SLIDING_WINDOW_HOP_SIZE,
+        gap_min_ms: float = SLIDING_WINDOW_GAP_MIN_MS,
+        gap_max_ms: float = SLIDING_WINDOW_GAP_MAX_MS,
+        notes_per_sequence: int = SLIDING_WINDOW_NOTES_PER_SEQUENCE,
+        note_duration_ms: float = SLIDING_WINDOW_NOTE_DURATION_MS,
+        seed: int | None = None,
+    ):
+        """
+        Args:
+            samples: List of (path, string, fret) tuples for available samples
+            target_sr: Target sample rate
+            window_size: Window size in samples (default 4096)
+            hop_size: Hop size in samples (default 512, matching production)
+            gap_min_ms: Minimum gap between notes in milliseconds (0-50ms)
+            gap_max_ms: Maximum gap between notes in milliseconds (0-50ms)
+            notes_per_sequence: Number of notes per sequence
+            note_duration_ms: Duration of each note in the sequence
+            seed: Random seed for reproducibility
+        """
+        self.samples = samples
+        self.target_sr = target_sr
+        self.window_size = window_size
+        self.hop_size = hop_size
+        self.gap_min_samples = int(gap_min_ms * target_sr / 1000)
+        self.gap_max_samples = int(gap_max_ms * target_sr / 1000)
+        self.notes_per_sequence = notes_per_sequence
+        self.note_duration_samples = int(note_duration_ms * target_sr / 1000)
+        self._rng = np.random.default_rng(seed)
+
+        # Build index for quick lookup by (string, fret)
+        self._samples_by_position: dict[tuple[int, int], list[Path]] = {}
+        for path, string, fret in samples:
+            key = (string, fret)
+            if key not in self._samples_by_position:
+                self._samples_by_position[key] = []
+            self._samples_by_position[key].append(path)
+
+        self._positions = list(self._samples_by_position.keys())
+        print(f"SlidingWindowSequenceGenerator: {len(samples)} samples, "
+              f"{len(self._positions)} positions, hop={hop_size}")
+
+    def _load_and_prepare_note(self, path: Path) -> np.ndarray | None:
+        """Load a note sample and prepare it for sequencing."""
+        try:
+            y, sr = librosa.load(str(path), sr=self.target_sr)
+        except Exception as e:
+            print(f"Warning: Failed to load {path}: {e}")
+            return None
+
+        # Trim silence from start
+        y_trimmed, _ = librosa.effects.trim(y, top_db=20)
+        if len(y_trimmed) > self.target_sr * 0.05:
+            y = y_trimmed
+
+        # Limit note duration
+        max_samples = min(len(y), self.note_duration_samples)
+        y = y[:max_samples]
+
+        # Apply fade out to avoid clicks
+        fade_len = min(200, len(y) // 4)
+        if fade_len > 0:
+            fade = np.linspace(1.0, 0.0, fade_len)
+            y[-fade_len:] *= fade
+
+        return y
+
+    def generate_sequence(self, sequence_idx: int, is_validation: bool = False) -> SlidingWindowSequenceResult | None:
+        """
+        Generate a single sequence by concatenating random notes with gaps.
+
+        Args:
+            sequence_idx: Index for naming the sequence
+            is_validation: Whether this is for the validation set
+
+        Returns:
+            SlidingWindowSequenceResult with audio and note regions
+        """
+        audio_segments = []
+        note_regions = []
+        current_position = 0
+
+        # Pick random notes for the sequence
+        for note_idx in range(self.notes_per_sequence):
+            # Pick random position
+            pos_idx = self._rng.integers(0, len(self._positions))
+            string, fret = self._positions[pos_idx]
+
+            # Pick random sample from that position
+            available = self._samples_by_position[(string, fret)]
+            path = available[self._rng.integers(0, len(available))]
+
+            # Load and prepare the note
+            y = self._load_and_prepare_note(path)
+            if y is None:
+                continue
+
+            # Record note region
+            note_start = current_position
+            note_end = current_position + len(y)
+            note_regions.append(SlidingWindowNoteRegion(
+                start_sample=note_start,
+                end_sample=note_end,
+                string=string,
+                fret=fret,
+                source_path=path,
+            ))
+
+            audio_segments.append(y)
+            current_position = note_end
+
+            # Add gap (except after last note)
+            if note_idx < self.notes_per_sequence - 1:
+                gap_samples = self._rng.integers(
+                    self.gap_min_samples,
+                    max(self.gap_min_samples + 1, self.gap_max_samples + 1)
+                )
+                if gap_samples > 0:
+                    gap = np.zeros(gap_samples)
+                    audio_segments.append(gap)
+                    current_position += gap_samples
+
+        if len(note_regions) < 2:
+            return None
+
+        combined_audio = np.concatenate(audio_segments)
+
+        # Generate sequence ID
+        prefix = "swval" if is_validation else "swtrain"
+        sequence_id = f"{prefix}_{sequence_idx}"
+
+        return SlidingWindowSequenceResult(
+            audio=combined_audio,
+            note_regions=note_regions,
+            sequence_id=sequence_id,
+            is_validation=is_validation,
+        )
+
+    def get_window_label(
+        self,
+        window_start: int,
+        window_end: int,
+        note_regions: list[SlidingWindowNoteRegion],
+    ) -> tuple[int, int]:
+        """
+        Determine the label for a window.
+
+        Labeling strategy:
+        - If only one note overlaps the window, use that note's label
+        - If two notes overlap (transition), use the INCOMING (later) note's label
+          This teaches the model to quickly recognize new notes as they start
+
+        Args:
+            window_start: Start sample index of the window
+            window_end: End sample index of the window
+            note_regions: List of SlidingWindowNoteRegion objects
+
+        Returns:
+            (string, fret) of the note to use as label
+        """
+        overlapping_notes = []
+
+        for region in note_regions:
+            # Calculate overlap
+            overlap_start = max(window_start, region.start_sample)
+            overlap_end = min(window_end, region.end_sample)
+            overlap = max(0, overlap_end - overlap_start)
+
+            if overlap > 0:
+                overlapping_notes.append((region, overlap))
+
+        if not overlapping_notes:
+            # No overlap - find nearest note
+            min_dist = float('inf')
+            nearest_region = note_regions[0]
+            for region in note_regions:
+                dist_start = abs(window_start - region.end_sample)
+                dist_end = abs(window_end - region.start_sample)
+                dist = min(dist_start, dist_end)
+                if dist < min_dist:
+                    min_dist = dist
+                    nearest_region = region
+            return nearest_region.string, nearest_region.fret
+
+        if len(overlapping_notes) == 1:
+            # Single note - use it
+            region, _ = overlapping_notes[0]
+            return region.string, region.fret
+
+        # Multiple notes (transition) - use the one that starts later (incoming note)
+        overlapping_notes.sort(key=lambda x: x[0].start_sample)
+        incoming_region = overlapping_notes[-1][0]
+        return incoming_region.string, incoming_region.fret
+
+    def extract_sliding_windows(
+        self,
+        sequence_result: SlidingWindowSequenceResult,
+    ) -> list[tuple[np.ndarray, int, int, int, float]]:
+        """
+        Extract sliding windows from a sequence with proper labels.
+
+        Args:
+            sequence_result: The sequence to extract windows from
+
+        Returns:
+            List of (window_audio, string, fret, window_idx, transition_likelihood)
+        """
+        audio = sequence_result.audio
+        note_regions = sequence_result.note_regions
+        windows = []
+
+        for win_idx, start in enumerate(range(0, len(audio) - self.window_size + 1, self.hop_size)):
+            window = audio[start:start + self.window_size]
+            window_end = start + self.window_size
+
+            # Get label for this window
+            string, fret = self.get_window_label(start, window_end, note_regions)
+
+            # Check if this is a transition window (overlaps multiple notes)
+            overlapping_count = 0
+            for region in note_regions:
+                overlap_start = max(start, region.start_sample)
+                overlap_end = min(window_end, region.end_sample)
+                if overlap_end > overlap_start:
+                    overlapping_count += 1
+
+            transition_likelihood = 1.0 if overlapping_count > 1 else 0.0
+
+            windows.append((window, string, fret, win_idx, transition_likelihood))
+
+        return windows
+
+    def generate_sequences(
+        self,
+        num_train: int,
+        num_val: int,
+        max_attempts_per_sequence: int = 3,
+    ) -> tuple[list[SlidingWindowSequenceResult], list[SlidingWindowSequenceResult]]:
+        """
+        Generate training and validation sequences.
+
+        Args:
+            num_train: Number of training sequences
+            num_val: Number of validation sequences
+            max_attempts_per_sequence: Max attempts per sequence before giving up
+
+        Returns:
+            Tuple of (train_sequences, val_sequences)
+        """
+        train_sequences = []
+        val_sequences = []
+
+        # Generate training sequences
+        attempts = 0
+        max_attempts = num_train * max_attempts_per_sequence
+        while len(train_sequences) < num_train and attempts < max_attempts:
+            attempts += 1
+            result = self.generate_sequence(len(train_sequences), is_validation=False)
+            if result is not None:
+                train_sequences.append(result)
+
+        # Generate validation sequences
+        attempts = 0
+        max_attempts = num_val * max_attempts_per_sequence
+        while len(val_sequences) < num_val and attempts < max_attempts:
+            attempts += 1
+            result = self.generate_sequence(len(val_sequences), is_validation=True)
+            if result is not None:
+                val_sequences.append(result)
+
+        print(f"Generated {len(train_sequences)} train / {len(val_sequences)} val sliding window sequences")
+        return train_sequences, val_sequences
+
+
 def calculate_expected_frequency(string: int, fret: int) -> float:
     """Calculate the expected fundamental frequency for a given string and fret."""
     if string not in OPEN_STRING_FREQS_BY_NUMBER:
@@ -227,11 +552,17 @@ def should_skip_frequency_validation(sample_id: str) -> bool:
     """
     Check if a sample should skip frequency validation.
 
-    Layered samples and sequential samples are excluded because:
-    - Layered samples have adjacent string interference that affects frequency detection
-    - Sequential samples may contain multiple notes, so detected frequency won't match label
+    Excluded samples:
+    - Layered samples: have adjacent string interference that affects frequency detection
+    - Sequential samples (seq*): may contain multiple notes, detected frequency won't match label
+    - Sliding window samples (swtrain*, swval*): windows may span note transitions
     """
-    return "_layer" in sample_id or sample_id.startswith("seq")
+    return (
+        "_layer" in sample_id or
+        sample_id.startswith("seq") or
+        sample_id.startswith("swtrain") or
+        sample_id.startswith("swval")
+    )
 
 
 def validate_fundamental_frequencies(
@@ -855,6 +1186,78 @@ def process_sequential_audio(
     return features
 
 
+def process_sliding_window_sequence(
+    sequence_result: SlidingWindowSequenceResult,
+    generator: SlidingWindowSequenceGenerator,
+    extractor: FeatureExtractor,
+    augmenter: AudioAugmenter | None = None,
+    num_augmentations: int = 2,
+) -> list[WindowFeatures]:
+    """
+    Process a sliding window sequence and extract features.
+
+    Augmentation is applied to the entire sequence BEFORE window extraction,
+    ensuring consistent augmentation across all windows in the sequence.
+
+    Args:
+        sequence_result: The sequence to process
+        generator: The generator instance (for label calculation)
+        extractor: Feature extractor instance
+        augmenter: Optional augmenter for data augmentation
+        num_augmentations: Number of augmented versions to generate
+
+    Returns:
+        List of WindowFeatures for all windows (original + augmented)
+    """
+    all_features = []
+    audio = sequence_result.audio
+    note_regions = sequence_result.note_regions
+    sr = generator.target_sr
+
+    # Normalize the sequence audio
+    normalized_audio = normalize_audio_amplitude(audio, TARGET_RMS)
+
+    # Process original sequence
+    def extract_features_from_audio(audio_data: np.ndarray, suffix: str = "") -> list[WindowFeatures]:
+        """Extract features from windows of the given audio."""
+        features = []
+        windows = generator.extract_sliding_windows(SlidingWindowSequenceResult(
+            audio=audio_data,
+            note_regions=note_regions,
+            sequence_id=sequence_result.sequence_id + suffix,
+            is_validation=sequence_result.is_validation,
+        ))
+
+        for window, string, fret, win_idx, transition_likelihood in windows:
+            # Normalize each window individually (matches production inference)
+            window = normalize_audio_amplitude(window, TARGET_RMS)
+
+            window_features = extractor.extract_window_features(
+                window=window,
+                sr=sr,
+                string=string,
+                fret=fret,
+                sample_id=sequence_result.sequence_id + suffix,
+                window_index=win_idx,
+                transition_likelihood=transition_likelihood,
+            )
+            features.append(window_features)
+
+        return features
+
+    # Extract features from original audio
+    all_features.extend(extract_features_from_audio(normalized_audio))
+
+    # Generate and process augmented versions
+    if augmenter is not None and num_augmentations > 0:
+        for aug_idx in range(num_augmentations):
+            # Apply augmentation to entire sequence
+            augmented_audio, _ = augmenter.augment(normalized_audio)
+            all_features.extend(extract_features_from_audio(augmented_audio, f"_aug{aug_idx}"))
+
+    return all_features
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Extract features from guitar audio samples with optional augmentation."
@@ -981,6 +1384,66 @@ def parse_args():
         type=float,
         default=SEQUENTIAL_NOTE_DURATION_MS,
         help=f"Duration of each note in sequence in ms (default: {SEQUENTIAL_NOTE_DURATION_MS})"
+    )
+
+    # Sliding window sequence options (simulates production rolling window)
+    parser.add_argument(
+        "--no-sliding-window",
+        action="store_true",
+        help="Disable sliding window sequence generation"
+    )
+    parser.add_argument(
+        "--sliding-window-only",
+        action="store_true",
+        help="Generate ONLY sliding window sequences (for special training mode)"
+    )
+    parser.add_argument(
+        "--sliding-window-num-train",
+        type=int,
+        default=SLIDING_WINDOW_NUM_TRAIN_SEQUENCES,
+        help=f"Number of training sequences (default: {SLIDING_WINDOW_NUM_TRAIN_SEQUENCES})"
+    )
+    parser.add_argument(
+        "--sliding-window-num-val",
+        type=int,
+        default=SLIDING_WINDOW_NUM_VAL_SEQUENCES,
+        help=f"Number of validation sequences (default: {SLIDING_WINDOW_NUM_VAL_SEQUENCES})"
+    )
+    parser.add_argument(
+        "--sliding-window-hop-size",
+        type=int,
+        default=SLIDING_WINDOW_HOP_SIZE,
+        help=f"Hop size in samples (default: {SLIDING_WINDOW_HOP_SIZE})"
+    )
+    parser.add_argument(
+        "--sliding-window-gap-min",
+        type=float,
+        default=SLIDING_WINDOW_GAP_MIN_MS,
+        help=f"Minimum gap between notes in ms (default: {SLIDING_WINDOW_GAP_MIN_MS})"
+    )
+    parser.add_argument(
+        "--sliding-window-gap-max",
+        type=float,
+        default=SLIDING_WINDOW_GAP_MAX_MS,
+        help=f"Maximum gap between notes in ms (default: {SLIDING_WINDOW_GAP_MAX_MS})"
+    )
+    parser.add_argument(
+        "--sliding-window-notes-per-seq",
+        type=int,
+        default=SLIDING_WINDOW_NOTES_PER_SEQUENCE,
+        help=f"Notes per sequence (default: {SLIDING_WINDOW_NOTES_PER_SEQUENCE})"
+    )
+    parser.add_argument(
+        "--sliding-window-note-duration",
+        type=float,
+        default=SLIDING_WINDOW_NOTE_DURATION_MS,
+        help=f"Duration of each note in ms (default: {SLIDING_WINDOW_NOTE_DURATION_MS})"
+    )
+    parser.add_argument(
+        "--sliding-window-augmentations",
+        type=int,
+        default=2,
+        help="Number of augmented versions per sliding window sequence (default: 2)"
     )
 
     return parser.parse_args()
@@ -1111,122 +1574,282 @@ def main():
                 seed=random_seed + 1,
             )
 
+    # Set up sliding window sequence generators (simulates production rolling window)
+    # Separate generators for base and finetune samples to avoid mixing categories
+    base_sliding_generator = None
+    finetune_sliding_generator = None
+    use_sliding_window = USE_SLIDING_WINDOW_SEQUENCES and not args.no_sliding_window
+
+    if use_sliding_window or args.sliding_window_only:
+        print(f"\nSliding window sequence generation enabled")
+        print(f"  Window size: {WINDOW_SIZE}, Hop size: {args.sliding_window_hop_size}")
+        print(f"  Gap between notes: {args.sliding_window_gap_min}-{args.sliding_window_gap_max}ms")
+        print(f"  Notes per sequence: {args.sliding_window_notes_per_seq}")
+        print(f"  Note duration: {args.sliding_window_note_duration}ms")
+        print(f"  Train sequences: {args.sliding_window_num_train}, Val sequences: {args.sliding_window_num_val}")
+        if args.sliding_window_only:
+            print(f"  MODE: Sliding window sequences ONLY (no individual samples)")
+
+        if base_samples:
+            base_sliding_generator = SlidingWindowSequenceGenerator(
+                samples=base_samples,
+                target_sr=44100,
+                window_size=WINDOW_SIZE,
+                hop_size=args.sliding_window_hop_size,
+                gap_min_ms=args.sliding_window_gap_min,
+                gap_max_ms=args.sliding_window_gap_max,
+                notes_per_sequence=args.sliding_window_notes_per_seq,
+                note_duration_ms=args.sliding_window_note_duration,
+                seed=random_seed + 2,
+            )
+
+        if finetune_samples:
+            finetune_sliding_generator = SlidingWindowSequenceGenerator(
+                samples=finetune_samples,
+                target_sr=44100,
+                window_size=WINDOW_SIZE,
+                hop_size=args.sliding_window_hop_size,
+                gap_min_ms=args.sliding_window_gap_min,
+                gap_max_ms=args.sliding_window_gap_max,
+                notes_per_sequence=args.sliding_window_notes_per_seq,
+                note_duration_ms=args.sliding_window_note_duration,
+                seed=random_seed + 3,
+            )
+
     extractor = FeatureExtractor(n_harmonics=12)
     all_features: list[WindowFeatures] = []
+    sliding_train_features: list[WindowFeatures] = []
+    sliding_val_features: list[WindowFeatures] = []
     augmentation_stats = {"total_augmented": 0, "effects_applied": defaultdict(int)}
 
-    for i, (path, string_num, fret_num) in enumerate(samples):
-        if i % 25 == 0:
-            print(f"Processing [{i+1}/{len(samples)}]")
+    # Process individual samples (skip if sliding-window-only mode)
+    if not args.sliding_window_only:
+        for i, (path, string_num, fret_num) in enumerate(samples):
+            if i % 25 == 0:
+                print(f"Processing [{i+1}/{len(samples)}]")
 
-        try:
-            y, sr = librosa.load(str(path), sr=None)
-            sample_id = path.stem
+            try:
+                y, sr = librosa.load(str(path), sr=None)
+                sample_id = path.stem
 
-            features = process_audio_with_augmentation(
-                y=y,
-                sr=sr,
-                string_num=string_num,
-                fret_num=fret_num,
-                sample_id=sample_id,
-                extractor=extractor,
-                augmenter=augmenter,
-                layer_mixer=layer_mixer,
-                layer_probability=args.layer_probability,
-                rng=main_rng,
-            )
-            all_features.extend(features)
+                features = process_audio_with_augmentation(
+                    y=y,
+                    sr=sr,
+                    string_num=string_num,
+                    fret_num=fret_num,
+                    sample_id=sample_id,
+                    extractor=extractor,
+                    augmenter=augmenter,
+                    layer_mixer=layer_mixer,
+                    layer_probability=args.layer_probability,
+                    rng=main_rng,
+                )
+                all_features.extend(features)
 
-        except Exception as e:
-            print(f"  Error processing {path}: {e}")
-    print(f"Processed {len(all_features)} windows from {len(samples)} samples")
+            except Exception as e:
+                print(f"  Error processing {path}: {e}")
+        print(f"Processed {len(all_features)} windows from {len(samples)} samples")
+    else:
+        print("\nSliding-window-only mode: skipping individual sample processing")
 
-    # Generate and process sequential note samples
+    # Generate and process sequential note samples (skip if sliding-window-only mode)
     # Process base and finetune sequences separately to avoid mixing categories
     sequential_count = 0
     total_sequential_results = 0
 
-    if base_sequential_generator is not None:
-        num_base_sequential = max(1, int(len(base_samples) * args.sequential_ratio))
-        print(f"\nGenerating {num_base_sequential} sequential note samples from base samples...")
+    if not args.sliding_window_only:
+        if base_sequential_generator is not None:
+            num_base_sequential = max(1, int(len(base_samples) * args.sequential_ratio))
+            print(f"\nGenerating {num_base_sequential} sequential note samples from base samples...")
 
-        base_sequential_results = base_sequential_generator.generate_samples(num_base_sequential)
-        total_sequential_results += len(base_sequential_results)
+            base_sequential_results = base_sequential_generator.generate_samples(num_base_sequential)
+            total_sequential_results += len(base_sequential_results)
 
-        for seq_result in base_sequential_results:
-            try:
-                seq_features = process_sequential_audio(
-                    seq_result=seq_result,
-                    sr=44100,
-                    extractor=extractor,
-                    generator=base_sequential_generator,
-                    window_size=WINDOW_SIZE,
-                )
-                all_features.extend(seq_features)
-                sequential_count += len(seq_features)
-            except Exception as e:
-                print(f"  Error processing sequence {seq_result.sequence_id}: {e}")
+            for seq_result in base_sequential_results:
+                try:
+                    seq_features = process_sequential_audio(
+                        seq_result=seq_result,
+                        sr=44100,
+                        extractor=extractor,
+                        generator=base_sequential_generator,
+                        window_size=WINDOW_SIZE,
+                    )
+                    all_features.extend(seq_features)
+                    sequential_count += len(seq_features)
+                except Exception as e:
+                    print(f"  Error processing sequence {seq_result.sequence_id}: {e}")
 
-    if finetune_sequential_generator is not None:
-        num_finetune_sequential = max(1, int(len(finetune_samples) * args.sequential_ratio))
-        print(f"\nGenerating {num_finetune_sequential} sequential note samples from finetune samples...")
+        if finetune_sequential_generator is not None:
+            num_finetune_sequential = max(1, int(len(finetune_samples) * args.sequential_ratio))
+            print(f"\nGenerating {num_finetune_sequential} sequential note samples from finetune samples...")
 
-        finetune_sequential_results = finetune_sequential_generator.generate_samples(num_finetune_sequential)
-        total_sequential_results += len(finetune_sequential_results)
+            finetune_sequential_results = finetune_sequential_generator.generate_samples(num_finetune_sequential)
+            total_sequential_results += len(finetune_sequential_results)
 
-        for seq_result in finetune_sequential_results:
-            try:
-                seq_features = process_sequential_audio(
-                    seq_result=seq_result,
-                    sr=44100,
-                    extractor=extractor,
-                    generator=finetune_sequential_generator,
-                    window_size=WINDOW_SIZE,
-                )
-                all_features.extend(seq_features)
-                sequential_count += len(seq_features)
-            except Exception as e:
-                print(f"  Error processing sequence {seq_result.sequence_id}: {e}")
+            for seq_result in finetune_sequential_results:
+                try:
+                    seq_features = process_sequential_audio(
+                        seq_result=seq_result,
+                        sr=44100,
+                        extractor=extractor,
+                        generator=finetune_sequential_generator,
+                        window_size=WINDOW_SIZE,
+                    )
+                    all_features.extend(seq_features)
+                    sequential_count += len(seq_features)
+                except Exception as e:
+                    print(f"  Error processing sequence {seq_result.sequence_id}: {e}")
 
-    if sequential_count > 0:
-        print(f"Added {sequential_count} windows from {total_sequential_results} sequential samples")
+        if sequential_count > 0:
+            print(f"Added {sequential_count} windows from {total_sequential_results} sequential samples")
 
-    # Validate fundamental frequencies
+    # Generate and process sliding window sequences
+    # These simulate the production rolling window environment with 512-sample hop
+    sliding_window_count = 0
+    total_sliding_sequences = 0
+
+    if base_sliding_generator is not None or finetune_sliding_generator is not None:
+        # Create augmenter for sliding window sequences if augmentation is enabled
+        sliding_augmenter = None
+        if use_augmentation:
+            sliding_augmenter = create_augmenter(
+                preset=AUGMENTATION_PRESET,
+                reverb_enabled=True,
+                chorus_enabled=True,
+                eq_enabled=True,
+                noise_enabled=True,
+                pitch_drift_enabled=True,
+            )
+            sliding_augmenter.config.random_seed = random_seed + 100
+            sliding_augmenter._rng = np.random.default_rng(random_seed + 100)
+
+        if base_sliding_generator is not None:
+            print(f"\nGenerating sliding window sequences from base samples...")
+            base_train_seqs, base_val_seqs = base_sliding_generator.generate_sequences(
+                num_train=args.sliding_window_num_train,
+                num_val=args.sliding_window_num_val,
+            )
+            total_sliding_sequences += len(base_train_seqs) + len(base_val_seqs)
+
+            for i, seq_result in enumerate(base_train_seqs):
+                try:
+                    seq_features = process_sliding_window_sequence(
+                        sequence_result=seq_result,
+                        generator=base_sliding_generator,
+                        extractor=extractor,
+                        augmenter=sliding_augmenter,
+                        num_augmentations=args.sliding_window_augmentations,
+                    )
+                    sliding_train_features.extend(seq_features)
+                    sliding_window_count += len(seq_features)
+                except Exception as e:
+                    print(f"  Error processing sliding sequence {seq_result.sequence_id}: {e}")
+                if (i + 1) % 5 == 0 or (i + 1) == len(base_train_seqs):
+                    print(f"    Processed {i + 1} / {len(base_train_seqs)} base training sliding sequences")
+
+            for i, seq_result in enumerate(base_val_seqs):
+                try:
+                    seq_features = process_sliding_window_sequence(
+                        sequence_result=seq_result,
+                        generator=base_sliding_generator,
+                        extractor=extractor,
+                        augmenter=sliding_augmenter,
+                        num_augmentations=args.sliding_window_augmentations,
+                    )
+                    sliding_val_features.extend(seq_features)
+                    sliding_window_count += len(seq_features)
+                except Exception as e:
+                    print(f"  Error processing sliding sequence {seq_result.sequence_id}: {e}")
+                if (i + 1) % 5 == 0 or (i + 1) == len(base_val_seqs):
+                    print(f"    Processed {i + 1} / {len(base_val_seqs)} base validation sliding sequences")
+
+        if finetune_sliding_generator is not None:
+            print(f"\nGenerating sliding window sequences from finetune samples...")
+            finetune_train_seqs, finetune_val_seqs = finetune_sliding_generator.generate_sequences(
+                num_train=args.sliding_window_num_train,
+                num_val=args.sliding_window_num_val,
+            )
+            total_sliding_sequences += len(finetune_train_seqs) + len(finetune_val_seqs)
+
+            for seq_result in finetune_train_seqs:
+                try:
+                    seq_features = process_sliding_window_sequence(
+                        sequence_result=seq_result,
+                        generator=finetune_sliding_generator,
+                        extractor=extractor,
+                        augmenter=sliding_augmenter,
+                        num_augmentations=args.sliding_window_augmentations,
+                    )
+                    sliding_train_features.extend(seq_features)
+                    sliding_window_count += len(seq_features)
+                except Exception as e:
+                    print(f"  Error processing sliding sequence {seq_result.sequence_id}: {e}")
+
+            for seq_result in finetune_val_seqs:
+                try:
+                    seq_features = process_sliding_window_sequence(
+                        sequence_result=seq_result,
+                        generator=finetune_sliding_generator,
+                        extractor=extractor,
+                        augmenter=sliding_augmenter,
+                        num_augmentations=args.sliding_window_augmentations,
+                    )
+                    sliding_val_features.extend(seq_features)
+                    sliding_window_count += len(seq_features)
+                except Exception as e:
+                    print(f"  Error processing sliding sequence {seq_result.sequence_id}: {e}")
+
+        if sliding_window_count > 0:
+            print(f"Added {sliding_window_count} windows from {total_sliding_sequences} sliding sequences")
+            print(f"  Training: {len(sliding_train_features)} windows, Validation: {len(sliding_val_features)} windows")
+
+    # Validate fundamental frequencies for standard features
     print("\n--- Frequency Validation ---")
     original_count = len(all_features)
     all_features, discarded_samples, skipped_validation_count = validate_fundamental_frequencies(all_features, tolerance=0.05)
     discarded_count = original_count - len(all_features)
 
+    # Also validate sliding window features
+    sliding_train_original = len(sliding_train_features)
+    sliding_val_original = len(sliding_val_features)
+    sliding_train_features, _, train_skipped = validate_fundamental_frequencies(sliding_train_features, tolerance=0.05)
+    sliding_val_features, _, val_skipped = validate_fundamental_frequencies(sliding_val_features, tolerance=0.05)
+    skipped_validation_count += train_skipped + val_skipped
+
     if skipped_validation_count > 0:
-        print(f"Skipped validation for {skipped_validation_count} windows (layered/sequential samples)")
+        print(f"Skipped validation for {skipped_validation_count} windows (layered/sequential/sliding samples)")
 
     if discarded_samples:
         print(f"Discarded {discarded_count} windows from {len(discarded_samples)} samples with invalid fundamental frequencies (>5% deviation):")
-        for sample in discarded_samples:
+        for sample in discarded_samples[:10]:  # Limit output
             print(f"  - {sample['sample_id']} (string {sample['string']}, fret {sample['fret']}): "
                   f"detected {sample['detected_freq']:.1f} Hz, expected {sample['expected_freq']:.1f} Hz")
+        if len(discarded_samples) > 10:
+            print(f"  ... and {len(discarded_samples) - 10} more")
     else:
         print("All samples passed frequency validation (within ±5% of expected)")
 
-    # Create output with metadata
-    output_data = {
+    # Custom encoder to handle numpy types
+    class NumpyEncoder(json.JSONEncoder):
+        def default(self, obj):
+            if isinstance(obj, np.floating):
+                return float(obj)
+            if isinstance(obj, np.integer):
+                return int(obj)
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            return super().default(obj)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    use_sliding = base_sliding_generator is not None or finetune_sliding_generator is not None
+
+    # Create common metadata
+    common_metadata = {
         "extracted_at": datetime.now().isoformat(),
         "window_size": WINDOW_SIZE,
         "target_rms": TARGET_RMS,
-        "total_windows": len(all_features),
-        "total_audio_files": len(samples),
-        "strings_covered": sorted(list(set(f["string"] for f in all_features))),
-        "augmentation_enabled": use_augmentation and args.augment,
-        "augmentation_preset": args.augment_preset if (use_augmentation and args.augment) else None,
-        "n_augmentations_per_sample": NUM_AUGMENTATIONS,
-        "string_layering_enabled": layer_mixer is not None,
-        "string_layering_probability": args.layer_probability if layer_mixer else None,
-        "string_layering_volume_range": [args.layer_volume_min, args.layer_volume_max] if layer_mixer else None,
-        "sequential_notes_enabled": base_sequential_generator is not None or finetune_sequential_generator is not None,
-        "sequential_notes_ratio": args.sequential_ratio if use_sequential else None,
-        "sequential_notes_gap_range_ms": [args.sequential_gap_min, args.sequential_gap_max] if use_sequential else None,
-        "sequential_notes_length_range": [args.sequential_length_min, args.sequential_length_max] if use_sequential else None,
-        "sequential_notes_duration_ms": args.sequential_note_duration if use_sequential else None,
+        "augmentation_enabled": use_augmentation,
+        "augmentation_preset": args.augment_preset if use_augmentation else None,
         "feature_names": [
             "harmonic_ratios",
             "spectral_centroid",
@@ -1242,49 +1865,101 @@ def main():
             "mfcc",
             "transition_likelihood",
         ],
-        "samples": all_features,
     }
 
-    # Save with timestamp
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    suffix = "_augmented" if args.augment else ""
-    output_path = output_dir / f"{timestamp}{suffix}.json"
+    # Save standard features (if not sliding-window-only mode)
+    if not args.sliding_window_only and all_features:
+        output_data = {
+            **common_metadata,
+            "total_windows": len(all_features),
+            "total_audio_files": len(samples),
+            "strings_covered": sorted(list(set(f["string"] for f in all_features))),
+            "n_augmentations_per_sample": NUM_AUGMENTATIONS,
+            "string_layering_enabled": layer_mixer is not None,
+            "string_layering_probability": args.layer_probability if layer_mixer else None,
+            "string_layering_volume_range": [args.layer_volume_min, args.layer_volume_max] if layer_mixer else None,
+            "sequential_notes_enabled": base_sequential_generator is not None or finetune_sequential_generator is not None,
+            "sequential_notes_ratio": args.sequential_ratio if use_sequential else None,
+            "sequential_notes_gap_range_ms": [args.sequential_gap_min, args.sequential_gap_max] if use_sequential else None,
+            "sequential_notes_length_range": [args.sequential_length_min, args.sequential_length_max] if use_sequential else None,
+            "sequential_notes_duration_ms": args.sequential_note_duration if use_sequential else None,
+            "samples": all_features,
+        }
 
-    # Custom encoder to handle numpy types
-    class NumpyEncoder(json.JSONEncoder):
-        def default(self, obj):
-            if isinstance(obj, np.floating):
-                return float(obj)
-            if isinstance(obj, np.integer):
-                return int(obj)
-            if isinstance(obj, np.ndarray):
-                return obj.tolist()
-            return super().default(obj)
+        suffix = "_augmented" if args.augment else ""
+        output_path = output_dir / f"{timestamp}{suffix}.json"
 
-    with open(output_path, "w") as f:
-        json.dump(output_data, f, indent=2, cls=NumpyEncoder)
+        with open(output_path, "w") as f:
+            json.dump(output_data, f, indent=2, cls=NumpyEncoder)
 
-    print(f"\nFeatures saved to: {output_path}")
+        print(f"\nStandard features saved to: {output_path}")
+
+    # Save sliding window sequences as separate train/val files
+    if use_sliding and (sliding_train_features or sliding_val_features):
+        sliding_metadata = {
+            **common_metadata,
+            "sliding_window_enabled": True,
+            "sliding_window_hop_size": args.sliding_window_hop_size,
+            "sliding_window_gap_range_ms": [args.sliding_window_gap_min, args.sliding_window_gap_max],
+            "sliding_window_notes_per_sequence": args.sliding_window_notes_per_seq,
+            "sliding_window_note_duration_ms": args.sliding_window_note_duration,
+            "sliding_window_augmentations": args.sliding_window_augmentations,
+            "sliding_window_only_mode": args.sliding_window_only,
+        }
+
+        if sliding_train_features:
+            train_data = {
+                **sliding_metadata,
+                "split": "train",
+                "total_windows": len(sliding_train_features),
+                "strings_covered": sorted(list(set(f["string"] for f in sliding_train_features))),
+                "samples": sliding_train_features,
+            }
+            train_path = output_dir / f"{timestamp}_sliding_train.json"
+            with open(train_path, "w") as f:
+                json.dump(train_data, f, indent=2, cls=NumpyEncoder)
+            print(f"Sliding window train features saved to: {train_path}")
+
+        if sliding_val_features:
+            val_data = {
+                **sliding_metadata,
+                "split": "validation",
+                "total_windows": len(sliding_val_features),
+                "strings_covered": sorted(list(set(f["string"] for f in sliding_val_features))),
+                "samples": sliding_val_features,
+            }
+            val_path = output_dir / f"{timestamp}_sliding_val.json"
+            with open(val_path, "w") as f:
+                json.dump(val_data, f, indent=2, cls=NumpyEncoder)
+            print(f"Sliding window val features saved to: {val_path}")
 
     # Count different sample types
-    original_count = sum(1 for f in all_features if "_aug" not in f["sample_id"] and "_layer" not in f["sample_id"] and not f["sample_id"].startswith("seq"))
-    augmented_count = sum(1 for f in all_features if "_aug" in f["sample_id"])
-    layered_count = sum(1 for f in all_features if "_layer" in f["sample_id"])
-    sequential_window_count = sum(1 for f in all_features if f["sample_id"].startswith("seq"))
+    if not args.sliding_window_only:
+        original_count = sum(1 for f in all_features if "_aug" not in f["sample_id"] and "_layer" not in f["sample_id"] and not f["sample_id"].startswith("seq"))
+        augmented_count = sum(1 for f in all_features if "_aug" in f["sample_id"])
+        layered_count = sum(1 for f in all_features if "_layer" in f["sample_id"])
+        sequential_window_count = sum(1 for f in all_features if f["sample_id"].startswith("seq"))
 
-    print(f"  Original windows: {original_count}")
-    if augmented_count > 0:
-        print(f"  Augmented windows: {augmented_count}")
-    if layered_count > 0:
-        print(f"  String-layered windows: {layered_count}")
-    if sequential_window_count > 0:
-        print(f"  Sequential note windows: {sequential_window_count}")
+        print(f"\n--- Standard Features Summary ---")
+        print(f"  Original windows: {original_count}")
+        if augmented_count > 0:
+            print(f"  Augmented windows: {augmented_count}")
+        if layered_count > 0:
+            print(f"  String-layered windows: {layered_count}")
+        if sequential_window_count > 0:
+            print(f"  Sequential note windows: {sequential_window_count}")
+
+    if use_sliding:
+        print(f"\n--- Sliding Window Features Summary ---")
+        print(f"  Training windows: {len(sliding_train_features)}")
+        print(f"  Validation windows: {len(sliding_val_features)}")
 
     # Print summary statistics
-    if all_features:
-        print("\n--- Feature Summary ---")
-        for string_num in sorted(set(f["string"] for f in all_features)):
-            string_windows = [f for f in all_features if f["string"] == string_num]
+    combined_features = all_features + sliding_train_features + sliding_val_features
+    if combined_features:
+        print("\n--- Feature Summary (All) ---")
+        for string_num in sorted(set(f["string"] for f in combined_features)):
+            string_windows = [f for f in combined_features if f["string"] == string_num]
             fundamentals = [f["fundamental_freq"] for f in string_windows]
             slopes = [f["energy_slope"] for f in string_windows]
             print(f"String {string_num}: {len(string_windows)} windows, "
