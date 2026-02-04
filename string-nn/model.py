@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 
-MODEL_SIZE_BASE = 64
-ADAPTER_SIZE = 32  # Same as backbone output size
+MODEL_SIZE_BASE = 128
+ADAPTER_SIZE = MODEL_SIZE_BASE // 2  # Same as backbone output size
 
 
 class StringClassifier(nn.Module):

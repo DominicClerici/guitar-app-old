@@ -24,10 +24,10 @@ WINDOW_SIZE = 4096  # ~93ms at 44.1kHz, matches browser inference
 TARGET_RMS = 0.026
 
 USE_AUGMENTATION = True
-NUM_AUGMENTATIONS = 2
+NUM_AUGMENTATIONS = 1
 AUGMENTATION_PRESET = "moderate"
 
-USE_FINETUNE_SAMPLES = False
+USE_FINETUNE_SAMPLES = True
 
 # String layering configuration - simulates adjacent string interference
 USE_STRING_LAYERING = True
@@ -46,7 +46,7 @@ ADJACENT_STRINGS = {
 }
 
 # Sequential note generation - simulates fast playing with note transitions
-USE_SEQUENTIAL_NOTES = True
+USE_SEQUENTIAL_NOTES = False
 SEQUENTIAL_RATIO = 0.10  # Generate 10% of sample count as sequential clips
 SEQUENTIAL_GAP_MIN_MS = 1.0  # Minimum gap between notes
 SEQUENTIAL_GAP_MAX_MS = 15.0  # Maximum gap between notes
