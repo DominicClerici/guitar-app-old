@@ -14,7 +14,8 @@ ALL_FEATURE_NAMES = (
     ["spectral_centroid", "spectral_rolloff"] +
     ["inharmonicity", "rms_energy", "energy_slope", "zcr", "odd_even_harmonic_ratio"] +
     ["log_frequency", "semitones_from_e2", "octave_number"] +
-    [f"mfcc_{i}" for i in range(13)]
+    [f"mfcc_{i}" for i in range(13)] +
+    ["transition_likelihood"]
 )
 
 # ============================================================
@@ -68,6 +69,9 @@ ENABLED_FEATURES = [
     "mfcc_10",
     "mfcc_11",
     "mfcc_12",
+
+    # Transition detection (1 feature)
+    "transition_likelihood",
 ]
 
 # ============================================================
@@ -79,6 +83,7 @@ FEATURE_GROUPS = {
     "timbral": ["inharmonicity", "rms_energy", "energy_slope", "zcr", "odd_even_harmonic_ratio"],
     "frequency_relative": ["log_frequency", "semitones_from_e2", "octave_number"],
     "mfcc": [f"mfcc_{i}" for i in range(13)],
+    "transition": ["transition_likelihood"],
 }
 
 

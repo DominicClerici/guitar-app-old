@@ -19,13 +19,14 @@ const MIN_RMS_THRESHOLD = 0.0015
 // ScriptProcessor buffer size
 const PROCESSOR_BUFFER_SIZE = 2048
 // Target RMS for normalization (matches training data mean)
-const TARGET_RMS = 0.026
+const TARGET_RMS = 0.035
 
 // Production mode constants
 const FREQUENCY_CHANGE_THRESHOLD = 0.03 // 3% change triggers new window
 const ACCUMULATION_WINDOW_MS = 800 // Time to accumulate predictions before locking
 const STRING_FREQUENCIES = [82.41, 110.0, 146.83, 196.0, 246.94, 329.63] // E2, A2, D3, G3, B3, E4
 const CONSECUTIVE_STRING_THRESHOLD = 2 // Number of consecutive same-string predictions required (1 = no check)
+const ENABLE_PREDICTION_LOCKING = false // Set to false to disable locking after accumulation window
 
 function calculateRMS(samples: Float32Array): number {
   let sum = 0
@@ -117,7 +118,11 @@ const DEFAULT_SCALER_PATH = "/models/scaler.json"
 const DEFAULT_MIN_CONFIDENCE = 0.3
 const STRING_LABELS = ["E2", "A2", "D3", "G3", "B3", "E4"]
 
-function getModelPaths(usePersonalized: boolean): { modelPath: string; scalerPath: string; isPersonalized: boolean } {
+function getModelPaths(usePersonalized: boolean): {
+  modelPath: string
+  scalerPath: string
+  isPersonalized: boolean
+} {
   if (typeof window === "undefined" || !usePersonalized) {
     return { modelPath: DEFAULT_MODEL_PATH, scalerPath: DEFAULT_SCALER_PATH, isPersonalized: false }
   }
@@ -309,9 +314,11 @@ export function useStringClassifier(
             fret: pred.fret,
             confidence: pred.totalWeight / pred.count,
             fundamental,
-            isLocked: true,
+            isLocked: ENABLE_PREDICTION_LOCKING,
           }
-          lockedPredictionRef.current = stablePred
+          if (ENABLE_PREDICTION_LOCKING) {
+            lockedPredictionRef.current = stablePred
+          }
           setStablePrediction(stablePred)
         }
       } else if (lockedPredictionRef.current) {
@@ -321,48 +328,51 @@ export function useStringClassifier(
     [calculateFret],
   )
 
-  const loadModel = useCallback(async (forceDefault?: boolean) => {
-    try {
-      setStatus("loading")
-      setError(null)
-      isReleasedRef.current = false
+  const loadModel = useCallback(
+    async (forceDefault?: boolean) => {
+      try {
+        setStatus("loading")
+        setError(null)
+        isReleasedRef.current = false
 
-      const shouldUsePersonalized = forceDefault ? false : usePersonalized
-      const currentPaths = getModelPaths(shouldUsePersonalized)
-      modelPathRef.current = options.modelPath ?? currentPaths.modelPath
-      scalerPathRef.current = options.scalerPath ?? currentPaths.scalerPath
+        const shouldUsePersonalized = forceDefault ? false : usePersonalized
+        const currentPaths = getModelPaths(shouldUsePersonalized)
+        modelPathRef.current = options.modelPath ?? currentPaths.modelPath
+        scalerPathRef.current = options.scalerPath ?? currentPaths.scalerPath
 
-      const scalerResponse = await fetch(scalerPathRef.current)
-      if (!scalerResponse.ok) {
-        if (currentPaths.isPersonalized) {
-          console.warn("Failed to load personalized model, falling back to default")
-          modelPathRef.current = DEFAULT_MODEL_PATH
-          scalerPathRef.current = DEFAULT_SCALER_PATH
-          const fallbackResponse = await fetch(DEFAULT_SCALER_PATH)
-          if (!fallbackResponse.ok) {
-            throw new Error(`Failed to load scaler config from ${DEFAULT_SCALER_PATH}`)
+        const scalerResponse = await fetch(scalerPathRef.current)
+        if (!scalerResponse.ok) {
+          if (currentPaths.isPersonalized) {
+            console.warn("Failed to load personalized model, falling back to default")
+            modelPathRef.current = DEFAULT_MODEL_PATH
+            scalerPathRef.current = DEFAULT_SCALER_PATH
+            const fallbackResponse = await fetch(DEFAULT_SCALER_PATH)
+            if (!fallbackResponse.ok) {
+              throw new Error(`Failed to load scaler config from ${DEFAULT_SCALER_PATH}`)
+            }
+            scalerRef.current = await fallbackResponse.json()
+            sessionRef.current = await ort.InferenceSession.create(DEFAULT_MODEL_PATH)
+            setIsUsingPersonalizedModel(false)
+          } else {
+            throw new Error(`Failed to load scaler config from ${scalerPathRef.current}`)
           }
-          scalerRef.current = await fallbackResponse.json()
-          sessionRef.current = await ort.InferenceSession.create(DEFAULT_MODEL_PATH)
-          setIsUsingPersonalizedModel(false)
         } else {
-          throw new Error(`Failed to load scaler config from ${scalerPathRef.current}`)
+          scalerRef.current = await scalerResponse.json()
+          sessionRef.current = await ort.InferenceSession.create(modelPathRef.current)
+          setIsUsingPersonalizedModel(currentPaths.isPersonalized)
         }
-      } else {
-        scalerRef.current = await scalerResponse.json()
-        sessionRef.current = await ort.InferenceSession.create(modelPathRef.current)
-        setIsUsingPersonalizedModel(currentPaths.isPersonalized)
-      }
 
-      setIsModelLoaded(true)
-      setStatus("ready")
-    } catch (err) {
-      console.error("Failed to load model:", err)
-      setError(err instanceof Error ? err.message : "Failed to load model")
-      setStatus("error")
-      setIsModelLoaded(false)
-    }
-  }, [usePersonalized, options.modelPath, options.scalerPath])
+        setIsModelLoaded(true)
+        setStatus("ready")
+      } catch (err) {
+        console.error("Failed to load model:", err)
+        setError(err instanceof Error ? err.message : "Failed to load model")
+        setStatus("error")
+        setIsModelLoaded(false)
+      }
+    },
+    [usePersonalized, options.modelPath, options.scalerPath],
+  )
 
   const runInference = useCallback(
     async (samples: Float32Array, sampleRate: number) => {
@@ -385,7 +395,10 @@ export function useStringClassifier(
 
         if (isReleasedRef.current) return
 
-        const inputTensor = new ort.Tensor("float32", normalizedFeatures, [1, scaler.feature_names.length])
+        const inputTensor = new ort.Tensor("float32", normalizedFeatures, [
+          1,
+          scaler.feature_names.length,
+        ])
         const results = await session.run({ features: inputTensor })
 
         const logits = results.logits.data as Float32Array

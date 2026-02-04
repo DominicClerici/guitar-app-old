@@ -33,7 +33,7 @@ def get_base_sample_id(sample_id: str) -> str:
 
 
 def _sample_to_full_feature_vector(sample: dict) -> list:
-    """Convert a sample dict to the full feature vector (all 35 features)."""
+    """Convert a sample dict to the full feature vector (all 36 features)."""
     feature_vec = []
     # Harmonic features (12 values)
     feature_vec.extend(sample["harmonic_ratios"])
@@ -52,6 +52,8 @@ def _sample_to_full_feature_vector(sample: dict) -> list:
     feature_vec.append(sample["octave_number"])
     # MFCCs (13 values)
     feature_vec.extend(sample["mfcc"])
+    # Transition detection (1 value) - defaults to 0.0 for backward compatibility
+    feature_vec.append(sample.get("transition_likelihood", 0.0))
     return feature_vec
 
 
@@ -211,10 +213,10 @@ def evaluate(
 
 
 def train(
-    epochs: int = 200,
+    epochs: int = 500,
     batch_size: int = 32,
     learning_rate: float = 0.001,
-    patience: int = 30,
+    patience: int = 100,
 ):
     print("\n ------ Training ------")
     print_feature_summary()
@@ -297,7 +299,7 @@ def train(
             )
 
         if epochs_without_improvement >= patience:
-            print(f"\nEarly stopping at epoch {epoch+1}")
+            print(f"\nEarly stopping at epoch {epoch+1} with patience {patience}")
             break
 
     print("\n----- Training complete -----\n")

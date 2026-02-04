@@ -20,6 +20,7 @@ export interface AudioFeatures {
   semitonesFromE2: number
   octaveNumber: number
   mfcc: number[]
+  transitionLikelihood: number
 }
 
 const N_HARMONICS = 12
@@ -480,6 +481,32 @@ export function extractMfcc(
   return extractMfccSingle(samples, sampleRate, nMfcc)
 }
 
+/**
+ * Detect note transitions within a window by comparing fundamentals of each half.
+ * Returns 0-1 where 0 = clean single note, 1 = definite transition (>= 1 semitone change).
+ *
+ * A semitone is ~5.9% frequency change, so we normalize the ratio such that
+ * 5% difference = 1.0 (saturated). This allows the model to learn that high
+ * transition_likelihood values indicate unreliable feature extraction.
+ */
+export function extractTransitionLikelihood(samples: Float32Array, sampleRate: number): number {
+  const halfLen = Math.floor(samples.length / 2)
+  if (halfLen < 100) return 0
+
+  const firstHalf = samples.slice(0, halfLen)
+  const secondHalf = samples.slice(halfLen)
+
+  const { pitch: f1 } = extractFundamental(new Float32Array(firstHalf), sampleRate)
+  const { pitch: f2 } = extractFundamental(new Float32Array(secondHalf), sampleRate)
+
+  if (f1 <= 0 || f2 <= 0) {
+    return 0
+  }
+
+  const freqChangeRatio = Math.abs(f2 - f1) / Math.min(f1, f2)
+  return Math.min(1.0, freqChangeRatio / 0.05)
+}
+
 export function extractAllFeatures(samples: Float32Array, sampleRate: number): AudioFeatures {
   const { pitch: fundamental } = extractFundamental(samples, sampleRate)
   const mfcc = extractMfcc(samples, sampleRate)
@@ -498,11 +525,12 @@ export function extractAllFeatures(samples: Float32Array, sampleRate: number): A
     semitonesFromE2: extractSemitonesFromE2(fundamental),
     octaveNumber: extractOctaveNumber(fundamental),
     mfcc,
+    transitionLikelihood: extractTransitionLikelihood(samples, sampleRate),
   }
 }
 
 export function featuresToVector(features: AudioFeatures): Float32Array {
-  const vector = new Float32Array(35)
+  const vector = new Float32Array(36)
 
   // Harmonic ratios (12 features)
   for (let i = 0; i < 12; i++) {
@@ -529,6 +557,9 @@ export function featuresToVector(features: AudioFeatures): Float32Array {
   for (let i = 0; i < 13; i++) {
     vector[22 + i] = features.mfcc[i] || 0
   }
+
+  // Transition detection (1 feature)
+  vector[35] = features.transitionLikelihood
 
   return vector
 }

@@ -17,11 +17,12 @@ from augment import AudioAugmenter, AugmentationConfig, create_augmenter
 from sequential_notes import SequentialNoteGenerator, SequentialAudioResult, NoteRegion
 
 
-WINDOW_SIZE = 4096  # ~93ms at 44.1kHz, matches browser inference
+# WINDOW_SIZE = 4096  # ~93ms at 44.1kHz, matches browser inference
+WINDOW_SIZE = 4096  # ~69ms at 44.1kHz, matches browser inference
 
 # Amplitude normalization to match browser inference exactly
 # See: frontend/hooks/useStringClassifier.ts
-TARGET_RMS = 0.026
+TARGET_RMS = 0.035
 
 USE_AUGMENTATION = True
 NUM_AUGMENTATIONS = 1
@@ -30,7 +31,7 @@ AUGMENTATION_PRESET = "moderate"
 USE_FINETUNE_SAMPLES = True
 
 # String layering configuration - simulates adjacent string interference
-USE_STRING_LAYERING = True
+USE_STRING_LAYERING = False
 STRING_LAYER_PROBABILITY = 0.25  # 25% of samples get layered (1 in 4)
 STRING_LAYER_VOLUME_MIN = 0.15   # Minimum volume ratio for layer (relative to main)
 STRING_LAYER_VOLUME_MAX = 0.35   # Maximum volume ratio for layer
@@ -46,13 +47,13 @@ ADJACENT_STRINGS = {
 }
 
 # Sequential note generation - simulates fast playing with note transitions
-USE_SEQUENTIAL_NOTES = False
-SEQUENTIAL_RATIO = 0.10  # Generate 10% of sample count as sequential clips
+USE_SEQUENTIAL_NOTES = True
+SEQUENTIAL_RATIO = 0.25  # Generate 20% of sample count as sequential clips
 SEQUENTIAL_GAP_MIN_MS = 1.0  # Minimum gap between notes
 SEQUENTIAL_GAP_MAX_MS = 15.0  # Maximum gap between notes
 SEQUENTIAL_LENGTH_MIN = 3  # Minimum notes per sequence
 SEQUENTIAL_LENGTH_MAX = 5  # Maximum notes per sequence
-SEQUENTIAL_NOTE_DURATION_MS = 150.0  # How much of each note to include
+SEQUENTIAL_NOTE_DURATION_MS = 100.0  # How much of each note to include
 
 # Open string frequencies by string number (0-5, matching sample directory structure)
 # String 0 = low E (thickest), String 5 = high E (thinnest)
@@ -332,6 +333,8 @@ class WindowFeatures(TypedDict):
     octave_number: int
     # MFCCs (single frame for short window)
     mfcc: list[float]  # 13 MFCCs for the window
+    # Transition detection
+    transition_likelihood: float  # 0=clean single note, 1=note transition detected
 
 
 class FeatureExtractor:
@@ -587,7 +590,14 @@ class FeatureExtractor:
         return [float(np.mean(mfcc)) for mfcc in mfccs]
 
     def extract_window_features(
-        self, window: np.ndarray, sr: int, string: int, fret: int, sample_id: str, window_index: int
+        self,
+        window: np.ndarray,
+        sr: int,
+        string: int,
+        fret: int,
+        sample_id: str,
+        window_index: int,
+        transition_likelihood: float = 0.0,
     ) -> WindowFeatures:
         """Extract features from a single 4096-sample window."""
         # Normalize amplitude to match browser inference exactly
@@ -623,6 +633,7 @@ class FeatureExtractor:
             semitones_from_e2=semitones_from_e2,
             octave_number=octave_number,
             mfcc=mfcc,
+            transition_likelihood=transition_likelihood,
         )
 
 
@@ -759,6 +770,28 @@ def process_audio_with_augmentation(
     return all_features
 
 
+def is_transition_window(
+    window_start: int,
+    window_end: int,
+    note_regions: list[NoteRegion],
+) -> bool:
+    """
+    Check if a window overlaps with more than one note region.
+
+    Used to set transition_likelihood=1.0 for windows that span multiple notes,
+    teaching the model to recognize and handle note transitions.
+    """
+    overlapping_notes = 0
+    for region in note_regions:
+        overlap_start = max(window_start, region.start_sample)
+        overlap_end = min(window_end, region.end_sample)
+        if overlap_end > overlap_start:
+            overlapping_notes += 1
+            if overlapping_notes > 1:
+                return True
+    return False
+
+
 def process_sequential_audio(
     seq_result: SequentialAudioResult,
     sr: int,
@@ -772,6 +805,9 @@ def process_sequential_audio(
     Each window is labeled based on which note is dominant (has most overlap
     with the window). This teaches the model to identify the main note even
     when there are remnants of previous/next notes in the window.
+
+    Windows that span multiple notes have transition_likelihood=1.0 to teach
+    the model to recognize these ambiguous situations.
 
     Args:
         seq_result: Sequential audio result with audio and note regions
@@ -800,6 +836,10 @@ def process_sequential_audio(
         # Determine dominant note for this window
         string, fret = generator.get_window_label(start, window_end, note_regions)
 
+        # Check if this window spans multiple notes (is a transition)
+        transition = is_transition_window(start, window_end, note_regions)
+        transition_likelihood = 1.0 if transition else 0.0
+
         # Extract features with the dominant note's label
         window_features = extractor.extract_window_features(
             window=window,
@@ -808,6 +848,7 @@ def process_sequential_audio(
             fret=fret,
             sample_id=seq_result.sequence_id,
             window_index=win_idx,
+            transition_likelihood=transition_likelihood,
         )
         features.append(window_features)
 
@@ -1152,6 +1193,7 @@ def main():
             "semitones_from_e2",
             "octave_number",
             "mfcc",
+            "transition_likelihood",
         ],
         "samples": all_features,
     }

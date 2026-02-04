@@ -51,11 +51,13 @@ export const ALL_FEATURE_NAMES = [
   "mfcc_10",
   "mfcc_11",
   "mfcc_12",
+  // Transition detection (1 feature)
+  "transition_likelihood",
 ] as const
 
 export type FeatureName = (typeof ALL_FEATURE_NAMES)[number]
 
-// Map feature name to its index in the full 33-element feature vector
+// Map feature name to its index in the full 36-element feature vector
 export const FEATURE_NAME_TO_INDEX: Record<string, number> = Object.fromEntries(
   ALL_FEATURE_NAMES.map((name, i) => [name, i]),
 )
@@ -63,7 +65,7 @@ export const FEATURE_NAME_TO_INDEX: Record<string, number> = Object.fromEntries(
 /**
  * Get the indices of enabled features in the full feature vector.
  * @param enabledFeatures List of enabled feature names (from scaler.json)
- * @returns Array of indices into the full 33-element vector
+ * @returns Array of indices into the full 36-element vector
  */
 export function getEnabledIndices(enabledFeatures: string[]): number[] {
   return enabledFeatures
@@ -73,7 +75,7 @@ export function getEnabledIndices(enabledFeatures: string[]): number[] {
 
 /**
  * Filter a full feature vector to only include enabled features.
- * @param fullVector The complete 33-element feature vector
+ * @param fullVector The complete 36-element feature vector
  * @param enabledFeatures List of enabled feature names (from scaler.json)
  * @returns Filtered vector containing only enabled features in correct order
  */
