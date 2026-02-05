@@ -214,10 +214,11 @@ def process_label_session(
                 window_index=win_idx,
             ))
 
-    if (ENABLE_ZERO_PADDING):
-        print(f"Zero-padded {padded_sample_count} samples")
-    else:
-        print(f"Removed {padded_sample_count} samples because zero-padding is disabled")
+    if (padded_sample_count > 0):    
+        if (ENABLE_ZERO_PADDING):
+            print(f"Zero-padded {padded_sample_count} samples")
+        else:
+            print(f"Removed {padded_sample_count} samples because zero-padding is disabled")
     return samples
 
 

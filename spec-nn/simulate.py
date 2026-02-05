@@ -5,10 +5,6 @@ Loads labeled audio sessions and simulates real-time browser inference
 by sliding a window across the audio with the same parameters as the
 frontend's useSpectrogramClassifier hook. Reports accuracy metrics
 to estimate real-world browser performance.
-
-Only evaluates predictions where the entire inference window falls
-within a single labeled interval — windows that span label boundaries
-or include unlabeled time are skipped.
 """
 
 import json
@@ -36,6 +32,25 @@ from features.spectrogram import (
 # Match browser constants from useSpectrogramClassifier.ts
 INFERENCE_HOP = 2048
 MIN_RMS_THRESHOLD = 0.0015
+
+# --- Window filtering thresholds ---
+
+# Maximum fraction of the window that can be unlabeled (silent/no label).
+# 0.0 = no silence allowed (every frame must be labeled)
+# 1.0 = any amount of silence is fine (effectively disables this check)
+MAX_SILENCE_THRESHOLD = 0.75
+
+# Minimum fraction of the window that must be covered by labels (any labels combined).
+# 1.0 = the entire window must be labeled
+# 0.0 = no coverage required (effectively disables this check)
+LABEL_COVERAGE_REQUIREMENT = 0.8
+
+# Minimum fraction of the window the dominant label must cover.
+# When a window contains multiple labels, this requires one label to be
+# clearly dominant. The dominant label becomes the ground truth.
+# 1.0 = window must be 100% one label (no other labels allowed)
+# 0.0 = any dominant fraction is fine (effectively disables this check)
+MULTIPLE_LABEL_THRESHOLD = 0.75
 
 STRING_NAMES = ["E2(6)", "A2(5)", "D3(4)", "G3(3)", "B3(2)", "E4(1)"]
 
@@ -80,15 +95,41 @@ def find_label_sessions(label_dir: Path) -> list[Path]:
     return sessions
 
 
-def get_window_label(intervals: list[dict], window_start_ms: float, window_end_ms: float) -> int | None:
+def analyze_window_labels(
+    intervals: list[dict], window_start_ms: float, window_end_ms: float,
+) -> tuple[float, int | None, float]:
     """
-    Returns the string label only if the entire window is contained
-    within a single labeled interval. Returns None otherwise.
+    Analyze label coverage within a window.
+
+    Returns (label_coverage, dominant_label, dominant_fraction) where:
+    - label_coverage: fraction of window covered by any labels combined (0-1)
+    - dominant_label: the string label covering the most of the window (None if no labels)
+    - dominant_fraction: fraction of the total window covered by the dominant label (0-1)
     """
+    window_duration = window_end_ms - window_start_ms
+
+    label_durations: dict[int, float] = {}
+    total_covered = 0.0
+
     for interval in intervals:
-        if interval["startMs"] <= window_start_ms and interval["endMs"] >= window_end_ms:
-            return interval["string"]
-    return None
+        overlap_start = max(window_start_ms, interval["startMs"])
+        overlap_end = min(window_end_ms, interval["endMs"])
+
+        if overlap_start < overlap_end:
+            overlap = overlap_end - overlap_start
+            string_label = interval["string"]
+            label_durations[string_label] = label_durations.get(string_label, 0) + overlap
+            total_covered += overlap
+
+    label_coverage = total_covered / window_duration
+
+    if not label_durations:
+        return 0.0, None, 0.0
+
+    dominant_label = max(label_durations, key=label_durations.get)
+    dominant_fraction = label_durations[dominant_label] / window_duration
+
+    return label_coverage, dominant_label, dominant_fraction
 
 
 def simulate_session(
@@ -96,11 +137,11 @@ def simulate_session(
     model: torch.nn.Module,
     stats: dict,
     device: torch.device,
-) -> tuple[list[int], list[int], int, int, int]:
+) -> tuple[list[int], list[int], int, int, int, int]:
     """
     Simulate browser inference on a single label session.
 
-    Returns (predictions, labels, total_windows, skipped_rms, skipped_label).
+    Returns (predictions, labels, total_windows, skipped_silence, skipped_coverage, skipped_dominant).
     """
     audio_path = session_dir / "audio.wav"
     labels_path = session_dir / "labels.json"
@@ -117,11 +158,10 @@ def simulate_session(
     predictions = []
     labels = []
     total_windows = 0
-    skipped_rms = 0
-    skipped_label = 0
+    skipped_silence = 0
+    skipped_coverage = 0
+    skipped_dominant = 0
 
-    # Simulate browser: first full window at WINDOW_SIZE samples,
-    # then advance by INFERENCE_HOP each step
     for window_end in range(WINDOW_SIZE, len(y) + 1, INFERENCE_HOP):
         window_start = window_end - WINDOW_SIZE
         window = y[window_start:window_end]
@@ -129,18 +169,31 @@ def simulate_session(
         # RMS gate (matching browser MIN_RMS_THRESHOLD)
         rms = calculate_rms(window)
         if rms <= MIN_RMS_THRESHOLD:
-            skipped_rms += 1
             continue
 
         total_windows += 1
 
-        # Check if entire window falls within a single labeled interval
         window_start_ms = window_start / SAMPLE_RATE * 1000.0
         window_end_ms = window_end / SAMPLE_RATE * 1000.0
 
-        true_label = get_window_label(intervals, window_start_ms, window_end_ms)
-        if true_label is None:
-            skipped_label += 1
+        label_coverage, dominant_label, dominant_fraction = analyze_window_labels(
+            intervals, window_start_ms, window_end_ms,
+        )
+
+        # 1. MAX_SILENCE_THRESHOLD: skip if too much of the window is unlabeled
+        unlabeled_fraction = 1.0 - label_coverage
+        if unlabeled_fraction > MAX_SILENCE_THRESHOLD:
+            skipped_silence += 1
+            continue
+
+        # 2. LABEL_COVERAGE_REQUIREMENT: skip if not enough label coverage
+        if label_coverage < LABEL_COVERAGE_REQUIREMENT:
+            skipped_coverage += 1
+            continue
+
+        # 3. MULTIPLE_LABEL_THRESHOLD: skip if dominant label isn't dominant enough
+        if dominant_fraction < MULTIPLE_LABEL_THRESHOLD:
+            skipped_dominant += 1
             continue
 
         # Normalize amplitude (matching browser)
@@ -160,17 +213,18 @@ def simulate_session(
             predicted = logits.argmax(dim=1).item()
 
         predictions.append(predicted)
-        labels.append(true_label)
+        labels.append(dominant_label)
 
     print(
         f"  {session_dir.name}: "
         f"{len(predictions)} evaluated, "
         f"{total_windows} passed RMS, "
-        f"{skipped_rms} below RMS, "
-        f"{skipped_label} no single label"
+        f"{skipped_silence} failed silence, "
+        f"{skipped_coverage} failed coverage, "
+        f"{skipped_dominant} failed dominant"
     )
 
-    return predictions, labels, total_windows, skipped_rms, skipped_label
+    return predictions, labels, total_windows, skipped_silence, skipped_coverage, skipped_dominant
 
 
 def print_simulation_report(
@@ -275,6 +329,9 @@ def simulate(
     print(f"Window: {WINDOW_SIZE} samples ({WINDOW_SIZE / SAMPLE_RATE * 1000:.1f}ms)")
     print(f"Inference hop: {INFERENCE_HOP} samples ({INFERENCE_HOP / SAMPLE_RATE * 1000:.1f}ms)")
     print(f"RMS threshold: {MIN_RMS_THRESHOLD}")
+    print(f"Max silence: {MAX_SILENCE_THRESHOLD:.0%}")
+    print(f"Label coverage required: {LABEL_COVERAGE_REQUIREMENT:.0%}")
+    print(f"Dominant label threshold: {MULTIPLE_LABEL_THRESHOLD:.0%}")
 
     model, config, stats = load_model(model_path)
     model = model.to(device)
@@ -291,20 +348,22 @@ def simulate(
     all_predictions = []
     all_labels = []
     total_windows = 0
-    total_skipped_rms = 0
-    total_skipped_label = 0
+    total_skipped_silence = 0
+    total_skipped_coverage = 0
+    total_skipped_dominant = 0
 
     start_time = time.time()
 
     for session_dir in sessions:
-        preds, labs, windows, s_rms, s_label = simulate_session(
+        preds, labs, windows, s_silence, s_coverage, s_dominant = simulate_session(
             session_dir, model, stats, device,
         )
         all_predictions.extend(preds)
         all_labels.extend(labs)
         total_windows += windows
-        total_skipped_rms += s_rms
-        total_skipped_label += s_label
+        total_skipped_silence += s_silence
+        total_skipped_coverage += s_coverage
+        total_skipped_dominant += s_dominant
 
     elapsed = time.time() - start_time
 
@@ -315,8 +374,9 @@ def simulate(
     print(f"\n--- Summary ---")
     print(f"Sessions: {len(sessions)}")
     print(f"Windows passed RMS: {total_windows}")
-    print(f"Skipped (below RMS): {total_skipped_rms}")
-    print(f"Skipped (no single label): {total_skipped_label}")
+    print(f"Skipped (too much silence): {total_skipped_silence}")
+    print(f"Skipped (low label coverage): {total_skipped_coverage}")
+    print(f"Skipped (no dominant label): {total_skipped_dominant}")
     print(f"Evaluated predictions: {len(all_predictions)}")
     print(f"Time: {elapsed:.2f}s")
 

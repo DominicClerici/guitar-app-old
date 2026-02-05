@@ -15,7 +15,7 @@ WINDOW_SIZE = 4096
 # Spectrogram parameters
 N_FFT = WINDOW_SIZE
 HOP_LENGTH = WINDOW_SIZE // 8
-N_MELS = 80
+N_MELS = 64
 FMIN = 60.0  # Below low E (82Hz) to capture fundamental
 FMAX = 5000.0  # Captures harmonics up to ~6th for high strings
 

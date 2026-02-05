@@ -23,6 +23,14 @@ const HANDLE_WIDTH = 6
 const HANDLE_HIT_ZONE = 8
 const MIN_INTERVAL_MS = 50
 const CANVAS_HEIGHT = 160
+const ROW_DURATION_MS = 10000
+
+function formatTime(ms: number) {
+  const totalSeconds = Math.floor(ms / 1000)
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`
+}
 
 interface WaveformEditorProps {
   audioData: Float32Array
@@ -61,22 +69,32 @@ export function WaveformEditor({
   onSeek,
   className,
 }: WaveformEditorProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const canvasRefs = useRef(new Map<number, HTMLCanvasElement>())
   const dragStateRef = useRef<DragState | null>(null)
   const [canvasWidth, setCanvasWidth] = useState(800)
   const [cursorStyle, setCursorStyle] = useState("default")
 
   const totalDurationMs = (audioData.length / sampleRate) * 1000
 
-  const msToX = useCallback(
-    (ms: number) => (ms / totalDurationMs) * canvasWidth,
-    [totalDurationMs, canvasWidth],
+  const rows = useMemo(() => {
+    const numRows = Math.max(1, Math.ceil(totalDurationMs / ROW_DURATION_MS))
+    return Array.from({ length: numRows }, (_, i) => ({
+      startMs: i * ROW_DURATION_MS,
+      endMs: Math.min((i + 1) * ROW_DURATION_MS, totalDurationMs),
+    }))
+  }, [totalDurationMs])
+
+  const msToXInRow = useCallback(
+    (ms: number, rowStartMs: number, rowEndMs: number) =>
+      ((ms - rowStartMs) / (rowEndMs - rowStartMs)) * canvasWidth,
+    [canvasWidth],
   )
 
-  const xToMs = useCallback(
-    (x: number) => (x / canvasWidth) * totalDurationMs,
-    [totalDurationMs, canvasWidth],
+  const xToMsInRow = useCallback(
+    (x: number, rowStartMs: number, rowEndMs: number) =>
+      rowStartMs + (x / canvasWidth) * (rowEndMs - rowStartMs),
+    [canvasWidth],
   )
 
   useEffect(() => {
@@ -93,28 +111,35 @@ export function WaveformEditor({
     return () => observer.disconnect()
   }, [])
 
-  const waveformPeaks = useMemo(() => {
+  const rowPeaks = useMemo(() => {
     if (canvasWidth <= 0) return []
-    const numBuckets = canvasWidth
-    const samplesPerBucket = audioData.length / numBuckets
-    const peaks: { min: number; max: number }[] = []
-
-    for (let i = 0; i < numBuckets; i++) {
-      let min = 1
-      let max = -1
-      const start = Math.floor(i * samplesPerBucket)
-      const end = Math.min(
-        Math.floor((i + 1) * samplesPerBucket),
+    return rows.map((row) => {
+      const startSample = Math.floor((row.startMs / 1000) * sampleRate)
+      const endSample = Math.min(
+        Math.floor((row.endMs / 1000) * sampleRate),
         audioData.length,
       )
-      for (let j = start; j < end; j++) {
-        if (audioData[j] < min) min = audioData[j]
-        if (audioData[j] > max) max = audioData[j]
+      const totalSamples = endSample - startSample
+      const samplesPerBucket = totalSamples / canvasWidth
+      const peaks: { min: number; max: number }[] = []
+
+      for (let i = 0; i < canvasWidth; i++) {
+        let min = 1
+        let max = -1
+        const bStart = startSample + Math.floor(i * samplesPerBucket)
+        const bEnd = Math.min(
+          startSample + Math.floor((i + 1) * samplesPerBucket),
+          endSample,
+        )
+        for (let j = bStart; j < bEnd; j++) {
+          if (audioData[j] < min) min = audioData[j]
+          if (audioData[j] > max) max = audioData[j]
+        }
+        peaks.push({ min, max })
       }
-      peaks.push({ min, max })
-    }
-    return peaks
-  }, [audioData, canvasWidth])
+      return peaks
+    })
+  }, [audioData, sampleRate, canvasWidth, rows])
 
   const hasCrop = cropStartMs !== undefined && cropEndMs !== undefined
 
@@ -138,161 +163,265 @@ export function WaveformEditor({
   }, [intervals, totalDurationMs])
 
   const findGapAt = useCallback(
-    (x: number): { startMs: number; endMs: number } | null => {
-      const ms = xToMs(x)
+    (x: number, rowIndex: number) => {
+      const row = rows[rowIndex]
+      if (!row) return null
+      const ms = xToMsInRow(x, row.startMs, row.endMs)
       for (const gap of gaps) {
         if (ms >= gap.startMs && ms <= gap.endMs) return gap
       }
       return null
     },
-    [gaps, xToMs],
+    [gaps, xToMsInRow, rows],
   )
 
+  const findCropHandleAt = useCallback(
+    (x: number, rowIndex: number): "start" | "end" | null => {
+      if (!hasCrop) return null
+      const row = rows[rowIndex]
+      if (!row) return null
+      if (cropStartMs >= row.startMs && cropStartMs < row.endMs) {
+        if (Math.abs(x - msToXInRow(cropStartMs, row.startMs, row.endMs)) <= HANDLE_HIT_ZONE)
+          return "start"
+      }
+      if (cropEndMs > row.startMs && cropEndMs <= row.endMs) {
+        if (Math.abs(x - msToXInRow(cropEndMs, row.startMs, row.endMs)) <= HANDLE_HIT_ZONE)
+          return "end"
+      }
+      return null
+    },
+    [hasCrop, cropStartMs, cropEndMs, msToXInRow, rows],
+  )
+
+  const findHandleAt = useCallback(
+    (x: number, rowIndex: number): { intervalId: string; type: "start" | "end" } | null => {
+      const row = rows[rowIndex]
+      if (!row) return null
+      for (const interval of intervals) {
+        if (interval.startMs >= row.startMs && interval.startMs < row.endMs) {
+          if (Math.abs(x - msToXInRow(interval.startMs, row.startMs, row.endMs)) <= HANDLE_HIT_ZONE)
+            return { intervalId: interval.id, type: "start" }
+        }
+        if (interval.endMs > row.startMs && interval.endMs <= row.endMs) {
+          if (Math.abs(x - msToXInRow(interval.endMs, row.startMs, row.endMs)) <= HANDLE_HIT_ZONE)
+            return { intervalId: interval.id, type: "end" }
+        }
+      }
+      return null
+    },
+    [intervals, msToXInRow, rows],
+  )
+
+  const findIntervalAt = useCallback(
+    (x: number, rowIndex: number): string | null => {
+      const row = rows[rowIndex]
+      if (!row) return null
+      const ms = xToMsInRow(x, row.startMs, row.endMs)
+      for (const interval of intervals) {
+        if (ms >= interval.startMs && ms <= interval.endMs) return interval.id
+      }
+      return null
+    },
+    [intervals, xToMsInRow, rows],
+  )
+
+  const getCanvasX = useCallback((e: React.MouseEvent) => {
+    const el = e.currentTarget as HTMLElement
+    const rect = el.getBoundingClientRect()
+    return e.clientX - rect.left
+  }, [])
+
+  // Drawing
   useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas || waveformPeaks.length === 0) return
-
-    const ctx = canvas.getContext("2d")
-    if (!ctx) return
-
     const dpr = window.devicePixelRatio || 1
-    canvas.width = canvasWidth * dpr
-    canvas.height = CANVAS_HEIGHT * dpr
-    ctx.scale(dpr, dpr)
 
-    ctx.fillStyle = "#09090b"
-    ctx.fillRect(0, 0, canvasWidth, CANVAS_HEIGHT)
+    for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+      const canvas = canvasRefs.current.get(rowIndex)
+      const peaks = rowPeaks[rowIndex]
+      if (!canvas || !peaks || peaks.length === 0) continue
 
-    for (const interval of intervals) {
-      const x1 = msToX(interval.startMs)
-      const x2 = msToX(interval.endMs)
-      const color =
-        interval.string !== null
-          ? STRING_COLORS[interval.string]
-          : UNLABELED_COLOR
-      const isSelected = interval.id === selectedIntervalId
+      const row = rows[rowIndex]
+      const ctx = canvas.getContext("2d")
+      if (!ctx) continue
 
-      ctx.fillStyle = color
-      ctx.globalAlpha = isSelected ? 0.35 : 0.15
-      ctx.fillRect(x1, 0, x2 - x1, CANVAS_HEIGHT)
-      ctx.globalAlpha = 1.0
-    }
+      canvas.width = canvasWidth * dpr
+      canvas.height = CANVAS_HEIGHT * dpr
+      ctx.scale(dpr, dpr)
 
-    const centerY = CANVAS_HEIGHT / 2
-    const amplitude = CANVAS_HEIGHT / 2 - 4
+      const toX = (ms: number) => msToXInRow(ms, row.startMs, row.endMs)
 
-    ctx.fillStyle = "#a1a1aa"
-    ctx.beginPath()
-    ctx.moveTo(0, centerY)
-    for (let i = 0; i < waveformPeaks.length; i++) {
-      ctx.lineTo(i, centerY + waveformPeaks[i].min * amplitude)
-    }
-    for (let i = waveformPeaks.length - 1; i >= 0; i--) {
-      ctx.lineTo(i, centerY + waveformPeaks[i].max * amplitude)
-    }
-    ctx.closePath()
-    ctx.fill()
+      // Background
+      ctx.fillStyle = "#09090b"
+      ctx.fillRect(0, 0, canvasWidth, CANVAS_HEIGHT)
 
-    for (const interval of intervals) {
-      const color =
-        interval.string !== null
-          ? STRING_COLORS[interval.string]
-          : UNLABELED_COLOR
-      const isSelected = interval.id === selectedIntervalId
-      const lineWidth = isSelected ? 2 : 1
-
-      for (const edge of [interval.startMs, interval.endMs]) {
-        const x = msToX(edge)
-        ctx.strokeStyle = color
-        ctx.lineWidth = lineWidth
-        ctx.beginPath()
-        ctx.moveTo(x, 0)
-        ctx.lineTo(x, CANVAS_HEIGHT)
-        ctx.stroke()
+      // Interval backgrounds
+      for (const interval of intervals) {
+        if (interval.endMs <= row.startMs || interval.startMs >= row.endMs) continue
+        const x1 = toX(Math.max(interval.startMs, row.startMs))
+        const x2 = toX(Math.min(interval.endMs, row.endMs))
+        const color = interval.string !== null ? STRING_COLORS[interval.string] : UNLABELED_COLOR
+        const isSelected = interval.id === selectedIntervalId
 
         ctx.fillStyle = color
-        ctx.globalAlpha = 0.8
-        ctx.fillRect(x - HANDLE_WIDTH / 2, 0, HANDLE_WIDTH, 12)
-        ctx.fillRect(
-          x - HANDLE_WIDTH / 2,
-          CANVAS_HEIGHT - 12,
-          HANDLE_WIDTH,
-          12,
-        )
-        ctx.globalAlpha = 1.0
-      }
-    }
-
-    if (isAddingInterval && gaps.length > 0) {
-      for (const gap of gaps) {
-        const x1 = msToX(gap.startMs)
-        const x2 = msToX(gap.endMs)
-
-        ctx.fillStyle = "#22c55e"
-        ctx.globalAlpha = 0.15
+        ctx.globalAlpha = isSelected ? 0.35 : 0.15
         ctx.fillRect(x1, 0, x2 - x1, CANVAS_HEIGHT)
         ctx.globalAlpha = 1.0
-
-        ctx.setLineDash([4, 4])
-        ctx.strokeStyle = "#22c55e"
-        ctx.lineWidth = 1
-        ctx.strokeRect(x1, 0, x2 - x1, CANVAS_HEIGHT)
-        ctx.setLineDash([])
       }
-    }
 
-    if (hasCrop) {
-      const cropX1 = msToX(cropStartMs)
-      const cropX2 = msToX(cropEndMs)
+      // Waveform
+      const centerY = CANVAS_HEIGHT / 2
+      const amplitude = CANVAS_HEIGHT / 2 - 4
 
-      ctx.fillStyle = "#000000"
-      ctx.globalAlpha = 0.6
-      ctx.fillRect(0, 0, cropX1, CANVAS_HEIGHT)
-      ctx.fillRect(cropX2, 0, canvasWidth - cropX2, CANVAS_HEIGHT)
-      ctx.globalAlpha = 1.0
+      ctx.fillStyle = "#a1a1aa"
+      ctx.beginPath()
+      ctx.moveTo(0, centerY)
+      for (let i = 0; i < peaks.length; i++) {
+        ctx.lineTo(i, centerY + peaks[i].min * amplitude)
+      }
+      for (let i = peaks.length - 1; i >= 0; i--) {
+        ctx.lineTo(i, centerY + peaks[i].max * amplitude)
+      }
+      ctx.closePath()
+      ctx.fill()
 
-      for (const x of [cropX1, cropX2]) {
+      // Interval edges and handles
+      for (const interval of intervals) {
+        if (interval.endMs <= row.startMs || interval.startMs >= row.endMs) continue
+        const color = interval.string !== null ? STRING_COLORS[interval.string] : UNLABELED_COLOR
+        const isSelected = interval.id === selectedIntervalId
+        const lineWidth = isSelected ? 2 : 1
+
+        const edges: number[] = []
+        if (interval.startMs >= row.startMs && interval.startMs < row.endMs)
+          edges.push(interval.startMs)
+        if (interval.endMs > row.startMs && interval.endMs <= row.endMs)
+          edges.push(interval.endMs)
+
+        for (const edgeMs of edges) {
+          const x = toX(edgeMs)
+          ctx.strokeStyle = color
+          ctx.lineWidth = lineWidth
+          ctx.beginPath()
+          ctx.moveTo(x, 0)
+          ctx.lineTo(x, CANVAS_HEIGHT)
+          ctx.stroke()
+
+          ctx.fillStyle = color
+          ctx.globalAlpha = 0.8
+          ctx.fillRect(x - HANDLE_WIDTH / 2, 0, HANDLE_WIDTH, 12)
+          ctx.fillRect(x - HANDLE_WIDTH / 2, CANVAS_HEIGHT - 12, HANDLE_WIDTH, 12)
+          ctx.globalAlpha = 1.0
+        }
+      }
+
+      // Gap highlights
+      if (isAddingInterval && gaps.length > 0) {
+        for (const gap of gaps) {
+          if (gap.endMs <= row.startMs || gap.startMs >= row.endMs) continue
+          const x1 = toX(Math.max(gap.startMs, row.startMs))
+          const x2 = toX(Math.min(gap.endMs, row.endMs))
+
+          ctx.fillStyle = "#22c55e"
+          ctx.globalAlpha = 0.15
+          ctx.fillRect(x1, 0, x2 - x1, CANVAS_HEIGHT)
+          ctx.globalAlpha = 1.0
+
+          ctx.setLineDash([4, 4])
+          ctx.strokeStyle = "#22c55e"
+          ctx.lineWidth = 1
+          ctx.strokeRect(x1, 0, x2 - x1, CANVAS_HEIGHT)
+          ctx.setLineDash([])
+        }
+      }
+
+      // Crop overlay
+      if (hasCrop) {
+        const leftDarkEnd = Math.max(row.startMs, Math.min(cropStartMs, row.endMs))
+        const rightDarkStart = Math.max(row.startMs, Math.min(cropEndMs, row.endMs))
+
+        if (leftDarkEnd > row.startMs) {
+          ctx.fillStyle = "#000000"
+          ctx.globalAlpha = 0.6
+          ctx.fillRect(0, 0, toX(leftDarkEnd), CANVAS_HEIGHT)
+          ctx.globalAlpha = 1.0
+        }
+
+        if (rightDarkStart < row.endMs) {
+          const x = toX(rightDarkStart)
+          ctx.fillStyle = "#000000"
+          ctx.globalAlpha = 0.6
+          ctx.fillRect(x, 0, canvasWidth - x, CANVAS_HEIGHT)
+          ctx.globalAlpha = 1.0
+        }
+
+        // Crop handle lines and triangles
+        const cropEdges: number[] = []
+        if (cropStartMs >= row.startMs && cropStartMs < row.endMs)
+          cropEdges.push(cropStartMs)
+        if (cropEndMs > row.startMs && cropEndMs <= row.endMs)
+          cropEdges.push(cropEndMs)
+
+        for (const edgeMs of cropEdges) {
+          const x = toX(edgeMs)
+          ctx.strokeStyle = "#ffffff"
+          ctx.lineWidth = 2
+          ctx.beginPath()
+          ctx.moveTo(x, 0)
+          ctx.lineTo(x, CANVAS_HEIGHT)
+          ctx.stroke()
+
+          ctx.fillStyle = "#ffffff"
+          const triangleSize = 6
+          ctx.beginPath()
+          ctx.moveTo(x, 0)
+          ctx.lineTo(x - triangleSize, triangleSize * 2)
+          ctx.lineTo(x + triangleSize, triangleSize * 2)
+          ctx.closePath()
+          ctx.fill()
+
+          ctx.beginPath()
+          ctx.moveTo(x, CANVAS_HEIGHT)
+          ctx.lineTo(x - triangleSize, CANVAS_HEIGHT - triangleSize * 2)
+          ctx.lineTo(x + triangleSize, CANVAS_HEIGHT - triangleSize * 2)
+          ctx.closePath()
+          ctx.fill()
+        }
+      }
+
+      // Playback cursor
+      if (
+        playbackPositionMs !== null &&
+        playbackPositionMs >= row.startMs &&
+        playbackPositionMs <= row.endMs
+      ) {
+        const x = toX(playbackPositionMs)
         ctx.strokeStyle = "#ffffff"
         ctx.lineWidth = 2
         ctx.beginPath()
         ctx.moveTo(x, 0)
         ctx.lineTo(x, CANVAS_HEIGHT)
         ctx.stroke()
-
-        ctx.fillStyle = "#ffffff"
-        const triangleSize = 6
-        ctx.beginPath()
-        ctx.moveTo(x, 0)
-        ctx.lineTo(x - triangleSize, triangleSize * 2)
-        ctx.lineTo(x + triangleSize, triangleSize * 2)
-        ctx.closePath()
-        ctx.fill()
-
-        ctx.beginPath()
-        ctx.moveTo(x, CANVAS_HEIGHT)
-        ctx.lineTo(x - triangleSize, CANVAS_HEIGHT - triangleSize * 2)
-        ctx.lineTo(x + triangleSize, CANVAS_HEIGHT - triangleSize * 2)
-        ctx.closePath()
-        ctx.fill()
       }
-    }
 
-    if (playbackPositionMs !== null) {
-      const x = msToX(playbackPositionMs)
-      ctx.strokeStyle = "#ffffff"
-      ctx.lineWidth = 2
-      ctx.beginPath()
-      ctx.moveTo(x, 0)
-      ctx.lineTo(x, CANVAS_HEIGHT)
-      ctx.stroke()
+      // Time labels
+      ctx.fillStyle = "#ffffff"
+      ctx.globalAlpha = 0.5
+      ctx.font = "11px monospace"
+      ctx.textAlign = "left"
+      ctx.fillText(formatTime(row.startMs), 4, 14)
+      ctx.textAlign = "right"
+      ctx.fillText(formatTime(row.endMs), canvasWidth - 4, 14)
+      ctx.textAlign = "left"
+      ctx.globalAlpha = 1.0
     }
   }, [
-    waveformPeaks,
+    rows,
+    rowPeaks,
     intervals,
     selectedIntervalId,
     playbackPositionMs,
     canvasWidth,
-    msToX,
+    msToXInRow,
     hasCrop,
     cropStartMs,
     cropEndMs,
@@ -300,75 +429,24 @@ export function WaveformEditor({
     gaps,
   ])
 
-  const findCropHandleAt = useCallback(
-    (x: number): "start" | "end" | null => {
-      if (!hasCrop) return null
-      const cropX1 = msToX(cropStartMs)
-      const cropX2 = msToX(cropEndMs)
-      if (Math.abs(x - cropX1) <= HANDLE_HIT_ZONE) return "start"
-      if (Math.abs(x - cropX2) <= HANDLE_HIT_ZONE) return "end"
-      return null
-    },
-    [hasCrop, cropStartMs, cropEndMs, msToX],
-  )
-
-  const findHandleAt = useCallback(
-    (
-      x: number,
-    ): { intervalId: string; type: "start" | "end" } | null => {
-      for (const interval of intervals) {
-        const startX = msToX(interval.startMs)
-        const endX = msToX(interval.endMs)
-
-        if (Math.abs(x - startX) <= HANDLE_HIT_ZONE) {
-          return { intervalId: interval.id, type: "start" }
-        }
-        if (Math.abs(x - endX) <= HANDLE_HIT_ZONE) {
-          return { intervalId: interval.id, type: "end" }
-        }
-      }
-      return null
-    },
-    [intervals, msToX],
-  )
-
-  const findIntervalAt = useCallback(
-    (x: number): string | null => {
-      const ms = xToMs(x)
-      for (const interval of intervals) {
-        if (ms >= interval.startMs && ms <= interval.endMs) {
-          return interval.id
-        }
-      }
-      return null
-    },
-    [intervals, xToMs],
-  )
-
-  const getCanvasX = useCallback((e: React.MouseEvent) => {
-    const canvas = canvasRef.current
-    if (!canvas) return 0
-    const rect = canvas.getBoundingClientRect()
-    return e.clientX - rect.left
-  }, [])
-
   const handleMouseDown = useCallback(
-    (e: React.MouseEvent) => {
+    (e: React.MouseEvent, rowIndex: number) => {
       const x = getCanvasX(e)
+      const row = rows[rowIndex]
 
       if (isAddingInterval && onGapClick) {
-        const gap = findGapAt(x)
+        const gap = findGapAt(x, rowIndex)
         if (gap) onGapClick(gap.startMs, gap.endMs)
         return
       }
 
-      const cropHandle = findCropHandleAt(x)
+      const cropHandle = findCropHandleAt(x, rowIndex)
       if (cropHandle) {
         dragStateRef.current = { kind: "crop", type: cropHandle }
         return
       }
 
-      const handle = findHandleAt(x)
+      const handle = findHandleAt(x, rowIndex)
       if (handle) {
         dragStateRef.current = {
           kind: "interval",
@@ -379,12 +457,13 @@ export function WaveformEditor({
         return
       }
 
-      const intervalId = findIntervalAt(x)
+      const intervalId = findIntervalAt(x, rowIndex)
       onIntervalSelect(intervalId)
-      onSeek?.(xToMs(x))
+      onSeek?.(xToMsInRow(x, row.startMs, row.endMs))
     },
     [
       getCanvasX,
+      rows,
       isAddingInterval,
       onGapClick,
       findGapAt,
@@ -393,17 +472,21 @@ export function WaveformEditor({
       findIntervalAt,
       onIntervalSelect,
       onSeek,
-      xToMs,
+      xToMsInRow,
     ],
   )
 
   const handleMouseMove = useCallback(
-    (e: React.MouseEvent) => {
+    (e: React.MouseEvent, rowIndex: number) => {
       const x = getCanvasX(e)
+      const row = rows[rowIndex]
 
       if (dragStateRef.current) {
         const drag = dragStateRef.current
-        const newMs = Math.max(0, Math.min(xToMs(x), totalDurationMs))
+        const newMs = Math.max(
+          0,
+          Math.min(xToMsInRow(x, row.startMs, row.endMs), totalDurationMs),
+        )
 
         if (drag.kind === "crop" && hasCrop && onCropChange) {
           const minCropWidth = 500
@@ -461,16 +544,16 @@ export function WaveformEditor({
       }
 
       if (isAddingInterval) {
-        setCursorStyle(findGapAt(x) ? "crosshair" : "not-allowed")
+        setCursorStyle(findGapAt(x, rowIndex) ? "crosshair" : "not-allowed")
         return
       }
 
-      const cropHandle = findCropHandleAt(x)
+      const cropHandle = findCropHandleAt(x, rowIndex)
       if (cropHandle) {
         setCursorStyle("col-resize")
-      } else if (findHandleAt(x)) {
+      } else if (findHandleAt(x, rowIndex)) {
         setCursorStyle("col-resize")
-      } else if (findIntervalAt(x)) {
+      } else if (findIntervalAt(x, rowIndex)) {
         setCursorStyle("pointer")
       } else {
         setCursorStyle("default")
@@ -478,7 +561,8 @@ export function WaveformEditor({
     },
     [
       getCanvasX,
-      xToMs,
+      rows,
+      xToMsInRow,
       totalDurationMs,
       intervals,
       onIntervalsChange,
@@ -505,19 +589,27 @@ export function WaveformEditor({
 
   return (
     <div ref={containerRef} className={className}>
-      <canvas
-        ref={canvasRef}
-        style={{
-          width: canvasWidth,
-          height: CANVAS_HEIGHT,
-          cursor: cursorStyle,
-        }}
-        className="rounded-md"
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseLeave}
-      />
+      <div className="flex flex-col gap-1">
+        {rows.map((_, index) => (
+          <canvas
+            key={index}
+            ref={(el) => {
+              if (el) canvasRefs.current.set(index, el)
+              else canvasRefs.current.delete(index)
+            }}
+            style={{
+              width: canvasWidth,
+              height: CANVAS_HEIGHT,
+              cursor: cursorStyle,
+            }}
+            className="rounded-md"
+            onMouseDown={(e) => handleMouseDown(e, index)}
+            onMouseMove={(e) => handleMouseMove(e, index)}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseLeave}
+          />
+        ))}
+      </div>
     </div>
   )
 }
