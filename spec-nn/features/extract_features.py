@@ -6,8 +6,12 @@ in both JSON and compressed NPZ formats for training.
 """
 
 USE_LABELED_SEQUENCES = True
-MAX_SAMPLE_LENGTH_MS = 450
-MAX_SAMPLE_LENGTH_SEQUENCE_MS = 650
+
+MAX_SAMPLE_LENGTH_MS = 450 # end of samples longer is trimmed
+MAX_SAMPLE_LENGTH_SEQUENCE_MS = 650 # for each note interval in a sequence
+
+ENABLE_ZERO_PADDING = False # If samples arent the full window size, pad with zeros
+MAX_ZERO_PAD = 25  # Max percentage of window that can be zero-padded
 
 import json
 import time
@@ -165,6 +169,8 @@ def process_label_session(
         print(f"Error loading {audio_path}: {e}")
         return samples
 
+    padded_sample_count = 0
+
     for interval_idx, interval in enumerate(label_data["intervals"]):
         start_sample = int(interval["startMs"] / 1000.0 * target_sr)
         end_sample = int(interval["endMs"] / 1000.0 * target_sr)
@@ -177,21 +183,24 @@ def process_label_session(
         if len(segment) > max_samples:
             segment = segment[:max_samples]
 
+        min_real_samples = int(WINDOW_SIZE * (1 - MAX_ZERO_PAD / 100.0))
+
         if len(segment) < WINDOW_SIZE:
-            # Segment too short for even one window — use it directly if it's
-            # at least half a window (pad with zeros)
-            if len(segment) >= WINDOW_SIZE // 2:
+            if ENABLE_ZERO_PADDING and len(segment) >= min_real_samples:
                 padded = np.zeros(WINDOW_SIZE, dtype=segment.dtype)
                 padded[:len(segment)] = segment
                 segment = padded
+                padded_sample_count += 1
             else:
+                padded_sample_count += 1
                 continue
 
         windows = extract_windows(segment, WINDOW_SIZE)
-        if not windows and len(segment) >= WINDOW_SIZE // 2:
+        if not windows and ENABLE_ZERO_PADDING and len(segment) >= min_real_samples:
             padded = np.zeros(WINDOW_SIZE, dtype=segment.dtype)
             padded[:len(segment)] = segment
             windows = [padded]
+            padded_sample_count += 1
 
         for win_idx, window in enumerate(windows):
             window = normalize_audio_amplitude(window, TARGET_RMS)
@@ -205,6 +214,10 @@ def process_label_session(
                 window_index=win_idx,
             ))
 
+    if (ENABLE_ZERO_PADDING):
+        print(f"Zero-padded {padded_sample_count} samples")
+    else:
+        print(f"Removed {padded_sample_count} samples because zero-padding is disabled")
     return samples
 
 

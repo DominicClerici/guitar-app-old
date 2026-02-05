@@ -9,6 +9,7 @@ the same audio file stay together).
 import argparse
 import json
 import pickle
+import random
 import re
 from pathlib import Path
 
@@ -78,14 +79,15 @@ def load_spectrograms_with_split(
                 samples_meta = json_data["samples"]
             else:
                 # Create dummy metadata (all unique IDs)
-                samples_meta = [{"sample_id": f"sample_{i}", "string": int(strings[i])}
+                frets = data["frets"] if "frets" in data else np.zeros(len(strings), dtype=int)
+                samples_meta = [{"sample_id": f"sample_{i}", "string": int(strings[i]), "fret": int(frets[i])}
                                for i in range(len(strings))]
 
             # Group by base sample ID for proper splitting
             file_to_indices: dict[str, list[int]] = {}
             for i, meta in enumerate(samples_meta):
                 base_id = get_base_sample_id(meta["sample_id"])
-                file_key = f"{meta['string']}_{base_id}"
+                file_key = f"{meta['string']}_{meta['fret']}_{base_id}"
                 if file_key not in file_to_indices:
                     file_to_indices[file_key] = []
                 file_to_indices[file_key].append(i)
@@ -132,7 +134,7 @@ def load_spectrograms_with_split(
     file_to_samples: dict[str, list[dict]] = {}
     for sample in samples:
         base_id = get_base_sample_id(sample["sample_id"])
-        file_key = f"{sample['string']}_{base_id}"
+        file_key = f"{sample['string']}_{sample['fret']}_{base_id}"
         if file_key not in file_to_samples:
             file_to_samples[file_key] = []
         file_to_samples[file_key].append(sample)
@@ -218,12 +220,14 @@ def evaluate(
     dataloader: DataLoader,
     criterion: nn.Module,
     device: torch.device,
-) -> tuple[float, float]:
-    """Evaluate the model."""
+) -> tuple[float, float, np.ndarray, np.ndarray]:
+    """Evaluate the model. Returns (loss, accuracy, all_predictions, all_labels)."""
     model.eval()
     total_loss = 0.0
     correct = 0
     total = 0
+    all_preds = []
+    all_labels = []
 
     with torch.no_grad():
         for specs, labels in dataloader:
@@ -236,7 +240,76 @@ def evaluate(
             correct += predicted.eq(labels).sum().item()
             total += labels.size(0)
 
-    return total_loss / total, correct / total
+            all_preds.extend(predicted.cpu().numpy())
+            all_labels.extend(labels.cpu().numpy())
+
+    return total_loss / total, correct / total, np.array(all_preds), np.array(all_labels)
+
+
+STRING_NAMES = ["E2(6)", "A2(5)", "D3(4)", "G3(3)", "B3(2)", "E4(1)"]
+
+
+def print_classification_report(
+    labels: np.ndarray,
+    predictions: np.ndarray,
+    title: str = "Classification Report",
+    num_classes: int = 6,
+):
+    """Print confusion matrix and per-class precision/recall/F1."""
+    cm = np.zeros((num_classes, num_classes), dtype=int)
+    for true, pred in zip(labels, predictions):
+        cm[true][pred] += 1
+
+    print(f"\n--- {title} ---")
+
+    # Confusion matrix
+    print("\nConfusion Matrix (rows=actual, cols=predicted):")
+    header = "        " + " ".join(f"{name:>6}" for name in STRING_NAMES)
+    print(header)
+    for i, name in enumerate(STRING_NAMES):
+        row = " ".join(f"{cm[i][j]:>6}" for j in range(num_classes))
+        print(f"{name:>7} {row}")
+
+    # Per-class metrics
+    print(f"\n{'String':>7} {'Prec':>7} {'Recall':>7} {'F1':>7} {'Support':>7}")
+    print("-" * 39)
+
+    macro_p, macro_r, macro_f1 = 0.0, 0.0, 0.0
+    total_support = 0
+
+    for i, name in enumerate(STRING_NAMES):
+        tp = cm[i][i]
+        fp = cm[:, i].sum() - tp
+        fn = cm[i, :].sum() - tp
+        support = cm[i, :].sum()
+
+        precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+        recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+
+        print(f"{name:>7} {precision:>7.4f} {recall:>7.4f} {f1:>7.4f} {support:>7}")
+        macro_p += precision
+        macro_r += recall
+        macro_f1 += f1
+        total_support += support
+
+    print("-" * 39)
+    print(f"{'Macro':>7} {macro_p/num_classes:>7.4f} {macro_r/num_classes:>7.4f} {macro_f1/num_classes:>7.4f} {total_support:>7}")
+
+    # Top confused pairs
+    confused_pairs = []
+    for i in range(num_classes):
+        for j in range(num_classes):
+            if i != j and cm[i][j] > 0:
+                confused_pairs.append((cm[i][j], i, j))
+    confused_pairs.sort(reverse=True)
+
+    if confused_pairs:
+        print("\nTop confused pairs:")
+        for count, true, pred in confused_pairs[:5]:
+            total_for_class = cm[true, :].sum()
+            pct = count / total_for_class * 100 if total_for_class > 0 else 0
+            print(f"  {STRING_NAMES[true]} -> {STRING_NAMES[pred]}: {count} ({pct:.1f}% of {STRING_NAMES[true]})")
 
 
 def parse_args():
@@ -279,8 +352,20 @@ def parse_args():
         default=0.3,
         help="Dropout rate (default: 0.3)"
     )
+    parser.add_argument(
+        "--seed",
+        type=str,
+        default="42",
+        help="Random seed for train/val split (integer or 'random')"
+    )
 
     return parser.parse_args()
+
+
+def resolve_seed(seed: str) -> int:
+    if seed == "random":
+        return random.randint(0, 2**31 - 1)
+    return int(seed)
 
 
 def train(
@@ -290,6 +375,7 @@ def train(
     patience: int = 30,
     use_large_model: bool = False,
     dropout: float = 0.3,
+    seed: str = "42",
 ):
     print("\n====== Spectrogram CNN Training ======")
 
@@ -300,13 +386,17 @@ def train(
 
     start_time = time.time()
 
-    # lol 9950x is faster than a 4060 for training
+    resolved_seed = resolve_seed(seed)
+    if seed == "random":
+        print("Using a random seed: ", resolved_seed)
+    else:
+        print("Using seed: ", resolved_seed)
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # device = torch.device("cpu")
     print(f"Using device: {device}")
 
     # Load data
-    X_train, X_val, y_train, y_val, config, stats = load_spectrograms_with_split(data_dir)
+    X_train, X_val, y_train, y_val, config, stats = load_spectrograms_with_split(data_dir, random_state=resolved_seed)
 
     print(f"\nTrain shape: {X_train.shape} / Val shape: {X_val.shape}")
     print(f"Train dist: {np.bincount(y_train, minlength=6)} / Val dist: {np.bincount(y_val, minlength=6)}")
@@ -356,7 +446,7 @@ def train(
     for epoch in range(epochs):
         epoch_start = time.time()
         train_loss, train_acc = train_epoch(model, train_loader, criterion, optimizer, device)
-        val_loss, val_acc = evaluate(model, val_loader, criterion, device)
+        val_loss, val_acc, _, _ = evaluate(model, val_loader, criterion, device)
         epoch_times.append(time.time() - epoch_start)
 
         scheduler.step(val_loss)
@@ -387,6 +477,12 @@ def train(
 
     if best_model_state:
         model.load_state_dict(best_model_state)
+
+    # Per-class metrics on best model
+    _, _, train_preds, train_labels = evaluate(model, train_loader, criterion, device)
+    _, _, val_preds, val_labels = evaluate(model, val_loader, criterion, device)
+    print_classification_report(train_labels, train_preds, title="Train Set")
+    print_classification_report(val_labels, val_preds, title="Validation Set")
 
     # Save model
     model_path = output_dir / "spec_classifier.pt"
@@ -424,4 +520,5 @@ if __name__ == "__main__":
         patience=args.patience,
         use_large_model=args.large_model,
         dropout=args.dropout,
+        seed=args.seed,
     )

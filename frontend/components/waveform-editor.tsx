@@ -37,6 +37,7 @@ interface WaveformEditorProps {
   onIntervalSelect: (id: string | null) => void
   onCropChange?: (startMs: number, endMs: number) => void
   onGapClick?: (startMs: number, endMs: number) => void
+  onSeek?: (ms: number) => void
   className?: string
 }
 
@@ -57,6 +58,7 @@ export function WaveformEditor({
   onIntervalSelect,
   onCropChange,
   onGapClick,
+  onSeek,
   className,
 }: WaveformEditorProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -379,6 +381,7 @@ export function WaveformEditor({
 
       const intervalId = findIntervalAt(x)
       onIntervalSelect(intervalId)
+      onSeek?.(xToMs(x))
     },
     [
       getCanvasX,
@@ -389,6 +392,8 @@ export function WaveformEditor({
       findHandleAt,
       findIntervalAt,
       onIntervalSelect,
+      onSeek,
+      xToMs,
     ],
   )
 

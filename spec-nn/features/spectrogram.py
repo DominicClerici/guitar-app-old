@@ -15,9 +15,9 @@ WINDOW_SIZE = 4096
 # Spectrogram parameters
 N_FFT = WINDOW_SIZE
 HOP_LENGTH = WINDOW_SIZE // 8
-N_MELS = 50
+N_MELS = 80
 FMIN = 60.0  # Below low E (82Hz) to capture fundamental
-FMAX = 2000.0  # Captures harmonics up to ~6th for high strings
+FMAX = 5000.0  # Captures harmonics up to ~6th for high strings
 
 # Amplitude normalization
 TARGET_RMS = 0.035  # Match browser inference
