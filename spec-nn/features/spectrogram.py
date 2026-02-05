@@ -15,7 +15,7 @@ WINDOW_SIZE = 4096
 # Spectrogram parameters
 N_FFT = WINDOW_SIZE
 HOP_LENGTH = WINDOW_SIZE // 8
-N_MELS = 64
+N_MELS = 80
 FMIN = 60.0  # Below low E (82Hz) to capture fundamental
 FMAX = 5000.0  # Captures harmonics up to ~6th for high strings
 
@@ -24,10 +24,12 @@ TARGET_RMS = 0.035  # Match browser inference
 
 
 def calculate_rms(samples: np.ndarray) -> float:
-    return float(np.sqrt(np.mean(samples ** 2)))
+    return float(np.sqrt(np.mean(samples**2)))
 
 
-def normalize_audio_amplitude(samples: np.ndarray, target_rms: float = TARGET_RMS) -> np.ndarray:
+def normalize_audio_amplitude(
+    samples: np.ndarray, target_rms: float = TARGET_RMS
+) -> np.ndarray:
     current_rms = calculate_rms(samples)
     if current_rms < 1e-10:
         return samples

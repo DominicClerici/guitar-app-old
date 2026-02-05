@@ -7,13 +7,27 @@ in both JSON and compressed NPZ formats for training.
 
 USE_LABELED_SEQUENCES = True
 
-MAX_SAMPLE_LENGTH_MS = 450 # end of samples longer is trimmed
-MAX_SAMPLE_LENGTH_SEQUENCE_MS = 650 # for each note interval in a sequence
+MAX_SAMPLE_LENGTH_MS = 450  # end of samples longer is trimmed
+MAX_SAMPLE_LENGTH_SEQUENCE_MS = 650  # for each note interval in a sequence
 
-ENABLE_ZERO_PADDING = False # If samples arent the full window size, pad with zeros
+ENABLE_ZERO_PADDING = False  # If samples arent the full window size, pad with zeros
 MAX_ZERO_PAD = 25  # Max percentage of window that can be zero-padded
 
+AUGMENTATION_SCALER = 10
+
+# NUM_SLIGHT = 0.5 * AUGMENTATION_SCALER
+# NUM_MODERATE = 0.25 * AUGMENTATION_SCALER
+# NUM_AGGRESSIVE = 0.1 * AUGMENTATION_SCALER
+NUM_SLIGHT = 0.4 * AUGMENTATION_SCALER
+NUM_MODERATE = 0.3 * AUGMENTATION_SCALER
+NUM_AGGRESSIVE = 0.25 * AUGMENTATION_SCALER
+
+PROB_REVERB = 0.7
+PROB_CHORUS = 0.3
+PROB_PITCH_DRIFT = 0.5
+
 import json
+import random
 import time
 import numpy as np
 import librosa
@@ -33,6 +47,7 @@ from .spectrogram import (
     normalize_audio_amplitude,
     audio_to_mel_spectrogram,
 )
+from .augment import apply_reverb, apply_chorus, apply_pitch_drift
 
 
 @dataclass
@@ -79,13 +94,38 @@ def find_samples(samples_dir: Path) -> list[tuple[Path, int, int]]:
     return samples
 
 
-def extract_windows(audio: np.ndarray, window_size: int = WINDOW_SIZE) -> list[np.ndarray]:
+def extract_windows(
+    audio: np.ndarray, window_size: int = WINDOW_SIZE
+) -> list[np.ndarray]:
     """Extract overlapping windows from audio signal with 50% overlap."""
     hop_size = window_size // 2
     windows = []
     for start in range(0, len(audio) - window_size + 1, hop_size):
-        windows.append(audio[start:start + window_size])
+        windows.append(audio[start : start + window_size])
     return windows
+
+
+def generate_augmented_audio(audio, sample_rate):
+    augmented = []
+    for num, config_name in [
+        (NUM_SLIGHT, "slight"),
+        (NUM_MODERATE, "moderate"),
+        (NUM_AGGRESSIVE, "aggressive"),
+    ]:
+        guaranteed = int(num)
+        extra_prob = num - guaranteed
+        count = guaranteed + (1 if random.random() < extra_prob else 0)
+
+        for _ in range(count):
+            aug = audio.copy()
+            if random.random() < PROB_PITCH_DRIFT:
+                aug = apply_pitch_drift(aug, sample_rate, config_name)
+            if random.random() < PROB_CHORUS:
+                aug = apply_chorus(aug, sample_rate, config_name)
+            if random.random() < PROB_REVERB:
+                aug = apply_reverb(aug, sample_rate, config_name)
+            augmented.append(aug)
+    return augmented
 
 
 def process_audio_file(
@@ -114,19 +154,24 @@ def process_audio_file(
     if len(y) > max_samples:
         y = y[:max_samples]
 
-    windows = extract_windows(y, WINDOW_SIZE)
+    audio_variants = [(y, sample_id)]
+    for aug_idx, aug_audio in enumerate(generate_augmented_audio(y, target_sr)):
+        audio_variants.append((aug_audio, f"{sample_id}_aug{aug_idx}"))
 
-    for win_idx, window in enumerate(windows):
-        window = normalize_audio_amplitude(window, TARGET_RMS)
-        mel_spec = audio_to_mel_spectrogram(window)
-
-        samples.append(SpectrogramSample(
-            spectrogram=mel_spec,
-            string=string_num,
-            fret=fret_num,
-            sample_id=sample_id,
-            window_index=win_idx,
-        ))
+    for audio, sid in audio_variants:
+        windows = extract_windows(audio, WINDOW_SIZE)
+        for win_idx, window in enumerate(windows):
+            window = normalize_audio_amplitude(window, TARGET_RMS)
+            mel_spec = audio_to_mel_spectrogram(window)
+            samples.append(
+                SpectrogramSample(
+                    spectrogram=mel_spec,
+                    string=string_num,
+                    fret=fret_num,
+                    sample_id=sid,
+                    window_index=win_idx,
+                )
+            )
 
     return samples
 
@@ -139,7 +184,9 @@ def find_label_sessions(label_dir: Path) -> list[Path]:
     for session_dir in sorted(label_dir.iterdir()):
         if not session_dir.is_dir():
             continue
-        if (session_dir / "audio.wav").exists() and (session_dir / "labels.json").exists():
+        if (session_dir / "audio.wav").exists() and (
+            session_dir / "labels.json"
+        ).exists():
             sessions.append(session_dir)
     return sessions
 
@@ -169,56 +216,65 @@ def process_label_session(
         print(f"Error loading {audio_path}: {e}")
         return samples
 
+    audio_variants = [(y, session_id)]
+    for aug_idx, aug_audio in enumerate(generate_augmented_audio(y, target_sr)):
+        audio_variants.append((aug_audio, f"{session_id}_aug{aug_idx}"))
+
     padded_sample_count = 0
 
-    for interval_idx, interval in enumerate(label_data["intervals"]):
-        start_sample = int(interval["startMs"] / 1000.0 * target_sr)
-        end_sample = int(interval["endMs"] / 1000.0 * target_sr)
-        string_num = interval["string"]
+    for audio_full, sid_prefix in audio_variants:
+        for interval_idx, interval in enumerate(label_data["intervals"]):
+            start_sample = int(interval["startMs"] / 1000.0 * target_sr)
+            end_sample = int(interval["endMs"] / 1000.0 * target_sr)
+            string_num = interval["string"]
 
-        segment = y[start_sample:end_sample]
+            segment = audio_full[start_sample:end_sample]
 
-        # Trim end to max sample length
-        max_samples = int(MAX_SAMPLE_LENGTH_SEQUENCE_MS / 1000.0 * target_sr)
-        if len(segment) > max_samples:
-            segment = segment[:max_samples]
+            max_samples = int(MAX_SAMPLE_LENGTH_SEQUENCE_MS / 1000.0 * target_sr)
+            if len(segment) > max_samples:
+                segment = segment[:max_samples]
 
-        min_real_samples = int(WINDOW_SIZE * (1 - MAX_ZERO_PAD / 100.0))
+            min_real_samples = int(WINDOW_SIZE * (1 - MAX_ZERO_PAD / 100.0))
 
-        if len(segment) < WINDOW_SIZE:
-            if ENABLE_ZERO_PADDING and len(segment) >= min_real_samples:
+            sid = f"{sid_prefix}_i{interval_idx}"
+
+            if len(segment) < WINDOW_SIZE:
+                if ENABLE_ZERO_PADDING and len(segment) >= min_real_samples:
+                    padded = np.zeros(WINDOW_SIZE, dtype=segment.dtype)
+                    padded[: len(segment)] = segment
+                    segment = padded
+                    padded_sample_count += 1
+                else:
+                    padded_sample_count += 1
+                    continue
+
+            windows = extract_windows(segment, WINDOW_SIZE)
+            if not windows and ENABLE_ZERO_PADDING and len(segment) >= min_real_samples:
                 padded = np.zeros(WINDOW_SIZE, dtype=segment.dtype)
-                padded[:len(segment)] = segment
-                segment = padded
+                padded[: len(segment)] = segment
+                windows = [padded]
                 padded_sample_count += 1
-            else:
-                padded_sample_count += 1
-                continue
 
-        windows = extract_windows(segment, WINDOW_SIZE)
-        if not windows and ENABLE_ZERO_PADDING and len(segment) >= min_real_samples:
-            padded = np.zeros(WINDOW_SIZE, dtype=segment.dtype)
-            padded[:len(segment)] = segment
-            windows = [padded]
-            padded_sample_count += 1
+            for win_idx, window in enumerate(windows):
+                window = normalize_audio_amplitude(window, TARGET_RMS)
+                mel_spec = audio_to_mel_spectrogram(window)
+                samples.append(
+                    SpectrogramSample(
+                        spectrogram=mel_spec,
+                        string=string_num,
+                        fret=0,
+                        sample_id=sid,
+                        window_index=win_idx,
+                    )
+                )
 
-        for win_idx, window in enumerate(windows):
-            window = normalize_audio_amplitude(window, TARGET_RMS)
-            mel_spec = audio_to_mel_spectrogram(window)
-
-            samples.append(SpectrogramSample(
-                spectrogram=mel_spec,
-                string=string_num,
-                fret=0,
-                sample_id=f"{session_id}_i{interval_idx}",
-                window_index=win_idx,
-            ))
-
-    if (padded_sample_count > 0):    
-        if (ENABLE_ZERO_PADDING):
+    if padded_sample_count > 0:
+        if ENABLE_ZERO_PADDING:
             print(f"Zero-padded {padded_sample_count} samples")
         else:
-            print(f"Removed {padded_sample_count} samples because zero-padding is disabled")
+            print(
+                f"Removed {padded_sample_count} samples because zero-padding is disabled"
+            )
     return samples
 
 
