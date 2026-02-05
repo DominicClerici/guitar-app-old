@@ -7,16 +7,21 @@ import * as ort from "onnxruntime-web"
 import { useCallback, useEffect, useRef, useState } from "react"
 
 // Match Python spec-nn/main.py exactly
+// const WINDOW_SIZE = 4096 // ~93ms at 44.1kHz
+// const N_FFT = 1024
+// const HOP_LENGTH = 256
+// const N_MELS = 64
 const WINDOW_SIZE = 4096 // ~93ms at 44.1kHz
-const N_FFT = 1024
-const HOP_LENGTH = 256
-const N_MELS = 64
+const N_FFT = WINDOW_SIZE
+// const N_FFT = Math.floor(WINDOW_SIZE / 2)
+const HOP_LENGTH = Math.floor(WINDOW_SIZE / 8)
+const N_MELS = 50
 const FMIN = 60.0
 const FMAX = 2000.0
 const TARGET_RMS = 0.035
 
 // Inference trigger interval
-const INFERENCE_HOP = 1024
+const INFERENCE_HOP = 2048
 
 // Minimum RMS energy to process a window
 const MIN_RMS_THRESHOLD = 0.0015

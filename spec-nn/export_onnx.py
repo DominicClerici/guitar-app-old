@@ -136,6 +136,44 @@ def export_to_onnx(
         print(f"Warning: ONNX verification failed: {e}")
 
 
+def run_export(
+    model_path: Path | None = None,
+    output_dir: Path | None = None,
+    copy_to_frontend: bool = True,
+):
+    """
+    Export trained model to ONNX and optionally copy to frontend.
+
+    Callable from main.py orchestrator or standalone.
+    """
+    script_dir = Path(__file__).parent
+
+    if model_path is None:
+        model_path = script_dir / "data" / "models" / "spec_classifier.pt"
+    if output_dir is None:
+        output_dir = script_dir / "data" / "onnx"
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    if not model_path.exists():
+        print(f"Model not found: {model_path}")
+        print("Train the model first with: python main.py -t")
+        return
+
+    export_to_onnx(model_path, output_dir)
+
+    if copy_to_frontend:
+        import shutil
+        frontend_dir = script_dir.parent / "frontend" / "public" / "models"
+        frontend_dir.mkdir(parents=True, exist_ok=True)
+
+        shutil.copy(output_dir / "spec_classifier.onnx", frontend_dir / "spec_classifier.onnx")
+        shutil.copy(output_dir / "spec_config.json", frontend_dir / "spec_config.json")
+        print(f"\nCopied to frontend: {frontend_dir}")
+
+    print("\nExport complete!")
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Export trained spectrogram model to ONNX format."
@@ -163,33 +201,11 @@ def parse_args():
 
 def main():
     args = parse_args()
-
-    script_dir = Path(__file__).parent
-    models_dir = script_dir / "data" / "models"
-
-    model_path = Path(args.model_path) if args.model_path else models_dir / "spec_classifier.pt"
-    output_dir = Path(args.output_dir) if args.output_dir else script_dir / "data" / "onnx"
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    if not model_path.exists():
-        print(f"Model not found: {model_path}")
-        print("Train the model first with: python train.py")
-        return
-
-    export_to_onnx(model_path, output_dir)
-
-    # Copy to frontend if requested
-    if not args.no_copy_to_frontend and not args.output_dir:
-        import shutil
-        frontend_dir = script_dir.parent / "frontend" / "public" / "models"
-        frontend_dir.mkdir(parents=True, exist_ok=True)
-
-        shutil.copy(output_dir / "spec_classifier.onnx", frontend_dir / "spec_classifier.onnx")
-        shutil.copy(output_dir / "spec_config.json", frontend_dir / "spec_config.json")
-        print(f"\nCopied to frontend: {frontend_dir}")
-
-    print("\nExport complete!")
+    run_export(
+        model_path=Path(args.model_path) if args.model_path else None,
+        output_dir=Path(args.output_dir) if args.output_dir else None,
+        copy_to_frontend=not args.no_copy_to_frontend,
+    )
 
 
 if __name__ == "__main__":
