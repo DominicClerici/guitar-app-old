@@ -13,7 +13,12 @@ import {
 } from "@/components/ui/select"
 import { useStringClassifier, type PredictionResult } from "@/hooks/useStringClassifier"
 import {
+  useSpectrogramClassifier,
+  type SpectrogramPredictionResult,
+} from "@/hooks/useSpectrogramClassifier"
+import {
   AlertCircle,
+  AudioWaveform,
   Bug,
   CheckCircle2,
   Copy,
@@ -37,6 +42,8 @@ const STRING_COLORS = [
 const STRING_NAMES = ["E2 (Low)", "A2", "D3", "G3", "B3", "E4 (High)"]
 
 const PRODUCTION_MODE = true
+
+type ModelType = "feature" | "spectrogram"
 
 function createWavFile(samples: Float32Array, sampleRate: number): ArrayBuffer {
   const numChannels = 1
@@ -126,30 +133,103 @@ export default function ModelTestPage() {
   } | null>(null)
   const [expectedString, setExpectedString] = useState<number>(1)
   const [expectedFret, setExpectedFret] = useState<number>(0)
+  const [activeModelType, setActiveModelType] = useState<ModelType | null>(null)
   const audioBufferRef = useRef<Float32Array[]>([])
 
   const handlePrediction = useCallback((result: PredictionResult) => {
     setHistory((prev) => [result, ...prev].slice(0, 20))
   }, [])
 
-  const {
-    status,
-    error,
-    prediction,
-    stablePrediction,
-    startListening,
-    stopListening,
-    loadModel,
-    isModelLoaded,
-    captureAudioSample,
-    scaler,
-    isUsingPersonalizedModel,
-  } = useStringClassifier({
+  const handleSpectrogramPrediction = useCallback((result: SpectrogramPredictionResult) => {
+    const convertedResult: PredictionResult = {
+      stringIndex: result.stringIndex,
+      stringLabel: result.stringLabel,
+      confidence: result.confidence,
+      allProbabilities: result.allProbabilities,
+      features: {
+        fundamental: result.fundamental,
+        harmonicRatios: [],
+        spectralCentroid: 0,
+        spectralRolloff: 0,
+        inharmonicity: 0,
+        rmsEnergy: 0,
+        energySlope: 0,
+        logFrequency: 0,
+        semitonesFromE2: 0,
+        octaveNumber: 0,
+        zcr: 0,
+        oddEvenHarmonicRatio: 0,
+        mfcc: [],
+        transitionLikelihood: 0,
+      },
+    }
+    setHistory((prev) => [convertedResult, ...prev].slice(0, 20))
+  }, [])
+
+  const featureClassifier = useStringClassifier({
     onPrediction: handlePrediction,
     minConfidence: 0.25,
     debug: true,
     productionMode: PRODUCTION_MODE,
   })
+
+  const spectrogramClassifier = useSpectrogramClassifier({
+    onPrediction: handleSpectrogramPrediction,
+    minConfidence: 0.25,
+  })
+
+  // Unified state based on active model
+  const status = activeModelType === "spectrogram" ? spectrogramClassifier.status : featureClassifier.status
+  const error = activeModelType === "spectrogram" ? spectrogramClassifier.error : featureClassifier.error
+  const isModelLoaded =
+    activeModelType === "spectrogram"
+      ? spectrogramClassifier.isModelLoaded
+      : featureClassifier.isModelLoaded
+
+  // Get prediction from the active model
+  const prediction = activeModelType === "spectrogram"
+    ? spectrogramClassifier.prediction
+      ? {
+          stringIndex: spectrogramClassifier.prediction.stringIndex,
+          stringLabel: spectrogramClassifier.prediction.stringLabel,
+          confidence: spectrogramClassifier.prediction.confidence,
+          allProbabilities: spectrogramClassifier.prediction.allProbabilities,
+          features: {
+            fundamental: spectrogramClassifier.prediction.fundamental,
+            harmonicRatios: [],
+            spectralCentroid: 0,
+            spectralRolloff: 0,
+            inharmonicity: 0,
+            rmsEnergy: 0,
+            energySlope: 0,
+            logFrequency: 0,
+            semitonesFromE2: 0,
+            octaveNumber: 0,
+            zcr: 0,
+            oddEvenHarmonicRatio: 0,
+            mfcc: [],
+            transitionLikelihood: 0,
+          },
+        } as PredictionResult
+      : null
+    : featureClassifier.prediction
+
+  const stablePrediction = activeModelType === "spectrogram"
+    ? spectrogramClassifier.prediction
+      ? {
+          stringIndex: spectrogramClassifier.prediction.stringIndex,
+          stringLabel: spectrogramClassifier.prediction.stringLabel,
+          fret: spectrogramClassifier.prediction.fret,
+          confidence: spectrogramClassifier.prediction.confidence,
+          fundamental: spectrogramClassifier.prediction.fundamental,
+          isLocked: false,
+        }
+      : null
+    : featureClassifier.stablePrediction
+
+  const captureAudioSample = featureClassifier.captureAudioSample
+  const scaler = featureClassifier.scaler
+  const isUsingPersonalizedModel = featureClassifier.isUsingPersonalizedModel
 
   const fretboardMarkers = useMemo((): Marker[] => {
     if (!PRODUCTION_MODE || !stablePrediction) return []
@@ -293,21 +373,60 @@ export default function ModelTestPage() {
             <div className="flex flex-wrap gap-3">
               {!isModelLoaded && (
                 <>
-                  <Button onClick={() => loadModel()} disabled={isLoading}>
-                    {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  <Button
+                    onClick={() => {
+                      setActiveModelType("feature")
+                      featureClassifier.loadModel()
+                    }}
+                    disabled={isLoading}
+                  >
+                    {isLoading && activeModelType === "feature" && (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    )}
                     <User className="mr-2 h-4 w-4" />
                     Load Personalized
                   </Button>
-                  <Button onClick={() => loadModel(true)} disabled={isLoading} variant="outline">
-                    {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  <Button
+                    onClick={() => {
+                      setActiveModelType("feature")
+                      featureClassifier.loadModel(true)
+                    }}
+                    disabled={isLoading}
+                    variant="outline"
+                  >
+                    {isLoading && activeModelType === "feature" && (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    )}
                     Load Default
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setActiveModelType("spectrogram")
+                      spectrogramClassifier.loadModel()
+                    }}
+                    disabled={isLoading}
+                    variant="outline"
+                  >
+                    {isLoading && activeModelType === "spectrogram" && (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    )}
+                    <AudioWaveform className="mr-2 h-4 w-4" />
+                    Load Spectrogram
                   </Button>
                 </>
               )}
               <Button
-                onClick={isRecording ? stopListening : startListening}
+                onClick={
+                  isRecording
+                    ? activeModelType === "spectrogram"
+                      ? spectrogramClassifier.stopListening
+                      : featureClassifier.stopListening
+                    : activeModelType === "spectrogram"
+                      ? spectrogramClassifier.startListening
+                      : featureClassifier.startListening
+                }
                 variant={isRecording ? "destructive" : "default"}
-                disabled={isLoading}
+                disabled={isLoading || !isModelLoaded}
               >
                 {isRecording ? (
                   <>
@@ -326,6 +445,23 @@ export default function ModelTestPage() {
                 {showDebug ? "Hide Debug" : "Show Debug"}
               </Button>
             </div>
+            {activeModelType && isModelLoaded && (
+              <div className="mt-3">
+                <Badge variant="outline" className="gap-1">
+                  {activeModelType === "spectrogram" ? (
+                    <>
+                      <AudioWaveform className="size-3" />
+                      Spectrogram Model
+                    </>
+                  ) : (
+                    <>
+                      <User className="size-3" />
+                      Feature Model {isUsingPersonalizedModel ? "(Personalized)" : "(Default)"}
+                    </>
+                  )}
+                </Badge>
+              </div>
+            )}
             {error && (
               <div className="bg-destructive/10 text-destructive mt-4 rounded-md p-3">{error}</div>
             )}
