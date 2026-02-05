@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-MODEL_SIZE_BASE = 64
+MODEL_SIZE_BASE = 96
 ADAPTER_SIZE = MODEL_SIZE_BASE // 2  # Same as backbone output size
 
 

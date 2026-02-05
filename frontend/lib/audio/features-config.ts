@@ -68,9 +68,7 @@ export const FEATURE_NAME_TO_INDEX: Record<string, number> = Object.fromEntries(
  * @returns Array of indices into the full 36-element vector
  */
 export function getEnabledIndices(enabledFeatures: string[]): number[] {
-  return enabledFeatures
-    .map((name) => FEATURE_NAME_TO_INDEX[name])
-    .filter((i) => i !== undefined)
+  return enabledFeatures.map((name) => FEATURE_NAME_TO_INDEX[name]).filter((i) => i !== undefined)
 }
 
 /**

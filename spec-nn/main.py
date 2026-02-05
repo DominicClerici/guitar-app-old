@@ -23,7 +23,7 @@ from dataclasses import dataclass
 import time
 
 # Audio parameters - match string-nn for consistency
-SAMPLE_RATE = 44100
+SAMPLE_RATE = 48000
 WINDOW_SIZE = 4096  # ~93ms at 44.1kHz
 
 # Spectrogram parameters

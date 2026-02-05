@@ -300,7 +300,9 @@ def train(
 
     start_time = time.time()
 
-    device = torch.device("cpu")  # CPU often faster for small models
+    # lol 9950x is faster than a 4060 for training
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # device = torch.device("cpu")
     print(f"Using device: {device}")
 
     # Load data
@@ -350,9 +352,12 @@ def train(
 
     print("\n----- Starting training -----\n")
 
+    epoch_times = []
     for epoch in range(epochs):
+        epoch_start = time.time()
         train_loss, train_acc = train_epoch(model, train_loader, criterion, optimizer, device)
         val_loss, val_acc = evaluate(model, val_loader, criterion, device)
+        epoch_times.append(time.time() - epoch_start)
 
         scheduler.step(val_loss)
 
@@ -365,10 +370,12 @@ def train(
             epochs_without_improvement += 1
 
         if epoch % 10 == 0 or epoch == epochs - 1:
+            avg_epoch_time = sum(epoch_times) / len(epoch_times)
             print(
                 f"Epoch {epoch+1:3d}/{epochs} | "
                 f"Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f} | "
-                f"Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f}"
+                f"Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f} | "
+                f"Avg Time/Epoch: {avg_epoch_time:.2f}s"
             )
 
         if epochs_without_improvement >= patience:

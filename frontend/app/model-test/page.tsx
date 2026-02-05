@@ -11,11 +11,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { useStringClassifier, type PredictionResult } from "@/hooks/useStringClassifier"
 import {
   useSpectrogramClassifier,
   type SpectrogramPredictionResult,
 } from "@/hooks/useSpectrogramClassifier"
+import { useStringClassifier, type PredictionResult } from "@/hooks/useStringClassifier"
 import {
   AlertCircle,
   AudioWaveform,
@@ -179,53 +179,57 @@ export default function ModelTestPage() {
   })
 
   // Unified state based on active model
-  const status = activeModelType === "spectrogram" ? spectrogramClassifier.status : featureClassifier.status
-  const error = activeModelType === "spectrogram" ? spectrogramClassifier.error : featureClassifier.error
+  const status =
+    activeModelType === "spectrogram" ? spectrogramClassifier.status : featureClassifier.status
+  const error =
+    activeModelType === "spectrogram" ? spectrogramClassifier.error : featureClassifier.error
   const isModelLoaded =
     activeModelType === "spectrogram"
       ? spectrogramClassifier.isModelLoaded
       : featureClassifier.isModelLoaded
 
   // Get prediction from the active model
-  const prediction = activeModelType === "spectrogram"
-    ? spectrogramClassifier.prediction
-      ? {
-          stringIndex: spectrogramClassifier.prediction.stringIndex,
-          stringLabel: spectrogramClassifier.prediction.stringLabel,
-          confidence: spectrogramClassifier.prediction.confidence,
-          allProbabilities: spectrogramClassifier.prediction.allProbabilities,
-          features: {
-            fundamental: spectrogramClassifier.prediction.fundamental,
-            harmonicRatios: [],
-            spectralCentroid: 0,
-            spectralRolloff: 0,
-            inharmonicity: 0,
-            rmsEnergy: 0,
-            energySlope: 0,
-            logFrequency: 0,
-            semitonesFromE2: 0,
-            octaveNumber: 0,
-            zcr: 0,
-            oddEvenHarmonicRatio: 0,
-            mfcc: [],
-            transitionLikelihood: 0,
-          },
-        } as PredictionResult
-      : null
-    : featureClassifier.prediction
+  const prediction =
+    activeModelType === "spectrogram"
+      ? spectrogramClassifier.prediction
+        ? ({
+            stringIndex: spectrogramClassifier.prediction.stringIndex,
+            stringLabel: spectrogramClassifier.prediction.stringLabel,
+            confidence: spectrogramClassifier.prediction.confidence,
+            allProbabilities: spectrogramClassifier.prediction.allProbabilities,
+            features: {
+              fundamental: spectrogramClassifier.prediction.fundamental,
+              harmonicRatios: [],
+              spectralCentroid: 0,
+              spectralRolloff: 0,
+              inharmonicity: 0,
+              rmsEnergy: 0,
+              energySlope: 0,
+              logFrequency: 0,
+              semitonesFromE2: 0,
+              octaveNumber: 0,
+              zcr: 0,
+              oddEvenHarmonicRatio: 0,
+              mfcc: [],
+              transitionLikelihood: 0,
+            },
+          } as PredictionResult)
+        : null
+      : featureClassifier.prediction
 
-  const stablePrediction = activeModelType === "spectrogram"
-    ? spectrogramClassifier.prediction
-      ? {
-          stringIndex: spectrogramClassifier.prediction.stringIndex,
-          stringLabel: spectrogramClassifier.prediction.stringLabel,
-          fret: spectrogramClassifier.prediction.fret,
-          confidence: spectrogramClassifier.prediction.confidence,
-          fundamental: spectrogramClassifier.prediction.fundamental,
-          isLocked: false,
-        }
-      : null
-    : featureClassifier.stablePrediction
+  const stablePrediction =
+    activeModelType === "spectrogram"
+      ? spectrogramClassifier.prediction
+        ? {
+            stringIndex: spectrogramClassifier.prediction.stringIndex,
+            stringLabel: spectrogramClassifier.prediction.stringLabel,
+            fret: spectrogramClassifier.prediction.fret,
+            confidence: spectrogramClassifier.prediction.confidence,
+            fundamental: spectrogramClassifier.prediction.fundamental,
+            isLocked: false,
+          }
+        : null
+      : featureClassifier.stablePrediction
 
   const captureAudioSample = featureClassifier.captureAudioSample
   const scaler = featureClassifier.scaler

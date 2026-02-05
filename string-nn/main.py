@@ -32,7 +32,7 @@ AUGMENTATION_PRESET = "moderate"
 USE_FINETUNE_SAMPLES = True
 
 # String layering configuration - simulates adjacent string interference
-USE_STRING_LAYERING = False
+USE_STRING_LAYERING = True
 STRING_LAYER_PROBABILITY = 0.25  # 25% of samples get layered (1 in 4)
 STRING_LAYER_VOLUME_MIN = 0.15   # Minimum volume ratio for layer (relative to main)
 STRING_LAYER_VOLUME_MAX = 0.35   # Maximum volume ratio for layer
@@ -48,7 +48,7 @@ ADJACENT_STRINGS = {
 }
 
 # Sequential note generation - simulates fast playing with note transitions
-USE_SEQUENTIAL_NOTES = True
+USE_SEQUENTIAL_NOTES = False
 SEQUENTIAL_RATIO = 0.25  # Generate 20% of sample count as sequential clips
 SEQUENTIAL_GAP_MIN_MS = 0.0  # Minimum gap between notes
 SEQUENTIAL_GAP_MAX_MS = 15.0  # Maximum gap between notes
@@ -62,9 +62,9 @@ USE_SLIDING_WINDOW_SEQUENCES = True
 SLIDING_WINDOW_HOP_SIZE = 512  # Hop size in samples (matches production inference)
 SLIDING_WINDOW_GAP_MIN_MS = 0.0  # Minimum gap between notes in ms
 SLIDING_WINDOW_GAP_MAX_MS = 50.0  # Maximum gap between notes in ms
-SLIDING_WINDOW_NUM_TRAIN_SEQUENCES = 100  # Number of training sequences to generate
-SLIDING_WINDOW_NUM_VAL_SEQUENCES = 25  # Number of validation sequences to generate
-SLIDING_WINDOW_NOTES_PER_SEQUENCE = 15  # Number of notes per sequence
+SLIDING_WINDOW_NUM_TRAIN_SEQUENCES = 200  # Number of training sequences to generate
+SLIDING_WINDOW_NUM_VAL_SEQUENCES = 50  # Number of validation sequences to generate
+SLIDING_WINDOW_NOTES_PER_SEQUENCE = 25  # Number of notes per sequence
 SLIDING_WINDOW_NOTE_DURATION_MS = 400.0  # Duration of each note in sequence (longer for realism)
 SLIDING_WINDOW_ONLY_MODE = False  # If True, train ONLY on sliding window sequences
 

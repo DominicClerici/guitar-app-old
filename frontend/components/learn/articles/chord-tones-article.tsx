@@ -63,10 +63,8 @@ function MajorScaleIntervals() {
                   interval.isChordTone
                     ? "bg-gradient-to-br shadow-lg ring-2 ring-white/20"
                     : "bg-white/5 ring-1 ring-white/10",
-                  interval.degree === "1" &&
-                    "from-emerald-500 to-teal-600 shadow-emerald-500/30",
-                  interval.degree === "3" &&
-                    "from-amber-500 to-orange-600 shadow-amber-500/30",
+                  interval.degree === "1" && "from-emerald-500 to-teal-600 shadow-emerald-500/30",
+                  interval.degree === "3" && "from-amber-500 to-orange-600 shadow-amber-500/30",
                   interval.degree === "5" && "from-sky-500 to-blue-600 shadow-sky-500/30",
                 )}
               >
@@ -120,14 +118,14 @@ function TriadConstruction() {
     <div className="grid gap-6 lg:grid-cols-2">
       <div className="space-y-4">
         <ArticleParagraph>
-          A <strong className="text-foreground">triad</strong> is the simplest form of a
-          chord &mdash; just three notes stacked together. These aren&apos;t random notes;
-          they&apos;re the 1st, 3rd, and 5th degrees of a scale.
+          A <strong className="text-foreground">triad</strong> is the simplest form of a chord
+          &mdash; just three notes stacked together. These aren&apos;t random notes; they&apos;re
+          the 1st, 3rd, and 5th degrees of a scale.
         </ArticleParagraph>
         <ArticleParagraph>
-          When you play a C major chord, you&apos;re playing the notes C, E, and G. That&apos;s
-          the root (C), the major third (E), and the perfect fifth (G). Every major chord
-          follows this exact formula.
+          When you play a C major chord, you&apos;re playing the notes C, E, and G. That&apos;s the
+          root (C), the major third (E), and the perfect fifth (G). Every major chord follows this
+          exact formula.
         </ArticleParagraph>
       </div>
 
@@ -458,9 +456,8 @@ function PracticePreview() {
         <HighlightBox icon={Lightbulb} variant="tip" title="Pro tip for practice">
           <p>
             When you play a chord shape, sing the chord tones out loud: &ldquo;root, third,
-            fifth.&rdquo; This connects your ears to your fingers and accelerates
-            internalization. You&apos;ll start hearing chord tones in every song you listen
-            to.
+            fifth.&rdquo; This connects your ears to your fingers and accelerates internalization.
+            You&apos;ll start hearing chord tones in every song you listen to.
           </p>
         </HighlightBox>
       </div>
@@ -482,20 +479,20 @@ export default function ChordTonesArticle({ onEnterPreview }: ChordTonesArticleP
           </div>
           <ArticleHeading>Chord Tones: The Notes That Define Harmony</ArticleHeading>
           <ArticleParagraph>
-            You&apos;ve learned to find root notes across the fretboard using the CAGED
-            system. Now it&apos;s time to expand that foundation by adding two more essential
-            notes: the <strong className="text-foreground">third</strong> and the{" "}
-            <strong className="text-foreground">fifth</strong>. Together, these three notes
-            form a triad &mdash; the fundamental building block of Western harmony.
+            You&apos;ve learned to find root notes across the fretboard using the CAGED system. Now
+            it&apos;s time to expand that foundation by adding two more essential notes: the{" "}
+            <strong className="text-foreground">third</strong> and the{" "}
+            <strong className="text-foreground">fifth</strong>. Together, these three notes form a
+            triad &mdash; the fundamental building block of Western harmony.
           </ArticleParagraph>
         </div>
 
         <HighlightBox icon={Target} variant="important" title="What you'll learn">
           <p>
-            By the end of this lesson, you&apos;ll know the root, third, and fifth positions
-            for every CAGED shape. These chord tones are your melodic targets &mdash; the
-            notes that always sound &ldquo;right&rdquo; when improvising over any chord.
-            Master them, and you&apos;ll never feel lost during a solo again.
+            By the end of this lesson, you&apos;ll know the root, third, and fifth positions for
+            every CAGED shape. These chord tones are your melodic targets &mdash; the notes that
+            always sound &ldquo;right&rdquo; when improvising over any chord. Master them, and
+            you&apos;ll never feel lost during a solo again.
           </p>
         </HighlightBox>
       </ArticleSection>
@@ -506,17 +503,17 @@ export default function ChordTonesArticle({ onEnterPreview }: ChordTonesArticleP
       <ArticleSection>
         <ArticleSubheading>Building on Your CAGED Foundation</ArticleSubheading>
         <ArticleParagraph>
-          You already know where the roots are in each CAGED shape. Those roots are your
-          anchor points &mdash; they tell you what chord you&apos;re playing. Now we&apos;re
-          upgrading from single anchor points to a complete harmonic map.
+          You already know where the roots are in each CAGED shape. Those roots are your anchor
+          points &mdash; they tell you what chord you&apos;re playing. Now we&apos;re upgrading from
+          single anchor points to a complete harmonic map.
         </ArticleParagraph>
 
         <BuildingOnRoots />
 
         <ArticleParagraph>
-          Think of it like this: roots tell you <em>where</em> you are, but chord tones tell
-          you <em>what</em> you can play. Every melody that sounds good over a chord is
-          fundamentally built around these three notes.
+          Think of it like this: roots tell you <em>where</em> you are, but chord tones tell you{" "}
+          <em>what</em> you can play. Every melody that sounds good over a chord is fundamentally
+          built around these three notes.
         </ArticleParagraph>
       </ArticleSection>
 
@@ -526,9 +523,9 @@ export default function ChordTonesArticle({ onEnterPreview }: ChordTonesArticleP
       <ArticleSection>
         <ArticleSubheading>What Exactly Are Chord Tones?</ArticleSubheading>
         <ArticleParagraph>
-          Chord tones are the notes that make up a chord. For major chords, these are the
-          1st, 3rd, and 5th degrees of the major scale. Each one has a distinct sound and
-          function in the harmony.
+          Chord tones are the notes that make up a chord. For major chords, these are the 1st, 3rd,
+          and 5th degrees of the major scale. Each one has a distinct sound and function in the
+          harmony.
         </ArticleParagraph>
 
         <div className="grid gap-4 pt-2">
@@ -557,10 +554,10 @@ export default function ChordTonesArticle({ onEnterPreview }: ChordTonesArticleP
 
         <HighlightBox icon={Music} variant="note" title="The Third is the Most Important">
           <p>
-            If you only target one chord tone besides the root, make it the third. It&apos;s
-            what makes a major chord sound major and a minor chord sound minor. Landing on
-            the third during a solo immediately tells the listener you&apos;re playing{" "}
-            <em>with</em> the harmony, not just over it.
+            If you only target one chord tone besides the root, make it the third. It&apos;s what
+            makes a major chord sound major and a minor chord sound minor. Landing on the third
+            during a solo immediately tells the listener you&apos;re playing <em>with</em> the
+            harmony, not just over it.
           </p>
         </HighlightBox>
       </ArticleSection>
@@ -571,10 +568,10 @@ export default function ChordTonesArticle({ onEnterPreview }: ChordTonesArticleP
       <ArticleSection>
         <ArticleSubheading>How Triads Are Built From the Scale</ArticleSubheading>
         <ArticleParagraph>
-          Chord tones come from the major scale. When you take every other note starting from
-          the root &mdash; the 1st, 3rd, and 5th &mdash; you get a triad. This pattern is
-          called <strong className="text-foreground">tertian harmony</strong>, and it&apos;s
-          the foundation of nearly all Western music.
+          Chord tones come from the major scale. When you take every other note starting from the
+          root &mdash; the 1st, 3rd, and 5th &mdash; you get a triad. This pattern is called{" "}
+          <strong className="text-foreground">tertian harmony</strong>, and it&apos;s the foundation
+          of nearly all Western music.
         </ArticleParagraph>
 
         <MajorScaleIntervals />
@@ -582,9 +579,9 @@ export default function ChordTonesArticle({ onEnterPreview }: ChordTonesArticleP
         <TriadConstruction />
 
         <ArticleParagraph>
-          This is why the CAGED system is so powerful for learning chord tones. Each shape
-          already contains the 1, 3, and 5 of the chord &mdash; you just need to learn where
-          they are within the shapes you already know.
+          This is why the CAGED system is so powerful for learning chord tones. Each shape already
+          contains the 1, 3, and 5 of the chord &mdash; you just need to learn where they are within
+          the shapes you already know.
         </ArticleParagraph>
       </ArticleSection>
 
@@ -595,20 +592,20 @@ export default function ChordTonesArticle({ onEnterPreview }: ChordTonesArticleP
         <ArticleSubheading>Why Chord Tones Matter for Improvisation</ArticleSubheading>
         <ArticleParagraph>
           When you solo using only pentatonic scales, you&apos;re playing notes that sound
-          &ldquo;okay&rdquo; over most chords. But when you target chord tones, you&apos;re
-          playing notes that sound <strong className="text-foreground">perfect</strong> for{" "}
-          <em>that specific chord</em>. This is what separates intermediate players from
-          advanced musicians.
+          &ldquo;okay&rdquo; over most chords. But when you target chord tones, you&apos;re playing
+          notes that sound <strong className="text-foreground">perfect</strong> for{" "}
+          <em>that specific chord</em>. This is what separates intermediate players from advanced
+          musicians.
         </ArticleParagraph>
 
         <WhyChordTonesMatter />
 
         <HighlightBox icon={Lightbulb} variant="tip" title="The Strong Beat Rule">
           <p>
-            Here&apos;s a game-changing tip: land on chord tones on strong beats (beats 1 and
-            3 in 4/4 time). Use scale notes and passing tones on weak beats to connect your
-            chord tone targets. This simple rule instantly makes your solos sound more
-            professional and intentional.
+            Here&apos;s a game-changing tip: land on chord tones on strong beats (beats 1 and 3 in
+            4/4 time). Use scale notes and passing tones on weak beats to connect your chord tone
+            targets. This simple rule instantly makes your solos sound more professional and
+            intentional.
           </p>
         </HighlightBox>
       </ArticleSection>
@@ -619,9 +616,9 @@ export default function ChordTonesArticle({ onEnterPreview }: ChordTonesArticleP
       <ArticleSection>
         <ArticleSubheading>Chord Tones Across the CAGED System</ArticleSubheading>
         <ArticleParagraph>
-          Each CAGED shape has its own unique arrangement of chord tones. By learning where
-          the 1, 3, and 5 fall within each shape, you gain instant access to melodic target
-          notes anywhere on the fretboard. Here&apos;s how they&apos;re distributed:
+          Each CAGED shape has its own unique arrangement of chord tones. By learning where the 1,
+          3, and 5 fall within each shape, you gain instant access to melodic target notes anywhere
+          on the fretboard. Here&apos;s how they&apos;re distributed:
         </ArticleParagraph>
 
         <div className="grid gap-6 pt-4 lg:grid-cols-2">
@@ -631,9 +628,9 @@ export default function ChordTonesArticle({ onEnterPreview }: ChordTonesArticleP
         </div>
 
         <ArticleParagraph>
-          Notice how some shapes have more chord tones than others. This depends on how many
-          strings the shape spans and where it sits on the fretboard. The E and G shapes are
-          particularly rich with chord tones because they cover all six strings.
+          Notice how some shapes have more chord tones than others. This depends on how many strings
+          the shape spans and where it sits on the fretboard. The E and G shapes are particularly
+          rich with chord tones because they cover all six strings.
         </ArticleParagraph>
       </ArticleSection>
 
@@ -643,10 +640,10 @@ export default function ChordTonesArticle({ onEnterPreview }: ChordTonesArticleP
       <ArticleSection>
         <ArticleSubheading>Ready to Master Chord Tones?</ArticleSubheading>
         <ArticleParagraph>
-          Understanding the theory is just the first step. Now it&apos;s time to internalize
-          these positions until they become second nature. In the interactive practice
-          session, you&apos;ll drill chord tones across all five CAGED shapes until you can
-          find them instantly.
+          Understanding the theory is just the first step. Now it&apos;s time to internalize these
+          positions until they become second nature. In the interactive practice session,
+          you&apos;ll drill chord tones across all five CAGED shapes until you can find them
+          instantly.
         </ArticleParagraph>
 
         <PracticePreview />

@@ -22,9 +22,7 @@ export function ArticleHeading({ children }: { children: React.ReactNode }) {
 
 export function ArticleSubheading({ children }: { children: React.ReactNode }) {
   return (
-    <h3 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">
-      {children}
-    </h3>
+    <h3 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">{children}</h3>
   )
 }
 
@@ -134,9 +132,7 @@ export function FretboardDiagram({
 
   return (
     <div className={cn("space-y-3", className)}>
-      {title && (
-        <p className="text-muted-foreground text-center text-sm font-medium">{title}</p>
-      )}
+      {title && <p className="text-muted-foreground text-center text-sm font-medium">{title}</p>}
       <div className="relative mx-auto w-full max-w-md">
         {/* Fret numbers */}
         <div
@@ -157,7 +153,7 @@ export function FretboardDiagram({
         </div>
 
         {/* Fretboard */}
-        <div className="bg-gradient-to-b from-amber-900/90 to-amber-950 relative rounded-lg p-2 shadow-lg">
+        <div className="relative rounded-lg bg-gradient-to-b from-amber-900/90 to-amber-950 p-2 shadow-lg">
           {/* Nut (if showing open position) */}
           {startFret === 0 && (
             <div className="absolute top-0 bottom-0 left-6 w-1.5 rounded-l bg-gradient-to-b from-stone-200 to-stone-400" />
@@ -218,9 +214,7 @@ export function FretboardDiagram({
                           >
                             {showDegreeLabels && (
                               <span className="text-[10px] font-bold text-white">
-                                {position.degree
-                                  ? DEGREE_COLORS[position.degree].label
-                                  : "R"}
+                                {position.degree ? DEGREE_COLORS[position.degree].label : "R"}
                               </span>
                             )}
                           </div>
@@ -230,13 +224,13 @@ export function FretboardDiagram({
                         {stringIndex === 2 &&
                           FRET_MARKERS.includes(actualFret) &&
                           actualFret !== 12 && (
-                            <div className="bg-stone-600/30 absolute bottom-0 left-1/2 size-2 -translate-x-1/2 translate-y-4 rounded-full" />
+                            <div className="absolute bottom-0 left-1/2 size-2 -translate-x-1/2 translate-y-4 rounded-full bg-stone-600/30" />
                           )}
                         {stringIndex === 1 && actualFret === 12 && (
-                          <div className="bg-stone-600/30 absolute bottom-0 left-1/2 size-2 -translate-x-1/2 translate-y-4 rounded-full" />
+                          <div className="absolute bottom-0 left-1/2 size-2 -translate-x-1/2 translate-y-4 rounded-full bg-stone-600/30" />
                         )}
                         {stringIndex === 3 && actualFret === 12 && (
-                          <div className="bg-stone-600/30 absolute bottom-0 left-1/2 size-2 -translate-x-1/2 translate-y-4 rounded-full" />
+                          <div className="absolute bottom-0 left-1/2 size-2 -translate-x-1/2 translate-y-4 rounded-full bg-stone-600/30" />
                         )}
                       </div>
                     )

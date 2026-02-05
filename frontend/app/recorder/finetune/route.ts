@@ -1,9 +1,9 @@
 import { exec } from "child_process"
+import { randomUUID } from "crypto"
 import { mkdir, readdir, rm, writeFile } from "fs/promises"
 import { NextResponse } from "next/server"
 import { join } from "path"
 import { promisify } from "util"
-import { randomUUID } from "crypto"
 
 const execAsync = promisify(exec)
 
@@ -77,7 +77,9 @@ export async function POST(request: Request) {
       }
     }
 
-    console.log(`Saved ${savedFiles.length} samples for fine-tuning (also persisted to finetune_samples/)`)
+    console.log(
+      `Saved ${savedFiles.length} samples for fine-tuning (also persisted to finetune_samples/)`,
+    )
 
     const featuresDir = join(tempUserDir, "features")
     await mkdir(featuresDir, { recursive: true })
@@ -89,19 +91,13 @@ export async function POST(request: Request) {
       await execAsync(extractCmd, { cwd: STRING_NN_DIR, timeout: 60000 })
     } catch (extractError) {
       console.error("Feature extraction failed:", extractError)
-      return NextResponse.json(
-        { error: "Feature extraction failed" },
-        { status: 500 }
-      )
+      return NextResponse.json({ error: "Feature extraction failed" }, { status: 500 })
     }
 
     const featureFiles = await readdir(featuresDir)
     const jsonFiles = featureFiles.filter((f) => f.endsWith(".json"))
     if (jsonFiles.length === 0) {
-      return NextResponse.json(
-        { error: "No features extracted" },
-        { status: 500 }
-      )
+      return NextResponse.json({ error: "No features extracted" }, { status: 500 })
     }
     const featuresFile = join(featuresDir, jsonFiles[jsonFiles.length - 1])
 
@@ -117,10 +113,7 @@ export async function POST(request: Request) {
       if (stderr) console.error("Fine-tuning stderr:", stderr)
     } catch (finetuneError) {
       console.error("Fine-tuning failed:", finetuneError)
-      return NextResponse.json(
-        { error: "Fine-tuning failed" },
-        { status: 500 }
-      )
+      return NextResponse.json({ error: "Fine-tuning failed" }, { status: 500 })
     }
 
     const finetunedModelPath = join(
@@ -128,7 +121,7 @@ export async function POST(request: Request) {
       "data",
       "models",
       "finetuned",
-      `string_classifier_${actualUserId}.pt`
+      `string_classifier_${actualUserId}.pt`,
     )
 
     console.log("Exporting to ONNX...")
@@ -141,10 +134,7 @@ export async function POST(request: Request) {
       await execAsync(exportCmd, { cwd: STRING_NN_DIR, timeout: 60000 })
     } catch (exportError) {
       console.error("ONNX export failed:", exportError)
-      return NextResponse.json(
-        { error: "ONNX export failed" },
-        { status: 500 }
-      )
+      return NextResponse.json({ error: "ONNX export failed" }, { status: 500 })
     }
 
     if (tempUserDir) {
@@ -165,9 +155,6 @@ export async function POST(request: Request) {
       await rm(tempUserDir, { recursive: true, force: true }).catch(() => {})
     }
 
-    return NextResponse.json(
-      { error: "Fine-tuning failed" },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: "Fine-tuning failed" }, { status: 500 })
   }
 }

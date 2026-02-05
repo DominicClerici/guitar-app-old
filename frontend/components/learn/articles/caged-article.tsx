@@ -4,7 +4,16 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
-import { ArrowRight, BookOpen, ChevronRight, Eye, Lightbulb, Music, Target, Zap } from "lucide-react"
+import {
+  ArrowRight,
+  BookOpen,
+  ChevronRight,
+  Eye,
+  Lightbulb,
+  Music,
+  Target,
+  Zap,
+} from "lucide-react"
 
 interface CAGEDArticleProps {
   onEnterPreview: () => void
@@ -30,9 +39,7 @@ function ArticleHeading({ children }: { children: React.ReactNode }) {
 
 function ArticleSubheading({ children }: { children: React.ReactNode }) {
   return (
-    <h3 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">
-      {children}
-    </h3>
+    <h3 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">{children}</h3>
   )
 }
 
@@ -116,9 +123,7 @@ function FretboardDiagram({
 
   return (
     <div className={cn("space-y-3", className)}>
-      {title && (
-        <p className="text-muted-foreground text-center text-sm font-medium">{title}</p>
-      )}
+      {title && <p className="text-muted-foreground text-center text-sm font-medium">{title}</p>}
       <div className="relative mx-auto w-full max-w-md">
         {/* Fret numbers */}
         <div
@@ -139,7 +144,7 @@ function FretboardDiagram({
         </div>
 
         {/* Fretboard */}
-        <div className="bg-gradient-to-b from-amber-900/90 to-amber-950 relative rounded-lg p-2 shadow-lg">
+        <div className="relative rounded-lg bg-gradient-to-b from-amber-900/90 to-amber-950 p-2 shadow-lg">
           {/* Nut (if showing open position) */}
           {startFret === 0 && (
             <div className="absolute top-0 bottom-0 left-6 w-1.5 rounded-l bg-gradient-to-b from-stone-200 to-stone-400" />
@@ -199,13 +204,13 @@ function FretboardDiagram({
                         {stringIndex === 2 &&
                           FRET_MARKERS.includes(actualFret) &&
                           actualFret !== 12 && (
-                            <div className="bg-stone-600/30 absolute bottom-0 left-1/2 size-2 -translate-x-1/2 translate-y-4 rounded-full" />
+                            <div className="absolute bottom-0 left-1/2 size-2 -translate-x-1/2 translate-y-4 rounded-full bg-stone-600/30" />
                           )}
                         {stringIndex === 1 && actualFret === 12 && (
-                          <div className="bg-stone-600/30 absolute bottom-0 left-1/2 size-2 -translate-x-1/2 translate-y-4 rounded-full" />
+                          <div className="absolute bottom-0 left-1/2 size-2 -translate-x-1/2 translate-y-4 rounded-full bg-stone-600/30" />
                         )}
                         {stringIndex === 3 && actualFret === 12 && (
-                          <div className="bg-stone-600/30 absolute bottom-0 left-1/2 size-2 -translate-x-1/2 translate-y-4 rounded-full" />
+                          <div className="absolute bottom-0 left-1/2 size-2 -translate-x-1/2 translate-y-4 rounded-full bg-stone-600/30" />
                         )}
                       </div>
                     )
@@ -237,7 +242,8 @@ const CAGED_SHAPES = {
       "Also has a root on the 2nd (B) string",
       "Wide stretch between fingers",
     ],
-    openChordNotes: "The open C chord has roots at the 3rd fret of the A string and 1st fret of the B string",
+    openChordNotes:
+      "The open C chord has roots at the 3rd fret of the A string and 1st fret of the B string",
   },
   A: {
     letter: "A",
@@ -295,8 +301,7 @@ const CAGED_SHAPES = {
       "Root on the 4th (D) string, 2nd fret",
       "Root on the open 1st (high E) string",
     ],
-    openChordNotes:
-      "The most common barre chord shape - roots on both E strings and the D string",
+    openChordNotes: "The most common barre chord shape - roots on both E strings and the D string",
   },
   D: {
     letter: "D",
@@ -344,14 +349,10 @@ function ShapeDetailCard({ shapeLetter }: { shapeLetter: ShapeLetter }) {
               shape.shadowColor,
             )}
           >
-            <span className="font-display text-2xl font-bold text-white">
-              {shape.letter}
-            </span>
+            <span className="font-display text-2xl font-bold text-white">{shape.letter}</span>
           </div>
           <div>
-            <h4 className="font-display text-lg font-semibold">
-              {shape.letter} Shape
-            </h4>
+            <h4 className="font-display text-lg font-semibold">{shape.letter} Shape</h4>
             <p className="text-muted-foreground text-sm">{shape.description}</p>
           </div>
         </div>
@@ -369,10 +370,7 @@ function ShapeDetailCard({ shapeLetter }: { shapeLetter: ShapeLetter }) {
           <p className="text-foreground text-sm font-medium">Key characteristics:</p>
           <ul className="space-y-1">
             {shape.characteristics.map((char, i) => (
-              <li
-                key={i}
-                className="text-muted-foreground flex items-start gap-2 text-sm"
-              >
+              <li key={i} className="text-muted-foreground flex items-start gap-2 text-sm">
                 <ChevronRight className="mt-0.5 size-3 flex-shrink-0 text-emerald-500" />
                 {char}
               </li>
@@ -498,9 +496,9 @@ function MoveableShapeDemo() {
 
       <HighlightBox icon={Lightbulb} variant="tip" title="The Key Insight">
         <p>
-          The <strong>root note position determines the key</strong>. When you move the E
-          shape so the root lands on A (5th fret of the low E string), you&apos;re now
-          playing an A major chord using the E shape. This is why barre chords work!
+          The <strong>root note position determines the key</strong>. When you move the E shape so
+          the root lands on A (5th fret of the low E string), you&apos;re now playing an A major
+          chord using the E shape. This is why barre chords work!
         </p>
       </HighlightBox>
     </div>
@@ -512,14 +510,14 @@ function RootNoteExplainer() {
     <div className="grid gap-6 lg:grid-cols-2">
       <div className="space-y-4">
         <ArticleParagraph>
-          A root note is the <strong className="text-foreground">foundational tone</strong> that gives a
-          chord or scale its name. When someone says &ldquo;play a C chord,&rdquo; the
+          A root note is the <strong className="text-foreground">foundational tone</strong> that
+          gives a chord or scale its name. When someone says &ldquo;play a C chord,&rdquo; the
           &ldquo;C&rdquo; refers to the root note.
         </ArticleParagraph>
         <ArticleParagraph>
           Think of root notes as <strong className="text-foreground">anchor points</strong> on the
-          fretboard. Once you know where your root is, you can build any chord or scale
-          from that position.
+          fretboard. Once you know where your root is, you can build any chord or scale from that
+          position.
         </ArticleParagraph>
       </div>
 
@@ -621,10 +619,9 @@ function LessonPreview() {
 
         <HighlightBox icon={Lightbulb} variant="tip" title="Why start with roots?">
           <p>
-            Everything in the CAGED system is built around root notes. Master the roots
-            first, and adding chord tones, scale degrees, and arpeggios becomes intuitive.
-            You&apos;re building a mental map of the fretboard that will serve you for
-            life.
+            Everything in the CAGED system is built around root notes. Master the roots first, and
+            adding chord tones, scale degrees, and arpeggios becomes intuitive. You&apos;re building
+            a mental map of the fretboard that will serve you for life.
           </p>
         </HighlightBox>
       </div>
@@ -646,19 +643,19 @@ export default function CAGEDArticle({ onEnterPreview }: CAGEDArticleProps) {
           </div>
           <ArticleHeading>The CAGED System: Your Roadmap to the Fretboard</ArticleHeading>
           <ArticleParagraph>
-            The CAGED system is one of the most powerful frameworks for truly understanding
-            the guitar fretboard. It transforms the seemingly random arrangement of notes
-            into a logical, interconnected map that unlocks the ability to play in any
-            key, anywhere on the neck.
+            The CAGED system is one of the most powerful frameworks for truly understanding the
+            guitar fretboard. It transforms the seemingly random arrangement of notes into a
+            logical, interconnected map that unlocks the ability to play in any key, anywhere on the
+            neck.
           </ArticleParagraph>
         </div>
 
         <HighlightBox icon={Target} variant="important" title="What you'll learn">
           <p>
-            By the end of this lesson, you&apos;ll understand how five simple chord shapes
-            connect across the entire fretboard. You&apos;ll learn to identify root notes
-            within each shape, forming the foundation for building chords, scales, and
-            unlocking improvisation across the neck.
+            By the end of this lesson, you&apos;ll understand how five simple chord shapes connect
+            across the entire fretboard. You&apos;ll learn to identify root notes within each shape,
+            forming the foundation for building chords, scales, and unlocking improvisation across
+            the neck.
           </p>
         </HighlightBox>
       </ArticleSection>
@@ -671,9 +668,7 @@ export default function CAGEDArticle({ onEnterPreview }: CAGEDArticleProps) {
         <RootNoteExplainer />
 
         <div className="pt-4">
-          <p className="text-foreground mb-4 font-medium">
-            Why are root notes so important?
-          </p>
+          <p className="text-foreground mb-4 font-medium">Why are root notes so important?</p>
           <WhyRootsMatter />
         </div>
       </ArticleSection>
@@ -684,11 +679,13 @@ export default function CAGEDArticle({ onEnterPreview }: CAGEDArticleProps) {
       <ArticleSection>
         <ArticleSubheading>The Five CAGED Shapes</ArticleSubheading>
         <ArticleParagraph>
-          CAGED stands for five open chord shapes you likely already know: <strong className="text-foreground">C</strong>,{" "}
-          <strong className="text-foreground">A</strong>, <strong className="text-foreground">G</strong>,{" "}
-          <strong className="text-foreground">E</strong>, and <strong className="text-foreground">D</strong>. Each shape has a
-          unique pattern of root notes. When you learn these patterns, you can find any
-          note anywhere on the fretboard.
+          CAGED stands for five open chord shapes you likely already know:{" "}
+          <strong className="text-foreground">C</strong>,{" "}
+          <strong className="text-foreground">A</strong>,{" "}
+          <strong className="text-foreground">G</strong>,{" "}
+          <strong className="text-foreground">E</strong>, and{" "}
+          <strong className="text-foreground">D</strong>. Each shape has a unique pattern of root
+          notes. When you learn these patterns, you can find any note anywhere on the fretboard.
         </ArticleParagraph>
 
         <div className="grid gap-6 pt-4 lg:grid-cols-2">
@@ -704,8 +701,8 @@ export default function CAGEDArticle({ onEnterPreview }: CAGEDArticleProps) {
       <ArticleSection>
         <ArticleSubheading>Shapes Are Moveable</ArticleSubheading>
         <ArticleParagraph>
-          Here&apos;s where CAGED becomes powerful: these shapes aren&apos;t locked to one
-          position. You can slide any shape up or down the neck, and the{" "}
+          Here&apos;s where CAGED becomes powerful: these shapes aren&apos;t locked to one position.
+          You can slide any shape up or down the neck, and the{" "}
           <strong className="text-foreground">root note tells you what key you&apos;re in</strong>.
         </ArticleParagraph>
 
@@ -718,26 +715,25 @@ export default function CAGEDArticle({ onEnterPreview }: CAGEDArticleProps) {
       <ArticleSection>
         <ArticleSubheading>The Shapes Connect in Sequence</ArticleSubheading>
         <ArticleParagraph>
-          The real magic of CAGED is how the shapes link together. As you move up the
-          neck, one shape naturally flows into the next in a specific order:{" "}
+          The real magic of CAGED is how the shapes link together. As you move up the neck, one
+          shape naturally flows into the next in a specific order:{" "}
           <strong className="text-foreground">C → A → G → E → D</strong>, then back to C again.
         </ArticleParagraph>
 
         <ShapeSequenceVisual />
 
         <ArticleParagraph>
-          This means that in any key, you have five different positions where you can play
-          the same chord or scale. Want to play a C major chord? You can play it in the C
-          shape (open position), A shape (3rd fret), G shape (5th fret), E shape (8th
-          fret), or D shape (10th fret).
+          This means that in any key, you have five different positions where you can play the same
+          chord or scale. Want to play a C major chord? You can play it in the C shape (open
+          position), A shape (3rd fret), G shape (5th fret), E shape (8th fret), or D shape (10th
+          fret).
         </ArticleParagraph>
 
         <HighlightBox icon={Zap} variant="note" title="The pattern repeats every 12 frets">
           <p>
-            After going through all five shapes, you&apos;ll end up 12 frets higher than
-            where you started—which is exactly one octave. The pattern then repeats
-            identically. This is why the 12th fret has double dots: it&apos;s where the
-            pattern resets!
+            After going through all five shapes, you&apos;ll end up 12 frets higher than where you
+            started—which is exactly one octave. The pattern then repeats identically. This is why
+            the 12th fret has double dots: it&apos;s where the pattern resets!
           </p>
         </HighlightBox>
       </ArticleSection>
@@ -748,9 +744,9 @@ export default function CAGEDArticle({ onEnterPreview }: CAGEDArticleProps) {
       <ArticleSection>
         <ArticleSubheading>Ready to Master the Fretboard?</ArticleSubheading>
         <ArticleParagraph>
-          Now that you understand the concept, it&apos;s time to put it into practice.
-          In the interactive lesson, you&apos;ll learn the exact root positions for each
-          shape and start building your fretboard map.
+          Now that you understand the concept, it&apos;s time to put it into practice. In the
+          interactive lesson, you&apos;ll learn the exact root positions for each shape and start
+          building your fretboard map.
         </ArticleParagraph>
 
         <LessonPreview />

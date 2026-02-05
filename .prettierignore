@@ -119,3 +119,7 @@ Dockerfile
 *.mp3
 *.pdf
 *.wav
+
+*.json
+*.npz
+pnpm-workspace.yaml

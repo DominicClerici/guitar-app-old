@@ -1,13 +1,12 @@
 "use client"
 
-import { createMelFilterbank, powerToDb } from "@/lib/audio/mfcc"
-import * as ort from "onnxruntime-web"
-import FFT from "fft.js"
-import { useCallback, useEffect, useRef, useState } from "react"
 import { freqFromAutocorr } from "@/lib/audio/autocorrelate"
+import { createMelFilterbank } from "@/lib/audio/mfcc"
+import FFT from "fft.js"
+import * as ort from "onnxruntime-web"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 // Match Python spec-nn/main.py exactly
-const SAMPLE_RATE = 44100
 const WINDOW_SIZE = 4096 // ~93ms at 44.1kHz
 const N_FFT = 1024
 const HOP_LENGTH = 256
@@ -65,6 +64,28 @@ export interface SpectrogramPredictionResult {
   fret: number
 }
 
+export interface SpectrogramDebugData {
+  timestamp: string
+  sampleRate: number
+  audioSamples: number[]
+  spectrogramBeforeNorm: number[][]
+  spectrogramAfterNorm: number[][]
+  spectrogramShape: [number, number]
+  config: {
+    windowSize: number
+    nFft: number
+    hopLength: number
+    nMels: number
+    fmin: number
+    fmax: number
+    targetRms: number
+  }
+  normalization: {
+    mean: number
+    std: number
+  }
+}
+
 interface UseSpectrogramClassifierOptions {
   modelPath?: string
   configPath?: string
@@ -80,6 +101,7 @@ interface UseSpectrogramClassifierResult {
   stopListening: () => void
   loadModel: () => Promise<void>
   isModelLoaded: boolean
+  captureDebugData: () => SpectrogramDebugData | null
 }
 
 const DEFAULT_MODEL_PATH = "/models/spec_classifier.onnx"
@@ -118,14 +140,21 @@ function computeMelSpectrogram(
   const melFilters = createMelFilterbank(sampleRate, nFft, nMels, fmin, fmax)
   const nBins = Math.floor(nFft / 2) + 1
 
+  // Pad audio to match librosa's center=True behavior with pad_mode='constant' (zero padding)
+  const padLength = Math.floor(nFft / 2)
+  const paddedAudio = new Float32Array(audio.length + 2 * padLength)
+  // Float32Array is initialized with zeros, so left and right padding are already zero
+  // Just copy the original audio to the center
+  paddedAudio.set(audio, padLength)
+
   // Hann window matching librosa
   const hannWindow = new Float32Array(nFft)
   for (let i = 0; i < nFft; i++) {
     hannWindow[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / nFft))
   }
 
-  // Calculate number of frames
-  const numFrames = 1 + Math.floor((audio.length - nFft) / hopLength)
+  // Calculate number of frames using padded audio
+  const numFrames = 1 + Math.floor((paddedAudio.length - nFft) / hopLength)
 
   if (numFrames <= 0) {
     return new Float32Array(nMels * 1)
@@ -138,12 +167,12 @@ function computeMelSpectrogram(
     const start = frame * hopLength
     const end = start + nFft
 
-    if (end > audio.length) break
+    if (end > paddedAudio.length) break
 
     // Apply window
     const frameSamples = new Float32Array(nFft)
     for (let i = 0; i < nFft; i++) {
-      frameSamples[i] = audio[start + i] * hannWindow[i]
+      frameSamples[i] = paddedAudio[start + i] * hannWindow[i]
     }
 
     // Compute FFT
@@ -172,25 +201,38 @@ function computeMelSpectrogram(
   }
 
   // Convert to dB scale using max as reference (matching Python: ref=np.max)
-  // First find global max
-  let globalMax = 1e-10
+  // First find global max power value
+  const amin = 1e-10
+  const topDb = 80.0
+  let globalMaxPower = amin
   for (const frame of melSpec) {
     for (let m = 0; m < nMels; m++) {
-      if (frame[m] > globalMax) {
-        globalMax = frame[m]
+      if (frame[m] > globalMaxPower) {
+        globalMaxPower = frame[m]
       }
     }
   }
 
-  // Convert to dB with ref=max (so max becomes 0 dB)
+  // Convert to dB with ref=globalMax (so max becomes 0 dB)
+  // This matches librosa.power_to_db(mel_spec, ref=np.max)
   const actualNumFrames = melSpec.length
   const result = new Float32Array(nMels * actualNumFrames)
+  const logRef = 10.0 * Math.log10(Math.max(amin, globalMaxPower))
 
   for (let f = 0; f < actualNumFrames; f++) {
-    const dbFrame = powerToDb(melSpec[f], globalMax, 1e-10, 80.0)
     for (let m = 0; m < nMels; m++) {
-      // Store in [n_mels, time_frames] layout: mel band varies fastest in memory for each time step
-      result[m * actualNumFrames + f] = dbFrame[m]
+      const logSpec = 10.0 * Math.log10(Math.max(amin, melSpec[f][m])) - logRef
+      // Store in [n_mels, time_frames] layout
+      result[m * actualNumFrames + f] = logSpec
+    }
+  }
+
+  // Apply top_db clipping globally (threshold is global max dB - topDb)
+  // Since ref=max, global max dB is 0, so threshold is -topDb
+  const threshold = -topDb
+  for (let i = 0; i < result.length; i++) {
+    if (result[i] < threshold) {
+      result[i] = threshold
     }
   }
 
@@ -233,6 +275,13 @@ export function useSpectrogramClassifier(
 
   // Store last detected fundamental for fret calculation
   const lastFundamentalRef = useRef<number>(0)
+
+  // Debug data capture refs
+  const lastAudioSamplesRef = useRef<Float32Array | null>(null)
+  const lastSpectrogramBeforeNormRef = useRef<Float32Array | null>(null)
+  const lastSpectrogramAfterNormRef = useRef<Float32Array | null>(null)
+  const lastSpectrogramShapeRef = useRef<[number, number]>([0, 0])
+  const lastSampleRateRef = useRef<number>(44100)
 
   useEffect(() => {
     modelPathRef.current = options.modelPath ?? DEFAULT_MODEL_PATH
@@ -304,6 +353,10 @@ export function useSpectrogramClassifier(
         FMAX,
       )
 
+      // Store debug data before normalization
+      lastAudioSamplesRef.current = normalizedSamples
+      lastSampleRateRef.current = sampleRate
+
       // Check if we have the expected shape
       const expectedTimeFrames = config.input_shape[2]
       const actualTimeFrames = melSpec.length / N_MELS
@@ -329,12 +382,19 @@ export function useSpectrogramClassifier(
         inputData = melSpec
       }
 
+      // Store spectrogram before normalization
+      lastSpectrogramBeforeNormRef.current = new Float32Array(inputData)
+      lastSpectrogramShapeRef.current = [N_MELS, expectedTimeFrames]
+
       // Normalize spectrogram using mean/std from config
       const mean = config.normalization.mean
       const std = config.normalization.std
       for (let i = 0; i < inputData.length; i++) {
         inputData[i] = (inputData[i] - mean) / std
       }
+
+      // Store spectrogram after normalization
+      lastSpectrogramAfterNormRef.current = new Float32Array(inputData)
 
       if (isReleasedRef.current) return
 
@@ -447,7 +507,11 @@ export function useSpectrogramClassifier(
       })
       mediaStreamRef.current = stream
 
-      const audioContext = new AudioContext()
+      const audioContext = new AudioContext({
+        sampleRate: 48000,
+      })
+      console.log("Browser sample rate:", audioContext.sampleRate)
+
       audioContextRef.current = audioContext
 
       const source = audioContext.createMediaStreamSource(stream)
@@ -535,6 +599,56 @@ export function useSpectrogramClassifier(
     }
   }, [])
 
+  const captureDebugData = useCallback((): SpectrogramDebugData | null => {
+    const config = configRef.current
+    if (
+      !lastAudioSamplesRef.current ||
+      !lastSpectrogramBeforeNormRef.current ||
+      !lastSpectrogramAfterNormRef.current ||
+      !config
+    ) {
+      return null
+    }
+
+    const [nMels, timeFrames] = lastSpectrogramShapeRef.current
+
+    // Convert flat spectrogram array to 2D array [n_mels][time_frames]
+    const specBeforeNorm: number[][] = []
+    const specAfterNorm: number[][] = []
+    for (let m = 0; m < nMels; m++) {
+      const rowBefore: number[] = []
+      const rowAfter: number[] = []
+      for (let t = 0; t < timeFrames; t++) {
+        rowBefore.push(lastSpectrogramBeforeNormRef.current[m * timeFrames + t])
+        rowAfter.push(lastSpectrogramAfterNormRef.current[m * timeFrames + t])
+      }
+      specBeforeNorm.push(rowBefore)
+      specAfterNorm.push(rowAfter)
+    }
+
+    return {
+      timestamp: new Date().toISOString(),
+      sampleRate: lastSampleRateRef.current,
+      audioSamples: Array.from(lastAudioSamplesRef.current),
+      spectrogramBeforeNorm: specBeforeNorm,
+      spectrogramAfterNorm: specAfterNorm,
+      spectrogramShape: lastSpectrogramShapeRef.current,
+      config: {
+        windowSize: WINDOW_SIZE,
+        nFft: N_FFT,
+        hopLength: HOP_LENGTH,
+        nMels: N_MELS,
+        fmin: FMIN,
+        fmax: FMAX,
+        targetRms: TARGET_RMS,
+      },
+      normalization: {
+        mean: config.normalization.mean,
+        std: config.normalization.std,
+      },
+    }
+  }, [])
+
   return {
     status,
     error,
@@ -543,5 +657,6 @@ export function useSpectrogramClassifier(
     stopListening,
     loadModel,
     isModelLoaded,
+    captureDebugData,
   }
 }
