@@ -26,7 +26,13 @@ from model import SpectrogramClassifier, SpectrogramClassifierLarge, count_param
 class SpectrogramDataset(Dataset):
     """PyTorch dataset for spectrogram samples."""
 
-    def __init__(self, spectrograms: np.ndarray, labels: np.ndarray, normalize_mean: float, normalize_std: float):
+    def __init__(
+        self,
+        spectrograms: np.ndarray,
+        labels: np.ndarray,
+        normalize_mean: float,
+        normalize_std: float,
+    ):
         # Normalize spectrograms
         spectrograms = (spectrograms - normalize_mean) / (normalize_std + 1e-8)
 
@@ -79,9 +85,19 @@ def load_spectrograms_with_split(
                 samples_meta = json_data["samples"]
             else:
                 # Create dummy metadata (all unique IDs)
-                frets = data["frets"] if "frets" in data else np.zeros(len(strings), dtype=int)
-                samples_meta = [{"sample_id": f"sample_{i}", "string": int(strings[i]), "fret": int(frets[i])}
-                               for i in range(len(strings))]
+                frets = (
+                    data["frets"]
+                    if "frets" in data
+                    else np.zeros(len(strings), dtype=int)
+                )
+                samples_meta = [
+                    {
+                        "sample_id": f"sample_{i}",
+                        "string": int(strings[i]),
+                        "fret": int(frets[i]),
+                    }
+                    for i in range(len(strings))
+                ]
 
             # Group by base sample ID for proper splitting
             file_to_indices: dict[str, list[int]] = {}
@@ -94,7 +110,9 @@ def load_spectrograms_with_split(
 
             # Split at file level
             file_keys = list(file_to_indices.keys())
-            file_labels = [samples_meta[file_to_indices[k][0]]["string"] for k in file_keys]
+            file_labels = [
+                samples_meta[file_to_indices[k][0]]["string"] for k in file_keys
+            ]
 
             train_keys, val_keys = train_test_split(
                 file_keys,
@@ -243,7 +261,12 @@ def evaluate(
             all_preds.extend(predicted.cpu().numpy())
             all_labels.extend(labels.cpu().numpy())
 
-    return total_loss / total, correct / total, np.array(all_preds), np.array(all_labels)
+    return (
+        total_loss / total,
+        correct / total,
+        np.array(all_preds),
+        np.array(all_labels),
+    )
 
 
 STRING_NAMES = ["E2(6)", "A2(5)", "D3(4)", "G3(3)", "B3(2)", "E4(1)"]
@@ -285,7 +308,11 @@ def print_classification_report(
 
         precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
         recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+        f1 = (
+            2 * precision * recall / (precision + recall)
+            if (precision + recall) > 0
+            else 0.0
+        )
 
         print(f"{name:>7} {precision:>7.4f} {recall:>7.4f} {f1:>7.4f} {support:>7}")
         macro_p += precision
@@ -294,7 +321,9 @@ def print_classification_report(
         total_support += support
 
     print("-" * 39)
-    print(f"{'Macro':>7} {macro_p/num_classes:>7.4f} {macro_r/num_classes:>7.4f} {macro_f1/num_classes:>7.4f} {total_support:>7}")
+    print(
+        f"{'Macro':>7} {macro_p/num_classes:>7.4f} {macro_r/num_classes:>7.4f} {macro_f1/num_classes:>7.4f} {total_support:>7}"
+    )
 
     # Top confused pairs
     confused_pairs = []
@@ -309,7 +338,9 @@ def print_classification_report(
         for count, true, pred in confused_pairs[:5]:
             total_for_class = cm[true, :].sum()
             pct = count / total_for_class * 100 if total_for_class > 0 else 0
-            print(f"  {STRING_NAMES[true]} -> {STRING_NAMES[pred]}: {count} ({pct:.1f}% of {STRING_NAMES[true]})")
+            print(
+                f"  {STRING_NAMES[true]} -> {STRING_NAMES[pred]}: {count} ({pct:.1f}% of {STRING_NAMES[true]})"
+            )
 
 
 def parse_args():
@@ -321,42 +352,31 @@ def parse_args():
         "--epochs",
         type=int,
         default=200,
-        help="Number of training epochs (default: 200)"
+        help="Number of training epochs (default: 200)",
     )
     parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=32,
-        help="Batch size (default: 32)"
+        "--batch-size", type=int, default=32, help="Batch size (default: 32)"
     )
     parser.add_argument(
         "--learning-rate",
         type=float,
         default=0.001,
-        help="Learning rate (default: 0.001)"
+        help="Learning rate (default: 0.001)",
     )
     parser.add_argument(
-        "--patience",
-        type=int,
-        default=30,
-        help="Early stopping patience (default: 30)"
+        "--patience", type=int, default=30, help="Early stopping patience (default: 30)"
     )
     parser.add_argument(
-        "--large-model",
-        action="store_true",
-        help="Use larger model variant"
+        "--large-model", action="store_true", help="Use larger model variant"
     )
     parser.add_argument(
-        "--dropout",
-        type=float,
-        default=0.3,
-        help="Dropout rate (default: 0.3)"
+        "--dropout", type=float, default=0.3, help="Dropout rate (default: 0.3)"
     )
     parser.add_argument(
         "--seed",
         type=str,
         default="42",
-        help="Random seed for train/val split (integer or 'random')"
+        help="Random seed for train/val split (integer or 'random')",
     )
 
     return parser.parse_args()
@@ -396,10 +416,14 @@ def train(
     print(f"Using device: {device}")
 
     # Load data
-    X_train, X_val, y_train, y_val, config, stats = load_spectrograms_with_split(data_dir, random_state=resolved_seed)
+    X_train, X_val, y_train, y_val, config, stats = load_spectrograms_with_split(
+        data_dir, random_state=resolved_seed
+    )
 
     print(f"\nTrain shape: {X_train.shape} / Val shape: {X_val.shape}")
-    print(f"Train dist: {np.bincount(y_train, minlength=6)} / Val dist: {np.bincount(y_val, minlength=6)}")
+    print(
+        f"Train dist: {np.bincount(y_train, minlength=6)} / Val dist: {np.bincount(y_val, minlength=6)}"
+    )
     print(f"Spectrogram config: {config}")
 
     # Create datasets with normalization
@@ -418,10 +442,14 @@ def train(
 
     # Create model
     if use_large_model:
-        model = SpectrogramClassifierLarge(n_mels=n_mels, time_frames=time_frames, dropout=dropout)
+        model = SpectrogramClassifierLarge(
+            n_mels=n_mels, time_frames=time_frames, dropout=dropout
+        )
         print("Using SpectrogramClassifierLarge")
     else:
-        model = SpectrogramClassifier(n_mels=n_mels, time_frames=time_frames, dropout=dropout)
+        model = SpectrogramClassifier(
+            n_mels=n_mels, time_frames=time_frames, dropout=dropout
+        )
         print("Using SpectrogramClassifier")
 
     model = model.to(device)
@@ -430,7 +458,9 @@ def train(
     # Training setup
     class_weights = compute_class_weights(y_train).to(device)
     criterion = nn.CrossEntropyLoss(weight=class_weights)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=0.01)
+    optimizer = torch.optim.AdamW(
+        model.parameters(), lr=learning_rate, weight_decay=0.01
+    )
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode="min", factor=0.5, patience=10
     )
@@ -445,7 +475,9 @@ def train(
     epoch_times = []
     for epoch in range(epochs):
         epoch_start = time.time()
-        train_loss, train_acc = train_epoch(model, train_loader, criterion, optimizer, device)
+        train_loss, train_acc = train_epoch(
+            model, train_loader, criterion, optimizer, device
+        )
         val_loss, val_acc, _, _ = evaluate(model, val_loader, criterion, device)
         epoch_times.append(time.time() - epoch_start)
 
