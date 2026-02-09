@@ -4,6 +4,8 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  --breakpoint-2xl: 1400px;
+
   --color-background: var(--background);
   --color-background-elevated: var(--background-elevated);
   --color-foreground: var(--foreground);

@@ -8,6 +8,11 @@ import ChordTonesRecapArticle from "../articles/short/chord-tones-recap-article"
 import ChordTonesReviewArticle from "../articles/short/chord-tones-review-article"
 import MoveableShapesRecapArticle from "../articles/short/moveable-shapes-recap-article"
 import NextChordTonesArticle from "../articles/short/next-chord-tones-article"
+import PentatonicAToGArticle from "../articles/short/pentatonic-a-to-g-article"
+import PentatonicCToAArticle from "../articles/short/pentatonic-c-to-a-article"
+import PentatonicEToDArticle from "../articles/short/pentatonic-e-to-d-article"
+import PentatonicGToEArticle from "../articles/short/pentatonic-g-to-e-article"
+import PentatonicRecapArticle from "../articles/short/pentatonic-recap-article"
 import RootsRecapArticle from "../articles/short/roots-recap-article"
 
 const ARTICLE_COMPONENTS: Record<string, React.ComponentType> = {
@@ -17,6 +22,11 @@ const ARTICLE_COMPONENTS: Record<string, React.ComponentType> = {
   "chord-tones-overview": ChordTonesOverviewArticle,
   "chord-tones-review": ChordTonesReviewArticle,
   "chord-tones-recap": ChordTonesRecapArticle,
+  "pentatonic-c-to-a": PentatonicCToAArticle,
+  "pentatonic-a-to-g": PentatonicAToGArticle,
+  "pentatonic-g-to-e": PentatonicGToEArticle,
+  "pentatonic-e-to-d": PentatonicEToDArticle,
+  "pentatonic-recap": PentatonicRecapArticle,
 }
 
 interface ShortArticlePhaseProps {

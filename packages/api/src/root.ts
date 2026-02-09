@@ -1,9 +1,10 @@
-import { sessionsRouter, userRouter } from "./routers"
+import { learningRouter, sessionsRouter, userRouter } from "./routers"
 import { router } from "./trpc"
 
 export const appRouter = router({
   user: userRouter,
   sessions: sessionsRouter,
+  learning: learningRouter,
 })
 
 // Export type definition of the API

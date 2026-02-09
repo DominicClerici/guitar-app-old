@@ -87,7 +87,7 @@ export const STRING_NAMES = ["E", "B", "G", "D", "A", "E"]
 export interface FretPosition {
   string: number
   fret: number
-  degree?: "1" | "3" | "5"
+  degree?: "1" | "2" | "3" | "5" | "6"
 }
 
 export interface FretboardDiagramProps {
@@ -106,6 +106,11 @@ const DEGREE_COLORS = {
     shadow: "shadow-emerald-500/30",
     label: "R",
   },
+  "2": {
+    bg: "from-rose-400 to-pink-500",
+    shadow: "shadow-rose-500/30",
+    label: "2",
+  },
   "3": {
     bg: "from-amber-400 to-orange-500",
     shadow: "shadow-amber-500/30",
@@ -115,6 +120,11 @@ const DEGREE_COLORS = {
     bg: "from-sky-400 to-blue-500",
     shadow: "shadow-sky-500/30",
     label: "5",
+  },
+  "6": {
+    bg: "from-violet-400 to-purple-500",
+    shadow: "shadow-violet-500/30",
+    label: "6",
   },
 }
 

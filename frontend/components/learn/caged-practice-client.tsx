@@ -56,6 +56,8 @@ interface CAGEDPracticeClientProps {
   autoStart?: boolean
   onExit: () => void
   onComplete: () => void
+  initialStepIndex?: number
+  onModuleComplete?: (moduleId: string) => void
 }
 
 function ShapeProgressIndicator({
@@ -147,6 +149,8 @@ export default function CAGEDPracticeClient({
   autoStart = false,
   onExit,
   onComplete,
+  initialStepIndex = 0,
+  onModuleComplete,
 }: CAGEDPracticeClientProps) {
   const effectivePracticeType = flowConfig?.practiceType ?? practiceType
 
@@ -164,7 +168,7 @@ export default function CAGEDPracticeClient({
         : CAGED_QUIZ_QUESTIONS
 
   // --- Step-based flow state ---
-  const [currentStepIndex, setCurrentStepIndex] = useState(0)
+  const [currentStepIndex, setCurrentStepIndex] = useState(initialStepIndex)
   const [subPhase, setSubPhase] = useState<SubPhase>("idle")
 
   const currentStep = flowConfig?.steps[currentStepIndex] ?? null
@@ -413,6 +417,9 @@ export default function CAGEDPracticeClient({
               setKeysCompleted(newKeysCompleted)
               setSubPhase("key-complete")
             } else {
+              if (flowConfig?.steps[currentStepIndex]) {
+                onModuleComplete?.(flowConfig.steps[currentStepIndex].id)
+              }
               advanceToStep(currentStepIndex + 1)
             }
           }
@@ -422,6 +429,9 @@ export default function CAGEDPracticeClient({
             setKeysCompleted(newKeysCompleted)
             setSubPhase("key-complete")
           } else {
+            if (flowConfig?.steps[currentStepIndex]) {
+              onModuleComplete?.(flowConfig.steps[currentStepIndex].id)
+            }
             advanceToStep(currentStepIndex + 1)
           }
         }
@@ -444,25 +454,35 @@ export default function CAGEDPracticeClient({
     currentStepIndex,
     advanceToStep,
     activeShapeOrder.length,
+    flowConfig,
+    onModuleComplete,
   ])
 
   const handleStartPractice = useCallback(async () => {
     if (flowConfig) {
-      const firstStep = flowConfig.steps[0]
-      if (firstStep?.type === "practice") {
-        const practiceStep = firstStep as PracticeStep
+      const step = flowConfig.steps[currentStepIndex]
+      if (step?.type === "practice") {
+        const practiceStep = step as PracticeStep
         setCurrentKeyIndex(practiceStep.keys[0].keyIndex)
         resetPracticeState()
       }
     }
     await startCountdown()
-  }, [flowConfig, startCountdown, resetPracticeState])
+  }, [flowConfig, startCountdown, resetPracticeState, currentStepIndex])
 
   useEffect(() => {
     if (autoStart && subPhase === "idle") {
-      handleStartPractice()
+      const step = flowConfig?.steps[currentStepIndex]
+      if (step?.type === "article") {
+        setSubPhase("article")
+      } else if (step?.type === "quiz") {
+        setQuizQuestions(shuffleQuestions(quizQuestionSet).slice(0, QUIZ_QUESTION_COUNT))
+        setSubPhase("quiz")
+      } else {
+        handleStartPractice()
+      }
     }
-  }, [autoStart, subPhase, handleStartPractice])
+  }, [autoStart, subPhase, handleStartPractice, currentStepIndex, flowConfig, quizQuestionSet])
 
   const handleKeyComplete = useCallback(async () => {
     if (!currentPracticeStep) return
@@ -482,9 +502,12 @@ export default function CAGEDPracticeClient({
 
   const handleQuizComplete = useCallback(
     (_results: QuizResults) => {
+      if (currentStep) {
+        onModuleComplete?.(currentStep.id)
+      }
       advanceToStep(currentStepIndex + 1)
     },
-    [currentStepIndex, advanceToStep],
+    [currentStepIndex, advanceToStep, currentStep, onModuleComplete],
   )
 
   const handleQuizRetry = useCallback(() => {
@@ -507,8 +530,11 @@ export default function CAGEDPracticeClient({
   }, [onComplete])
 
   const handleArticleContinue = useCallback(() => {
+    if (currentStep) {
+      onModuleComplete?.(currentStep.id)
+    }
     advanceToStep(currentStepIndex + 1)
-  }, [currentStepIndex, advanceToStep])
+  }, [currentStepIndex, advanceToStep, currentStep, onModuleComplete])
 
   const handleArticleRetry = useCallback(() => {
     if (!flowConfig || !currentStep || currentStep.type !== "article") return

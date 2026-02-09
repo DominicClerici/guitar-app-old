@@ -1,5 +1,6 @@
 import { ScreenContainer } from "@/components/ScreenContainer"
 import GoogleButton from "@/components/ui/google-button"
+import { supabase } from "@/lib/supabase"
 import { trpc } from "@/lib/trpc/react"
 import { signUpZod } from "@guitar/schemas"
 import { useRouter } from "expo-router"
@@ -46,7 +47,22 @@ export default function SignupScreen() {
       return
     }
 
-    register.mutate({ name, email, password })
+    try {
+      const { error: signUpError, data } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { data: { name } },
+      })
+
+      if (signUpError || !data.user?.id) {
+        Alert.alert("Registration Error", signUpError?.message ?? "Failed to create account")
+        return
+      }
+
+      register.mutate({ id: data.user.id, name, email, password })
+    } catch {
+      Alert.alert("Registration Error", "An unexpected error occurred")
+    }
   }
 
   return (

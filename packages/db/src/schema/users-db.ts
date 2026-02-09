@@ -1,6 +1,6 @@
 import { relations } from "drizzle-orm"
 import { integer, jsonb, pgSchema, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core"
-import { learningPathsTable } from "./learning-db"
+import { learningPathsTable, moduleCompletionsTable } from "./learning-db"
 import { sessionsTable } from "./sessions-db"
 
 const authSchema = pgSchema("auth")
@@ -75,6 +75,7 @@ export const userRelations = relations(usersTable, ({ one, many }) => ({
   }),
   learningPaths: many(learningPathsTable),
   sessions: many(sessionsTable),
+  moduleCompletions: many(moduleCompletionsTable),
   metadata: one(usersMetadataTable, {
     fields: [usersTable.id],
     references: [usersMetadataTable.userId],

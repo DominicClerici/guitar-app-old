@@ -1,4 +1,5 @@
 export * from "zod"
 export * from "./auth-zod"
+export * from "./learning-zod"
 export * from "./session-zod"
 export * from "./user-zod"

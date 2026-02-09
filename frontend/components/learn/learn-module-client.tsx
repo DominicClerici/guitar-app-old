@@ -4,7 +4,9 @@ import { useEffect, useState } from "react"
 
 import { Fretboard, type Marker } from "@/components/fretboard/fretboard"
 import { Button } from "@/components/ui/button"
+import { useModuleProgress } from "@/hooks/useModuleProgress"
 import { getFlowConfig } from "@/lib/caged-practice/flow-configs"
+import { getLessonConfig } from "@/lib/caged-practice/module-config"
 import {
   CAGED_SHAPE_NAMES,
   generateFretboardNotes,
@@ -23,6 +25,7 @@ import MinorPentatonicArticle from "./articles/minor-pentatonic-article"
 import CAGEDPracticeClient from "./caged-practice-client"
 import LearnHeader from "./learn-header"
 import LearnPreview from "./learn-preview"
+import LessonSidebar from "./lesson-sidebar"
 import PracticeInfo from "./practice-info"
 
 type ViewMode = "article" | "preview" | "practice"
@@ -66,6 +69,18 @@ export default function LearnModuleClient({ module }: LearnModuleClientProps) {
   const [previewShape, setPreviewShape] = useState<PreviewShape>("full")
   const [selectedKeyIndex, setSelectedKeyIndex] = useState(2) // Default to D
   const [showDegree, setShowDegree] = useState(false)
+  const [activeModuleId, setActiveModuleId] = useState<string>("intro-article")
+  const [startingStepIndex, setStartingStepIndex] = useState(0)
+
+  const lessonConfig = getLessonConfig(module)
+  const {
+    completedModuleIds,
+    isLoading: progressLoading,
+    completeModule,
+  } = useModuleProgress("caged", module as "cagedRoots" | "chordTones" | "cagedPentatonic")
+
+  const currentModuleId =
+    lessonConfig?.modules.find((m) => !completedModuleIds.has(m.id))?.id ?? null
 
   useEffect(() => {
     const stored = sessionStorage.getItem("practiceConfig")
@@ -134,6 +149,7 @@ export default function LearnModuleClient({ module }: LearnModuleClientProps) {
   }))
 
   const handleEnterPreview = () => {
+    completeModule("intro-article")
     setViewMode("preview")
   }
 
@@ -141,67 +157,102 @@ export default function LearnModuleClient({ module }: LearnModuleClientProps) {
     setViewMode("article")
   }
 
+  const handleSelectModule = (moduleId: string) => {
+    setActiveModuleId(moduleId)
+
+    if (moduleId === "intro-article") {
+      setViewMode("article")
+      return
+    }
+
+    const flowCfg = getFlowConfig(practiceType)
+    const stepIndex = flowCfg.steps.findIndex((s) => s.id === moduleId)
+
+    if (stepIndex >= 0) {
+      setStartingStepIndex(stepIndex)
+      setViewMode("practice")
+    }
+  }
+
   return (
-    <div className="flex flex-col gap-6">
-      <LearnHeader
-        title={title}
-        subtitle={subtitle}
-        gradient={gradient}
-        keyName={NOTE_NAMES[selectedKeyIndex]}
-        viewMode={viewMode}
-        onToggleView={() => setViewMode(viewMode === "article" ? "preview" : "article")}
-      />
-
-      {viewMode === "article" ? (
-        <div className="animate-fade-in">
-          <ArticleComponent onEnterPreview={handleEnterPreview} />
-        </div>
-      ) : viewMode === "preview" ? (
-        <div className="animate-fade-in flex flex-col gap-6">
-          <LearnPreview
-            previewShape={previewShape}
-            onShapeChange={(shape) => setPreviewShape(shape as PreviewShape)}
-            showDegree={showDegree}
-            onShowDegreeChange={setShowDegree}
-            availableShapes={CAGED_SHAPE_NAMES}
-          />
-
-          <div className="transition-opacity duration-300">
-            <Fretboard markers={markers} showDegree={showDegree} className="w-full" />
-          </div>
-
-          <PracticeInfo
-            practiceType={practiceType}
-            keyIndex={selectedKeyIndex}
-            handleEnterPractice={() => setViewMode("practice")}
-            handleBackToArticle={handleBackToArticle}
-          />
-
-          <div className="flex flex-col items-center gap-4">
-            <div className="flex items-center gap-3">
-              <Button variant="outline" size="xl" onClick={handleBackToArticle}>
-                <BookOpen className="size-4" />
-                Back to Article
-              </Button>
-              <Button size="xl" onClick={() => setViewMode("practice")}>
-                <Play className="size-4 fill-current" />
-                Start Practice
-              </Button>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="animate-fade-in">
-          <CAGEDPracticeClient
-            initialKeyIndex={selectedKeyIndex}
-            practiceType={practiceType}
-            flowConfig={getFlowConfig(practiceType)}
-            autoStart
-            onExit={() => setViewMode("preview")}
-            onComplete={() => setViewMode("preview")}
-          />
-        </div>
+    <div className="flex justify-center gap-6">
+      {lessonConfig && (
+        <LessonSidebar
+          lessonConfig={lessonConfig}
+          completedModuleIds={completedModuleIds}
+          currentModuleId={currentModuleId}
+          activeModuleId={activeModuleId}
+          onSelectModule={handleSelectModule}
+          isLoading={progressLoading}
+        />
       )}
+      <div className="w-full max-w-7xl min-w-0 shrink grow">
+        <div className="flex flex-col gap-6">
+          <LearnHeader
+            title={title}
+            subtitle={subtitle}
+            gradient={gradient}
+            keyName={NOTE_NAMES[selectedKeyIndex]}
+            viewMode={viewMode}
+            onToggleView={() => setViewMode(viewMode === "article" ? "preview" : "article")}
+          />
+
+          {viewMode === "article" ? (
+            <div className="animate-fade-in">
+              <ArticleComponent onEnterPreview={handleEnterPreview} />
+            </div>
+          ) : viewMode === "preview" ? (
+            <div className="animate-fade-in flex flex-col gap-6">
+              <LearnPreview
+                previewShape={previewShape}
+                onShapeChange={(shape) => setPreviewShape(shape as PreviewShape)}
+                showDegree={showDegree}
+                onShowDegreeChange={setShowDegree}
+                availableShapes={CAGED_SHAPE_NAMES}
+              />
+
+              <div className="transition-opacity duration-300">
+                <Fretboard markers={markers} showDegree={showDegree} className="w-full" />
+              </div>
+
+              <PracticeInfo
+                practiceType={practiceType}
+                keyIndex={selectedKeyIndex}
+                handleEnterPractice={() => setViewMode("practice")}
+                handleBackToArticle={handleBackToArticle}
+              />
+
+              <div className="flex flex-col items-center gap-4">
+                <div className="flex items-center gap-3">
+                  <Button variant="outline" size="xl" onClick={handleBackToArticle}>
+                    <BookOpen className="size-4" />
+                    Back to Article
+                  </Button>
+                  <Button size="xl" onClick={() => setViewMode("practice")}>
+                    <Play className="size-4 fill-current" />
+                    Start Practice
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="animate-fade-in">
+              <CAGEDPracticeClient
+                key={`practice-${startingStepIndex}`}
+                initialKeyIndex={selectedKeyIndex}
+                practiceType={practiceType}
+                flowConfig={getFlowConfig(practiceType)}
+                autoStart
+                onExit={() => setViewMode("preview")}
+                onComplete={() => setViewMode("preview")}
+                initialStepIndex={startingStepIndex}
+                onModuleComplete={completeModule}
+              />
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="hidden max-w-82 min-w-0 shrink grow 2xl:block" />
     </div>
   )
 }
