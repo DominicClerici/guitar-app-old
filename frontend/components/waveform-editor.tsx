@@ -115,10 +115,7 @@ export function WaveformEditor({
     if (canvasWidth <= 0) return []
     return rows.map((row) => {
       const startSample = Math.floor((row.startMs / 1000) * sampleRate)
-      const endSample = Math.min(
-        Math.floor((row.endMs / 1000) * sampleRate),
-        audioData.length,
-      )
+      const endSample = Math.min(Math.floor((row.endMs / 1000) * sampleRate), audioData.length)
       const totalSamples = endSample - startSample
       const samplesPerBucket = totalSamples / canvasWidth
       const peaks: { min: number; max: number }[] = []
@@ -127,10 +124,7 @@ export function WaveformEditor({
         let min = 1
         let max = -1
         const bStart = startSample + Math.floor(i * samplesPerBucket)
-        const bEnd = Math.min(
-          startSample + Math.floor((i + 1) * samplesPerBucket),
-          endSample,
-        )
+        const bEnd = Math.min(startSample + Math.floor((i + 1) * samplesPerBucket), endSample)
         for (let j = bStart; j < bEnd; j++) {
           if (audioData[j] < min) min = audioData[j]
           if (audioData[j] > max) max = audioData[j]
@@ -294,8 +288,7 @@ export function WaveformEditor({
         const edges: number[] = []
         if (interval.startMs >= row.startMs && interval.startMs < row.endMs)
           edges.push(interval.startMs)
-        if (interval.endMs > row.startMs && interval.endMs <= row.endMs)
-          edges.push(interval.endMs)
+        if (interval.endMs > row.startMs && interval.endMs <= row.endMs) edges.push(interval.endMs)
 
         for (const edgeMs of edges) {
           const x = toX(edgeMs)
@@ -356,10 +349,8 @@ export function WaveformEditor({
 
         // Crop handle lines and triangles
         const cropEdges: number[] = []
-        if (cropStartMs >= row.startMs && cropStartMs < row.endMs)
-          cropEdges.push(cropStartMs)
-        if (cropEndMs > row.startMs && cropEndMs <= row.endMs)
-          cropEdges.push(cropEndMs)
+        if (cropStartMs >= row.startMs && cropStartMs < row.endMs) cropEdges.push(cropStartMs)
+        if (cropEndMs > row.startMs && cropEndMs <= row.endMs) cropEdges.push(cropEndMs)
 
         for (const edgeMs of cropEdges) {
           const x = toX(edgeMs)
@@ -483,10 +474,7 @@ export function WaveformEditor({
 
       if (dragStateRef.current) {
         const drag = dragStateRef.current
-        const newMs = Math.max(
-          0,
-          Math.min(xToMsInRow(x, row.startMs, row.endMs), totalDurationMs),
-        )
+        const newMs = Math.max(0, Math.min(xToMsInRow(x, row.startMs, row.endMs), totalDurationMs))
 
         if (drag.kind === "crop" && hasCrop && onCropChange) {
           const minCropWidth = 500
@@ -511,9 +499,7 @@ export function WaveformEditor({
               const clamped = Math.min(newMs, maxStart)
 
               const prevInterval = intervals
-                .filter(
-                  (i) => i.id !== intervalId && i.endMs <= interval.endMs,
-                )
+                .filter((i) => i.id !== intervalId && i.endMs <= interval.endMs)
                 .sort((a, b) => b.endMs - a.endMs)[0]
               const minStart = prevInterval ? prevInterval.endMs : 0
 
@@ -523,14 +509,9 @@ export function WaveformEditor({
               const clamped = Math.max(newMs, minEnd)
 
               const nextInterval = intervals
-                .filter(
-                  (i) =>
-                    i.id !== intervalId && i.startMs >= interval.startMs,
-                )
+                .filter((i) => i.id !== intervalId && i.startMs >= interval.startMs)
                 .sort((a, b) => a.startMs - b.startMs)[0]
-              const maxEnd = nextInterval
-                ? nextInterval.startMs
-                : totalDurationMs
+              const maxEnd = nextInterval ? nextInterval.startMs : totalDurationMs
 
               return { ...interval, endMs: Math.min(clamped, maxEnd) }
             }

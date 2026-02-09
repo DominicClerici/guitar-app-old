@@ -1,7 +1,4 @@
-export function createWavBlob(
-  audioData: Float32Array,
-  sampleRate: number,
-): Blob {
+export function createWavBlob(audioData: Float32Array, sampleRate: number): Blob {
   const numChannels = 1
   const bytesPerSample = 2
   const dataLength = audioData.length * bytesPerSample
@@ -34,10 +31,7 @@ export function createWavBlob(
   writeString(36, "data")
   view.setUint32(40, dataLength, true)
 
-  const fadeOutSamples = Math.min(
-    Math.floor(sampleRate * 0.01),
-    dcCorrectedData.length,
-  )
+  const fadeOutSamples = Math.min(Math.floor(sampleRate * 0.01), dcCorrectedData.length)
   const fadeOutStart = dcCorrectedData.length - fadeOutSamples
 
   let offset = 44

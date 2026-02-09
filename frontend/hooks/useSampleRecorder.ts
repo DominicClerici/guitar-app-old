@@ -1,7 +1,7 @@
 "use client"
 
-import { useCallback, useRef, useState } from "react"
 import { createWavBlob } from "@/lib/audio/wav"
+import { useCallback, useRef, useState } from "react"
 
 export type RecordingPhase =
   | "idle"
@@ -298,27 +298,20 @@ export function useSampleRecorder(options: UseSampleRecorderOptions = {}): UseSa
     setRecordingPhase("idle")
   }, [])
 
+  const getSampleBlob = useCallback((sample: RecordedSample): Blob => {
+    return createWavBlob(sample.audioData, sample.sampleRate)
+  }, [])
 
-  const getSampleBlob = useCallback(
-    (sample: RecordedSample): Blob => {
-      return createWavBlob(sample.audioData, sample.sampleRate)
-    },
-    [],
-  )
+  const getTrimmedSampleBlob = useCallback((sample: RecordedSample, options: TrimOptions): Blob => {
+    const startSample = Math.floor((options.trimStartMs / 1000) * sample.sampleRate)
+    const endSample = Math.floor((options.trimEndMs / 1000) * sample.sampleRate)
 
-  const getTrimmedSampleBlob = useCallback(
-    (sample: RecordedSample, options: TrimOptions): Blob => {
-      const startSample = Math.floor((options.trimStartMs / 1000) * sample.sampleRate)
-      const endSample = Math.floor((options.trimEndMs / 1000) * sample.sampleRate)
+    const clampedStart = Math.max(0, Math.min(startSample, sample.audioData.length))
+    const clampedEnd = Math.max(clampedStart, Math.min(endSample, sample.audioData.length))
 
-      const clampedStart = Math.max(0, Math.min(startSample, sample.audioData.length))
-      const clampedEnd = Math.max(clampedStart, Math.min(endSample, sample.audioData.length))
-
-      const trimmedData = sample.audioData.slice(clampedStart, clampedEnd)
-      return createWavBlob(trimmedData, sample.sampleRate)
-    },
-    [],
-  )
+    const trimmedData = sample.audioData.slice(clampedStart, clampedEnd)
+    return createWavBlob(trimmedData, sample.sampleRate)
+  }, [])
 
   return {
     sessionState,

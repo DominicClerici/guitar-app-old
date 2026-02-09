@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 
 import { Fretboard, type Marker } from "@/components/fretboard/fretboard"
 import { Button } from "@/components/ui/button"
+import { getFlowConfig } from "@/lib/caged-practice/flow-configs"
 import {
   CAGED_SHAPE_NAMES,
   generateFretboardNotes,
@@ -103,12 +104,19 @@ export default function LearnModuleClient({ module }: LearnModuleClientProps) {
 
   const { title, subtitle, gradient, ArticleComponent } = config
 
+  const practiceType =
+    module === "cagedPentatonic"
+      ? ("pentatonic" as const)
+      : module === "chordTones"
+        ? ("chordTones" as const)
+        : ("roots" as const)
+
   const formula = SCALE_FORMULAS.major
   const fullScale = generateFretboardNotes(selectedKeyIndex, formula)
   const filteredNotes =
-    module === "cagedPentatonic"
+    practiceType === "pentatonic"
       ? getNotesByDegrees(fullScale, [1, 2, 3, 5, 6])
-      : module === "chordTones"
+      : practiceType === "chordTones"
         ? getNotesByDegrees(fullScale, [1, 3, 5])
         : getRootNotes(fullScale)
 
@@ -163,13 +171,7 @@ export default function LearnModuleClient({ module }: LearnModuleClientProps) {
           </div>
 
           <PracticeInfo
-            practiceType={
-              module === "cagedPentatonic"
-                ? "pentatonic"
-                : module === "chordTones"
-                  ? "chordTones"
-                  : "roots"
-            }
+            practiceType={practiceType}
             keyIndex={selectedKeyIndex}
             handleEnterPractice={() => setViewMode("practice")}
             handleBackToArticle={handleBackToArticle}
@@ -192,13 +194,8 @@ export default function LearnModuleClient({ module }: LearnModuleClientProps) {
         <div className="animate-fade-in">
           <CAGEDPracticeClient
             initialKeyIndex={selectedKeyIndex}
-            practiceType={
-              module === "cagedPentatonic"
-                ? "pentatonic"
-                : module === "chordTones"
-                  ? "chordTones"
-                  : "roots"
-            }
+            practiceType={practiceType}
+            flowConfig={getFlowConfig(practiceType)}
             autoStart
             onExit={() => setViewMode("preview")}
             onComplete={() => setViewMode("preview")}

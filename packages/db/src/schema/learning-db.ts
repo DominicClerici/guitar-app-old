@@ -1,3 +1,4 @@
+import { relations } from "drizzle-orm"
 import { pgEnum, pgTable, timestamp, uuid } from "drizzle-orm/pg-core"
 import { usersTable } from "./users-db"
 
@@ -10,5 +11,11 @@ export const learningPathsTable = pgTable("learning_paths", {
     .references(() => usersTable.id, { onDelete: "cascade" })
     .notNull(),
   startedAt: timestamp("started_at").notNull().defaultNow(),
-  completedAt: timestamp("completed_at"),
 })
+
+export const learningPathRelations = relations(learningPathsTable, ({ one }) => ({
+  user: one(usersTable, {
+    fields: [learningPathsTable.userId],
+    references: [usersTable.id],
+  }),
+}))

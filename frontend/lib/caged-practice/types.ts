@@ -54,3 +54,52 @@ export type PracticeSession = {
   quizScore: number
   totalTime: number
 }
+
+export type PracticeType = "roots" | "chordTones" | "pentatonic"
+
+export type PracticeSessionKey = {
+  keyIndex: number
+  rounds: number
+}
+
+export type PracticeStep = {
+  type: "practice"
+  id: string
+  keys: PracticeSessionKey[]
+  mode: "guided" | "test"
+  shapes?: CAGEDShapeName[]
+  showRootsInTest?: boolean
+}
+
+export type ArticleStep = {
+  type: "article"
+  id: string
+  component: string
+  retryStepId?: string
+}
+
+export type QuizStep = {
+  type: "quiz"
+  id: string
+}
+
+export type CompleteStep = {
+  type: "complete"
+  id: string
+}
+
+export type FlowStep = PracticeStep | ArticleStep | QuizStep | CompleteStep
+
+export type PracticeFlowConfig = {
+  practiceType: PracticeType
+  steps: FlowStep[]
+}
+
+export type SubPhase =
+  | "idle"
+  | "countdown"
+  | "playing"
+  | "key-complete"
+  | "article"
+  | "quiz"
+  | "complete"

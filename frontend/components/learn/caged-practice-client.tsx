@@ -1,7 +1,8 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   useSpectrogramClassifier,
@@ -16,7 +17,15 @@ import {
   MINOR_PENTATONIC_SHAPE_ORDER,
   shuffleQuestions,
 } from "@/lib/caged-practice/practice-data"
-import type { PracticePhase, QuizResults } from "@/lib/caged-practice/types"
+import type {
+  ArticleStep,
+  FlowStep,
+  PracticeFlowConfig,
+  PracticeStep,
+  PracticeType,
+  QuizResults,
+  SubPhase,
+} from "@/lib/caged-practice/types"
 import {
   generateFretboardNotes,
   getCAGEDShapeNotes,
@@ -27,25 +36,23 @@ import {
   type FretboardNote,
 } from "@/lib/theory"
 import { cn } from "@/lib/utils"
-import { ArrowRight, CheckCircle2, X } from "lucide-react"
+import { ArrowRight, CheckCircle2, ListChecks, X } from "lucide-react"
 
 import GuidedPracticePhase from "./practice-phases/guided-practice-phase"
 import QuizPhase from "./practice-phases/quiz-phase"
+import ShortArticlePhase from "./practice-phases/short-article-phase"
 import TestPhase from "./practice-phases/test-phase"
 
-const TOTAL_KEYS = 3
-const GUIDED_ROUNDS = 2
 const QUIZ_QUESTION_COUNT = 5
 const WRONG_NOTE_CONSECUTIVE_THRESHOLD = 5
 const CORRECT_NOTE_CONSECUTIVE_THRESHOLD = 2
 const WRONG_NOTE_FADE_MS = 300
 const WRONG_NOTE_IDLE_TIMEOUT_MS = 1000
 
-type PracticeType = "roots" | "chordTones" | "pentatonic"
-
 interface CAGEDPracticeClientProps {
   initialKeyIndex: number
   practiceType?: PracticeType
+  flowConfig?: PracticeFlowConfig
   autoStart?: boolean
   onExit: () => void
   onComplete: () => void
@@ -110,27 +117,59 @@ function KeyProgressIndicator({
   )
 }
 
+function FlowOverview({ steps }: { steps: FlowStep[] }) {
+  const practiceSteps = steps.filter((s) => s.type === "practice") as PracticeStep[]
+  const totalPracticeKeys = practiceSteps.reduce((sum, s) => sum + s.keys.length, 0)
+  const totalRounds = practiceSteps.reduce(
+    (sum, s) => sum + s.keys.reduce((kSum, k) => kSum + k.rounds, 0),
+    0,
+  )
+  const hasTest = practiceSteps.some((s) => s.mode === "test")
+  const hasQuiz = steps.some((s) => s.type === "quiz")
+
+  return (
+    <div className="bg-muted/50 flex flex-wrap items-center justify-center gap-2 rounded-xl px-4 py-3">
+      <Badge variant="secondary" className="gap-1.5">
+        <ListChecks className="size-3" />
+        {totalPracticeKeys} {totalPracticeKeys === 1 ? "key" : "keys"}
+      </Badge>
+      <Badge variant="secondary">{totalRounds} rounds</Badge>
+      {hasTest && <Badge variant="outline">Test</Badge>}
+      {hasQuiz && <Badge variant="outline">Quiz</Badge>}
+    </div>
+  )
+}
+
 export default function CAGEDPracticeClient({
   initialKeyIndex,
   practiceType = "roots",
+  flowConfig,
   autoStart = false,
   onExit,
   onComplete,
 }: CAGEDPracticeClientProps) {
+  const effectivePracticeType = flowConfig?.practiceType ?? practiceType
+
   const shapeOrder =
-    practiceType === "pentatonic"
+    effectivePracticeType === "pentatonic"
       ? MINOR_PENTATONIC_SHAPE_ORDER
-      : practiceType === "chordTones"
+      : effectivePracticeType === "chordTones"
         ? CHORD_TONES_SHAPE_ORDER
         : CAGED_SHAPE_ORDER
   const quizQuestionSet =
-    practiceType === "pentatonic"
+    effectivePracticeType === "pentatonic"
       ? MINOR_PENTATONIC_QUIZ_QUESTIONS
-      : practiceType === "chordTones"
+      : effectivePracticeType === "chordTones"
         ? CHORD_TONES_QUIZ_QUESTIONS
         : CAGED_QUIZ_QUESTIONS
 
-  const [phase, setPhase] = useState<PracticePhase>("idle")
+  // --- Step-based flow state ---
+  const [currentStepIndex, setCurrentStepIndex] = useState(0)
+  const [subPhase, setSubPhase] = useState<SubPhase>("idle")
+
+  const currentStep = flowConfig?.steps[currentStepIndex] ?? null
+
+  // --- Practice state ---
   const [currentKeyIndex, setCurrentKeyIndex] = useState(initialKeyIndex)
   const [currentShapeIndex, setCurrentShapeIndex] = useState(0)
   const [currentRound, setCurrentRound] = useState(1)
@@ -145,7 +184,17 @@ export default function CAGEDPracticeClient({
   const [quizQuestions, setQuizQuestions] = useState(() =>
     shuffleQuestions(quizQuestionSet).slice(0, QUIZ_QUESTION_COUNT),
   )
-  const [usedKeys, setUsedKeys] = useState<number[]>([initialKeyIndex])
+
+  const currentPracticeStep =
+    currentStep?.type === "practice" ? (currentStep as PracticeStep) : null
+  const totalKeysInStep = currentPracticeStep?.keys.length ?? 1
+  const currentRoundsForKey = currentPracticeStep?.keys[keysCompleted]?.rounds ?? 2
+
+  // When a step specifies a subset of shapes, filter the full shape order down
+  const activeShapeOrder = useMemo(() => {
+    if (!currentPracticeStep?.shapes) return shapeOrder
+    return shapeOrder.filter((s) => currentPracticeStep.shapes!.includes(s.shapeName))
+  }, [currentPracticeStep?.shapes, shapeOrder])
 
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const transitionTimerRef = useRef<NodeJS.Timeout | null>(null)
@@ -155,21 +204,21 @@ export default function CAGEDPracticeClient({
   const lastWrongNoteRef = useRef<string | null>(null)
   const correctNoteConsecutiveRef = useRef(0)
   const lastCorrectNoteRef = useRef<string | null>(null)
-  const phaseRef = useRef(phase)
+  const subPhaseRef = useRef(subPhase)
 
   useEffect(() => {
-    phaseRef.current = phase
-  }, [phase])
+    subPhaseRef.current = subPhase
+  }, [subPhase])
 
   const formula = SCALE_FORMULAS.major
   const fullScale = generateFretboardNotes(currentKeyIndex, formula)
   const filteredNotes =
-    practiceType === "pentatonic"
+    effectivePracticeType === "pentatonic"
       ? getNotesByDegrees(fullScale, [1, 2, 3, 5, 6])
-      : practiceType === "chordTones"
+      : effectivePracticeType === "chordTones"
         ? getNotesByDegrees(fullScale, [1, 3, 5])
         : getRootNotes(fullScale)
-  const currentShapeName = shapeOrder[currentShapeIndex]?.shapeName || "C"
+  const currentShapeName = activeShapeOrder[currentShapeIndex]?.shapeName || "C"
   const currentShapeNotes = getCAGEDShapeNotes(
     currentShapeName,
     filteredNotes,
@@ -184,7 +233,7 @@ export default function CAGEDPracticeClient({
   }, [currentShapeNotes])
 
   const handleStringDetected = useCallback((prediction: SpectrogramPredictionResult) => {
-    if (phaseRef.current !== "guided" && phaseRef.current !== "test") return
+    if (subPhaseRef.current !== "playing") return
 
     const { stringIndex, fret } = prediction
     const shapeNotes = currentShapeNotesRef.current
@@ -258,7 +307,11 @@ export default function CAGEDPracticeClient({
     }
   }, [])
 
-  const { startListening, stopListening, prediction: spectrogramPrediction } = useSpectrogramClassifier({
+  const {
+    startListening,
+    stopListening,
+    prediction: spectrogramPrediction,
+  } = useSpectrogramClassifier({
     minConfidence: 0.97,
   })
 
@@ -268,46 +321,28 @@ export default function CAGEDPracticeClient({
     }
   }, [spectrogramPrediction, handleStringDetected])
 
-  const getRandomKeyExcluding = useCallback((excludedKeys: number[]) => {
-    const availableKeys = NOTE_NAMES.map((_, i) => i).filter((key) => !excludedKeys.includes(key))
-    return availableKeys[Math.floor(Math.random() * availableKeys.length)]
-  }, [])
-
   const allNotesPlayed =
     currentShapeNotes.length > 0 &&
     currentShapeNotes.every((note) => playedNotes.has(`${note.stringIndex}-${note.fretIndex}`))
 
-  useEffect(() => {
-    if (phase !== "guided" && phase !== "test") return
-    if (!allNotesPlayed) return
+  const currentStepMode = currentPracticeStep?.mode ?? "guided"
 
-    setCompletedShapeName(currentShapeName)
+  const resetPracticeState = useCallback(() => {
+    setCurrentShapeIndex(0)
+    setCurrentRound(1)
+    setKeysCompleted(0)
+    setPlayedNotes(new Set())
+    setWrongNote(null)
+    setWrongNoteFading(false)
+    setCompletedShapeName(null)
+    wrongNoteConsecutiveRef.current = 0
+    lastWrongNoteRef.current = null
+    correctNoteConsecutiveRef.current = 0
+    lastCorrectNoteRef.current = null
+  }, [])
 
-    transitionTimerRef.current = setTimeout(() => {
-      const nextShapeIndex = currentShapeIndex + 1
-
-      if (nextShapeIndex >= shapeOrder.length) {
-        if (phase === "guided") {
-          if (currentRound < GUIDED_ROUNDS) {
-            setCurrentRound((prev) => prev + 1)
-            setCurrentShapeIndex(0)
-            setPlayedNotes(new Set())
-          } else {
-            setPhase("test-intro")
-          }
-        } else {
-          setPhase("key-complete")
-        }
-      } else {
-        setCurrentShapeIndex(nextShapeIndex)
-        setPlayedNotes(new Set())
-      }
-      setCompletedShapeName(null)
-    }, 1500)
-  }, [allNotesPlayed, currentShapeIndex, currentRound, phase, currentShapeName])
-
-  const handleStartPractice = useCallback(async () => {
-    setPhase("countdown")
+  const startCountdown = useCallback(async () => {
+    setSubPhase("countdown")
     setCountdownValue(5)
 
     await startListening()
@@ -319,64 +354,138 @@ export default function CAGEDPracticeClient({
         if (countdownIntervalRef.current) {
           clearInterval(countdownIntervalRef.current)
         }
-        setPhase("guided")
+        setSubPhase("playing")
       } else {
         setCountdownValue(count)
       }
     }, 1000)
   }, [startListening])
 
+  const advanceToStep = useCallback(
+    async (stepIndex: number) => {
+      if (!flowConfig || stepIndex >= flowConfig.steps.length) {
+        stopListening()
+        setSubPhase("complete")
+        return
+      }
+
+      const nextStep = flowConfig.steps[stepIndex]
+      setCurrentStepIndex(stepIndex)
+
+      if (nextStep.type === "practice") {
+        const practiceStep = nextStep as PracticeStep
+        resetPracticeState()
+        setCurrentKeyIndex(practiceStep.keys[0].keyIndex)
+        await startCountdown()
+      } else if (nextStep.type === "article") {
+        stopListening()
+        setSubPhase("article")
+      } else if (nextStep.type === "quiz") {
+        stopListening()
+        setQuizQuestions(shuffleQuestions(quizQuestionSet).slice(0, QUIZ_QUESTION_COUNT))
+        setSubPhase("quiz")
+      } else if (nextStep.type === "complete") {
+        stopListening()
+        setSubPhase("complete")
+      }
+    },
+    [flowConfig, stopListening, resetPracticeState, startCountdown, quizQuestionSet],
+  )
+
   useEffect(() => {
-    if (autoStart && phase === "idle") {
+    if (subPhase !== "playing") return
+    if (!allNotesPlayed) return
+
+    setCompletedShapeName(currentShapeName)
+
+    transitionTimerRef.current = setTimeout(() => {
+      const nextShapeIndex = currentShapeIndex + 1
+
+      if (nextShapeIndex >= activeShapeOrder.length) {
+        if (currentStepMode === "guided") {
+          if (currentRound < currentRoundsForKey) {
+            setCurrentRound((prev) => prev + 1)
+            setCurrentShapeIndex(0)
+            setPlayedNotes(new Set())
+          } else {
+            const newKeysCompleted = keysCompleted + 1
+            if (currentPracticeStep && newKeysCompleted < currentPracticeStep.keys.length) {
+              setKeysCompleted(newKeysCompleted)
+              setSubPhase("key-complete")
+            } else {
+              advanceToStep(currentStepIndex + 1)
+            }
+          }
+        } else {
+          const newKeysCompleted = keysCompleted + 1
+          if (currentPracticeStep && newKeysCompleted < currentPracticeStep.keys.length) {
+            setKeysCompleted(newKeysCompleted)
+            setSubPhase("key-complete")
+          } else {
+            advanceToStep(currentStepIndex + 1)
+          }
+        }
+      } else {
+        setCurrentShapeIndex(nextShapeIndex)
+        setPlayedNotes(new Set())
+      }
+      setCompletedShapeName(null)
+    }, 1500)
+  }, [
+    allNotesPlayed,
+    currentShapeIndex,
+    currentRound,
+    subPhase,
+    currentShapeName,
+    currentRoundsForKey,
+    currentStepMode,
+    keysCompleted,
+    currentPracticeStep,
+    currentStepIndex,
+    advanceToStep,
+    activeShapeOrder.length,
+  ])
+
+  const handleStartPractice = useCallback(async () => {
+    if (flowConfig) {
+      const firstStep = flowConfig.steps[0]
+      if (firstStep?.type === "practice") {
+        const practiceStep = firstStep as PracticeStep
+        setCurrentKeyIndex(practiceStep.keys[0].keyIndex)
+        resetPracticeState()
+      }
+    }
+    await startCountdown()
+  }, [flowConfig, startCountdown, resetPracticeState])
+
+  useEffect(() => {
+    if (autoStart && subPhase === "idle") {
       handleStartPractice()
     }
-  }, [autoStart, phase, handleStartPractice])
+  }, [autoStart, subPhase, handleStartPractice])
 
-  const handleTestIntroComplete = useCallback(() => {
+  const handleKeyComplete = useCallback(async () => {
+    if (!currentPracticeStep) return
+
+    const nextKeyConfig = currentPracticeStep.keys[keysCompleted]
+    if (!nextKeyConfig) {
+      advanceToStep(currentStepIndex + 1)
+      return
+    }
+
+    setCurrentKeyIndex(nextKeyConfig.keyIndex)
     setCurrentShapeIndex(0)
     setCurrentRound(1)
     setPlayedNotes(new Set())
-    setPhase("test")
-  }, [])
+    await startCountdown()
+  }, [keysCompleted, currentPracticeStep, currentStepIndex, advanceToStep, startCountdown])
 
-  const handleKeyComplete = useCallback(async () => {
-    const newKeysCompleted = keysCompleted + 1
-
-    if (newKeysCompleted >= TOTAL_KEYS) {
-      stopListening()
-      setPhase("quiz")
-      setQuizQuestions(shuffleQuestions(quizQuestionSet).slice(0, QUIZ_QUESTION_COUNT))
-    } else {
-      const nextKey = getRandomKeyExcluding([...usedKeys])
-      setUsedKeys((prev) => [...prev, nextKey])
-      setCurrentKeyIndex(nextKey)
-      setCurrentShapeIndex(0)
-      setCurrentRound(1)
-      setPlayedNotes(new Set())
-      setKeysCompleted(newKeysCompleted)
-      setPhase("countdown")
-      setCountdownValue(5)
-
-      await startListening()
-
-      let count = 5
-      countdownIntervalRef.current = setInterval(() => {
-        count--
-        if (count === 0) {
-          if (countdownIntervalRef.current) {
-            clearInterval(countdownIntervalRef.current)
-          }
-          setPhase("guided")
-        } else {
-          setCountdownValue(count)
-        }
-      }, 1000)
-    }
-  }, [keysCompleted, usedKeys, getRandomKeyExcluding, startListening, stopListening])
-
-  const handleQuizComplete = useCallback((_results: QuizResults) => {
-    setPhase("complete")
-  }, [])
+  const handleQuizComplete = useCallback(
+    (_results: QuizResults) => {
+      advanceToStep(currentStepIndex + 1)
+    },
+    [currentStepIndex, advanceToStep],
+  )
 
   const handleQuizRetry = useCallback(() => {
     setQuizQuestions(shuffleQuestions(quizQuestionSet).slice(0, QUIZ_QUESTION_COUNT))
@@ -397,6 +506,21 @@ export default function CAGEDPracticeClient({
     onComplete()
   }, [onComplete])
 
+  const handleArticleContinue = useCallback(() => {
+    advanceToStep(currentStepIndex + 1)
+  }, [currentStepIndex, advanceToStep])
+
+  const handleArticleRetry = useCallback(() => {
+    if (!flowConfig || !currentStep || currentStep.type !== "article") return
+    const articleStep = currentStep as ArticleStep
+    if (!articleStep.retryStepId) return
+
+    const retryIndex = flowConfig.steps.findIndex((s) => s.id === articleStep.retryStepId)
+    if (retryIndex >= 0) {
+      advanceToStep(retryIndex)
+    }
+  }, [flowConfig, currentStep, advanceToStep])
+
   useEffect(() => {
     return () => {
       if (countdownIntervalRef.current) {
@@ -416,19 +540,35 @@ export default function CAGEDPracticeClient({
   }, [stopListening])
 
   const practiceTitle =
-    practiceType === "pentatonic"
+    effectivePracticeType === "pentatonic"
       ? "CAGED Pentatonic Practice"
-      : practiceType === "chordTones"
+      : effectivePracticeType === "chordTones"
         ? "CAGED Chord Tones Practice"
         : "CAGED Roots Practice"
   const practiceDescription =
-    practiceType === "pentatonic"
+    effectivePracticeType === "pentatonic"
       ? "Practice identifying and playing the pentatonic notes (1, 2, 3, 5, 6) for each CAGED shape."
-      : practiceType === "chordTones"
+      : effectivePracticeType === "chordTones"
         ? "Practice identifying and playing the chord tones (1, 3, 5) for each CAGED shape."
         : "Practice identifying and playing the root notes for each CAGED shape."
 
-  if (phase === "idle") {
+  if (subPhase === "article" && currentStep?.type === "article") {
+    const articleStep = currentStep as ArticleStep
+    return (
+      <ShortArticlePhase
+        articleId={articleStep.component}
+        onContinue={handleArticleContinue}
+        onRetry={articleStep.retryStepId ? handleArticleRetry : undefined}
+      />
+    )
+  }
+
+  if (subPhase === "idle") {
+    const firstPracticeStep = flowConfig?.steps.find((s) => s.type === "practice") as
+      | PracticeStep
+      | undefined
+    const startingKeyIndex = firstPracticeStep?.keys[0].keyIndex ?? currentKeyIndex
+
     return (
       <div className="flex flex-col items-center gap-8 py-12">
         <div className="max-w-md space-y-4 text-center">
@@ -442,20 +582,24 @@ export default function CAGEDPracticeClient({
         <div className="bg-card flex flex-col items-center gap-4 rounded-2xl border p-6">
           <div className="flex items-center gap-3">
             <div className="bg-primary/10 flex size-12 items-center justify-center rounded-xl">
-              <span className="font-display text-xl font-bold">{NOTE_NAMES[currentKeyIndex]}</span>
+              <span className="font-display text-xl font-bold">{NOTE_NAMES[startingKeyIndex]}</span>
             </div>
             <div>
               <p className="text-muted-foreground text-xs font-medium">Starting Key</p>
-              <p className="font-semibold">{NOTE_NAMES[currentKeyIndex]} Major</p>
+              <p className="font-semibold">{NOTE_NAMES[startingKeyIndex]} Major</p>
             </div>
           </div>
 
-          <div className="bg-muted/50 rounded-xl px-4 py-3 text-center">
-            <p className="text-muted-foreground text-sm">
-              You&apos;ll practice in <strong>{TOTAL_KEYS} keys</strong>, with{" "}
-              <strong>{GUIDED_ROUNDS} guided rounds</strong> per key
-            </p>
-          </div>
+          {flowConfig ? (
+            <FlowOverview steps={flowConfig.steps} />
+          ) : (
+            <div className="bg-muted/50 rounded-xl px-4 py-3 text-center">
+              <p className="text-muted-foreground text-sm">
+                You&apos;ll practice in <strong>{totalKeysInStep} keys</strong>, with{" "}
+                <strong>{currentRoundsForKey} guided rounds</strong> per key
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-3">
@@ -471,18 +615,18 @@ export default function CAGEDPracticeClient({
     )
   }
 
-  if (phase === "countdown") {
+  if (subPhase === "countdown") {
     return (
       <div className="relative flex flex-col gap-6">
         <div className="flex items-center justify-between opacity-50">
           <ShapeProgressIndicator
             currentShapeIndex={currentShapeIndex}
-            totalShapes={shapeOrder.length}
-            shapeOrder={shapeOrder}
+            totalShapes={activeShapeOrder.length}
+            shapeOrder={activeShapeOrder}
           />
           <KeyProgressIndicator
             keysCompleted={keysCompleted}
-            totalKeys={TOTAL_KEYS}
+            totalKeys={totalKeysInStep}
             currentKeyName={NOTE_NAMES[currentKeyIndex]}
           />
         </div>
@@ -494,10 +638,10 @@ export default function CAGEDPracticeClient({
             playedNotes={playedNotes}
             wrongNote={null}
             currentRound={currentRound}
-            totalRounds={GUIDED_ROUNDS}
+            totalRounds={currentRoundsForKey}
             currentShapeIndex={currentShapeIndex}
-            totalShapes={shapeOrder.length}
-            practiceType={practiceType}
+            totalShapes={activeShapeOrder.length}
+            practiceType={effectivePracticeType}
           />
         </div>
 
@@ -545,18 +689,18 @@ export default function CAGEDPracticeClient({
     )
   }
 
-  if (phase === "guided") {
+  if (subPhase === "playing" && currentStepMode === "guided") {
     return (
       <div className="relative flex flex-col gap-6">
         <div className="flex items-center justify-between">
           <ShapeProgressIndicator
             currentShapeIndex={currentShapeIndex}
-            totalShapes={shapeOrder.length}
-            shapeOrder={shapeOrder}
+            totalShapes={activeShapeOrder.length}
+            shapeOrder={activeShapeOrder}
           />
           <KeyProgressIndicator
             keysCompleted={keysCompleted}
-            totalKeys={TOTAL_KEYS}
+            totalKeys={totalKeysInStep}
             currentKeyName={NOTE_NAMES[currentKeyIndex]}
           />
         </div>
@@ -568,10 +712,10 @@ export default function CAGEDPracticeClient({
           wrongNote={wrongNote}
           wrongNoteFading={wrongNoteFading}
           currentRound={currentRound}
-          totalRounds={GUIDED_ROUNDS}
+          totalRounds={currentRoundsForKey}
           currentShapeIndex={currentShapeIndex}
-          totalShapes={shapeOrder.length}
-          practiceType={practiceType}
+          totalShapes={activeShapeOrder.length}
+          practiceType={effectivePracticeType}
         />
 
         {completedShapeName && (
@@ -595,41 +739,18 @@ export default function CAGEDPracticeClient({
     )
   }
 
-  if (phase === "test-intro") {
-    return (
-      <div className="flex flex-col items-center justify-center gap-8 py-16">
-        <div className="from-primary to-primary/80 flex size-20 items-center justify-center rounded-full bg-gradient-to-br">
-          <CheckCircle2 className="text-primary-foreground size-10" />
-        </div>
-
-        <div className="max-w-md space-y-3 text-center">
-          <h2 className="font-display text-2xl font-bold tracking-tight">Great Progress!</h2>
-          <p className="text-muted-foreground text-lg">
-            Now let&apos;s test what you&apos;ve learned. The notes will be hidden - play them from
-            memory and they&apos;ll appear when you find them.
-          </p>
-        </div>
-
-        <Button size="lg" onClick={handleTestIntroComplete}>
-          Start Test
-          <ArrowRight className="size-4" />
-        </Button>
-      </div>
-    )
-  }
-
-  if (phase === "test") {
+  if (subPhase === "playing" && currentStepMode === "test") {
     return (
       <div className="relative flex flex-col gap-6">
         <div className="flex items-center justify-between">
           <ShapeProgressIndicator
             currentShapeIndex={currentShapeIndex}
-            totalShapes={shapeOrder.length}
-            shapeOrder={shapeOrder}
+            totalShapes={activeShapeOrder.length}
+            shapeOrder={activeShapeOrder}
           />
           <KeyProgressIndicator
             keysCompleted={keysCompleted}
-            totalKeys={TOTAL_KEYS}
+            totalKeys={totalKeysInStep}
             currentKeyName={NOTE_NAMES[currentKeyIndex]}
           />
         </div>
@@ -641,8 +762,9 @@ export default function CAGEDPracticeClient({
           wrongNote={wrongNote}
           wrongNoteFading={wrongNoteFading}
           currentShapeIndex={currentShapeIndex}
-          totalShapes={shapeOrder.length}
-          practiceType={practiceType}
+          totalShapes={activeShapeOrder.length}
+          practiceType={effectivePracticeType}
+          showRoots={currentPracticeStep?.showRootsInTest}
         />
 
         {completedShapeName && (
@@ -666,8 +788,8 @@ export default function CAGEDPracticeClient({
     )
   }
 
-  if (phase === "key-complete") {
-    const isLastKey = keysCompleted + 1 >= TOTAL_KEYS
+  if (subPhase === "key-complete") {
+    const isLastKey = keysCompleted >= totalKeysInStep
 
     return (
       <div className="flex flex-col items-center justify-center gap-8 py-16">
@@ -681,7 +803,7 @@ export default function CAGEDPracticeClient({
           </h2>
           <p className="text-muted-foreground text-lg">
             {isLastKey
-              ? "You've completed all keys! Time for a quick knowledge check."
+              ? "You've completed all keys! Moving on to the next step."
               : `Great job! Let's continue with a new key.`}
           </p>
         </div>
@@ -692,20 +814,20 @@ export default function CAGEDPracticeClient({
               Keys Completed
             </span>
             <span className="font-display text-3xl font-bold tabular-nums">
-              {keysCompleted + 1}/{TOTAL_KEYS}
+              {keysCompleted}/{totalKeysInStep}
             </span>
           </div>
         </div>
 
         <Button size="lg" onClick={handleKeyComplete}>
-          {isLastKey ? "Start Quiz" : "Next Key"}
+          {isLastKey ? "Continue" : "Next Key"}
           <ArrowRight className="size-4" />
         </Button>
       </div>
     )
   }
 
-  if (phase === "quiz") {
+  if (subPhase === "quiz") {
     return (
       <div className="py-4">
         <QuizPhase
@@ -717,7 +839,7 @@ export default function CAGEDPracticeClient({
     )
   }
 
-  if (phase === "complete") {
+  if (subPhase === "complete") {
     return (
       <div className="flex flex-col items-center justify-center gap-8 py-16">
         <div className="relative">
@@ -739,9 +861,9 @@ export default function CAGEDPracticeClient({
           <h2 className="font-display text-3xl font-bold tracking-tight">Practice Complete!</h2>
           <p className="text-muted-foreground text-lg">
             Great work! You&apos;ve successfully practiced the CAGED{" "}
-            {practiceType === "pentatonic"
+            {effectivePracticeType === "pentatonic"
               ? "pentatonic"
-              : practiceType === "chordTones"
+              : effectivePracticeType === "chordTones"
                 ? "chord tones"
                 : "roots"}{" "}
             system across multiple keys.
@@ -753,14 +875,14 @@ export default function CAGEDPracticeClient({
             <span className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
               Keys Practiced
             </span>
-            <span className="font-display text-3xl font-bold">{TOTAL_KEYS}</span>
+            <span className="font-display text-3xl font-bold">{totalKeysInStep}</span>
           </div>
           <div className="bg-border h-12 w-px" />
           <div className="flex flex-col items-center gap-1">
             <span className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
               Shapes
             </span>
-            <span className="font-display text-3xl font-bold">{shapeOrder.length}</span>
+            <span className="font-display text-3xl font-bold">{activeShapeOrder.length}</span>
           </div>
         </div>
 

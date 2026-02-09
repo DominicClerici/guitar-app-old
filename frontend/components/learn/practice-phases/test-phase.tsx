@@ -16,6 +16,7 @@ interface TestPhaseProps {
   currentShapeIndex: number
   totalShapes: number
   practiceType?: "roots" | "chordTones" | "pentatonic"
+  showRoots?: boolean
 }
 
 export default function TestPhase({
@@ -27,6 +28,7 @@ export default function TestPhase({
   currentShapeIndex,
   totalShapes,
   practiceType = "roots",
+  showRoots = false,
 }: TestPhaseProps) {
   const markers: Marker[] = currentShapeNotes.map((note) => {
     const noteKey = `${note.stringIndex}-${note.fretIndex}`
@@ -34,6 +36,7 @@ export default function TestPhase({
 
     const getMarkerType = () => {
       if (isPlayed) return "played"
+      if (showRoots && note.degree === 1) return "root"
       if ((practiceType === "chordTones" || practiceType === "pentatonic") && note.degree !== 1)
         return "chord-tone-hidden"
       return "root-hidden"

@@ -47,9 +47,7 @@ export function detectOnsets(
   }
 
   const absoluteThreshold = threshold
-  const minInterOnsetFrames = Math.floor(
-    (minInterOnsetMs / 1000) * (sampleRate / hopSize),
-  )
+  const minInterOnsetFrames = Math.floor((minInterOnsetMs / 1000) * (sampleRate / hopSize))
 
   const peaks: DetectedOnset[] = []
   for (let f = 1; f < numFrames - 1; f++) {
@@ -58,13 +56,11 @@ export function detectOnsets(
       onsetStrength[f] > onsetStrength[f - 1] &&
       onsetStrength[f] >= onsetStrength[f + 1]
     ) {
-      const timeMs = (f * hopSize / sampleRate) * 1000
+      const timeMs = ((f * hopSize) / sampleRate) * 1000
 
       if (peaks.length > 0) {
         const lastPeak = peaks[peaks.length - 1]
-        const lastFrame = Math.round(
-          (lastPeak.timeMs / 1000) * sampleRate / hopSize,
-        )
+        const lastFrame = Math.round(((lastPeak.timeMs / 1000) * sampleRate) / hopSize)
         if (f - lastFrame < minInterOnsetFrames) {
           if (onsetStrength[f] > lastPeak.strength) {
             peaks[peaks.length - 1] = { timeMs, strength: onsetStrength[f] }

@@ -12,22 +12,12 @@ export async function POST(request: Request) {
     const labelsJson = formData.get("labels")
 
     if (!(audioBlob instanceof Blob) || typeof labelsJson !== "string") {
-      return NextResponse.json(
-        { error: "Missing audio blob or labels JSON" },
-        { status: 400 },
-      )
+      return NextResponse.json({ error: "Missing audio blob or labels JSON" }, { status: 400 })
     }
 
     const labels = JSON.parse(labelsJson)
-    if (
-      !labels.sampleRate ||
-      !labels.durationMs ||
-      !Array.isArray(labels.intervals)
-    ) {
-      return NextResponse.json(
-        { error: "Invalid labels format" },
-        { status: 400 },
-      )
+    if (!labels.sampleRate || !labels.durationMs || !Array.isArray(labels.intervals)) {
+      return NextResponse.json({ error: "Invalid labels format" }, { status: 400 })
     }
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
@@ -38,10 +28,7 @@ export async function POST(request: Request) {
     const audioBuffer = Buffer.from(audioArrayBuffer)
     await writeFile(join(sessionDir, "audio.wav"), audioBuffer)
 
-    await writeFile(
-      join(sessionDir, "labels.json"),
-      JSON.stringify(labels, null, 2),
-    )
+    await writeFile(join(sessionDir, "labels.json"), JSON.stringify(labels, null, 2))
 
     return NextResponse.json({
       success: true,
@@ -50,9 +37,6 @@ export async function POST(request: Request) {
     })
   } catch (error) {
     console.error("Failed to save labeling session:", error)
-    return NextResponse.json(
-      { error: "Failed to save labeling session" },
-      { status: 500 },
-    )
+    return NextResponse.json({ error: "Failed to save labeling session" }, { status: 500 })
   }
 }
