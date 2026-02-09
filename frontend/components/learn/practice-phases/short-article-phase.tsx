@@ -6,6 +6,11 @@ import { ArrowRight, RotateCcw } from "lucide-react"
 import ChordTonesOverviewArticle from "../articles/short/chord-tones-overview-article"
 import ChordTonesRecapArticle from "../articles/short/chord-tones-recap-article"
 import ChordTonesReviewArticle from "../articles/short/chord-tones-review-article"
+import MajorScaleAToGArticle from "../articles/short/major-scale-a-to-g-article"
+import MajorScaleCToAArticle from "../articles/short/major-scale-c-to-a-article"
+import MajorScaleEToDArticle from "../articles/short/major-scale-e-to-d-article"
+import MajorScaleGToEArticle from "../articles/short/major-scale-g-to-e-article"
+import MajorScaleRecapArticle from "../articles/short/major-scale-recap-article"
 import MoveableShapesRecapArticle from "../articles/short/moveable-shapes-recap-article"
 import NextChordTonesArticle from "../articles/short/next-chord-tones-article"
 import PentatonicAToGArticle from "../articles/short/pentatonic-a-to-g-article"
@@ -27,6 +32,11 @@ const ARTICLE_COMPONENTS: Record<string, React.ComponentType> = {
   "pentatonic-g-to-e": PentatonicGToEArticle,
   "pentatonic-e-to-d": PentatonicEToDArticle,
   "pentatonic-recap": PentatonicRecapArticle,
+  "major-scale-c-to-a": MajorScaleCToAArticle,
+  "major-scale-a-to-g": MajorScaleAToGArticle,
+  "major-scale-g-to-e": MajorScaleGToEArticle,
+  "major-scale-e-to-d": MajorScaleEToDArticle,
+  "major-scale-recap": MajorScaleRecapArticle,
 }
 
 interface ShortArticlePhaseProps {

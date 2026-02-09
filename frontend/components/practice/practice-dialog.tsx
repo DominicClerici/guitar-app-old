@@ -12,7 +12,7 @@ import {
 import NumberTicker from "@/components/ui/number-ticker"
 import SlidingToggle from "@/components/ui/sliding-toggle"
 import { cn } from "@/lib/utils"
-import { BookOpen, Clock, Dices, Dumbbell, Hash, Infinity, Music } from "lucide-react"
+import { BookOpen, Clock, Dices, Dumbbell, Eye, EyeOff, Hash, Infinity, Music } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useCallback, useState } from "react"
 import TimePicker from "../ui/time-picker"
@@ -40,7 +40,26 @@ const SESSION_TYPES = [
   },
 ] as const
 
+const NOTE_VISIBILITY_OPTIONS = [
+  {
+    id: "all" as const,
+    label: "All Notes",
+    icon: Eye,
+  },
+  {
+    id: "roots" as const,
+    label: "Roots Only",
+    icon: Eye,
+  },
+  {
+    id: "hidden" as const,
+    label: "Hidden",
+    icon: EyeOff,
+  },
+]
+
 type SessionType = (typeof SESSION_TYPES)[number]["id"]
+type NoteVisibility = (typeof NOTE_VISIBILITY_OPTIONS)[number]["id"]
 type DialogMode = "learn" | "practice"
 
 interface PracticeDialogProps {
@@ -77,6 +96,7 @@ export default function PracticeDialog({
   const [duration, setDuration] = useState({ minutes: 5, seconds: 0 })
   const [targetShapes, setTargetShapes] = useState(10)
   const [selectedKey, setSelectedKey] = useState<string | "random">("random")
+  const [noteVisibility, setNoteVisibility] = useState<NoteVisibility>("all")
   const [selectedShapes, setSelectedShapes] = useState<number[]>(
     Array.from({ length: shapeCount }, (_, i) => i + 1),
   )
@@ -96,7 +116,6 @@ export default function PracticeDialog({
   }, [shapeCount])
 
   const handleStart = useCallback(() => {
-    // TODO: Task 2 - Add practice mode state management
     const config = {
       mode,
       sessionType,
@@ -109,6 +128,7 @@ export default function PracticeDialog({
       formulaId,
       scaleName: title,
       gradient,
+      ...(formulaType === "caged" && { noteVisibility }),
     }
 
     sessionStorage.setItem("practiceConfig", JSON.stringify(config))
@@ -132,6 +152,7 @@ export default function PracticeDialog({
     title,
     gradient,
     supportLearnMode,
+    noteVisibility,
   ])
 
   return (
@@ -223,6 +244,39 @@ export default function PracticeDialog({
                 </div>
               </div>
             </>
+          )}
+
+          {formulaType === "caged" && (!supportLearnMode || mode === "practice") && (
+            <div className="space-y-3">
+              <label className="text-sm font-medium">Note Visibility</label>
+              <div className="grid grid-cols-3 gap-2">
+                {NOTE_VISIBILITY_OPTIONS.map((option) => {
+                  const Icon = option.icon
+                  const isSelected = noteVisibility === option.id
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => setNoteVisibility(option.id)}
+                      className={cn(
+                        "group relative flex flex-col items-center gap-2 rounded-lg border p-3 text-center transition-all",
+                        isSelected
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border hover:border-primary/50 hover:bg-accent",
+                      )}
+                    >
+                      <Icon
+                        className={cn(
+                          "size-5 transition-transform group-hover:scale-110",
+                          isSelected && "text-primary",
+                        )}
+                      />
+                      <span className="text-sm font-medium">{option.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
           )}
 
           <div className="space-y-3">

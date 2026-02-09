@@ -2,7 +2,7 @@
 
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
-import { Clock, Dices, Hash, Infinity, Music } from "lucide-react"
+import { Clock, Dices, Eye, EyeOff, Hash, Infinity, Music } from "lucide-react"
 
 export type SessionConfig = {
   sessionType: "infinite" | "timed" | "shapes"
@@ -11,10 +11,11 @@ export type SessionConfig = {
   key: string
   shapes: number[]
   startedAt: number
-  formulaType: "scale" | "arpeggio"
+  formulaType: "scale" | "arpeggio" | "caged"
   formulaId: string
   scaleName?: string
   gradient?: string
+  noteVisibility?: "all" | "roots" | "hidden"
 }
 
 interface SessionHeaderProps {
@@ -94,6 +95,23 @@ export default function SessionHeader({ config, className, hideShapes }: Session
                 <span className="ml-1 opacity-80">· {config.targetShapes} shapes</span>
               )}
             </Badge>
+            {config.noteVisibility && (
+              <Badge
+                variant="outline"
+                className="border-white/30 bg-white/10 text-white backdrop-blur-sm"
+              >
+                {config.noteVisibility === "hidden" ? (
+                  <EyeOff className="mr-1 size-3" />
+                ) : (
+                  <Eye className="mr-1 size-3" />
+                )}
+                {config.noteVisibility === "all"
+                  ? "All Notes"
+                  : config.noteVisibility === "roots"
+                    ? "Roots Only"
+                    : "Hidden"}
+              </Badge>
+            )}
           </div>
         </div>
 

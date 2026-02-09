@@ -13,6 +13,8 @@ import {
   CAGED_SHAPE_ORDER,
   CHORD_TONES_QUIZ_QUESTIONS,
   CHORD_TONES_SHAPE_ORDER,
+  MAJOR_SCALE_QUIZ_QUESTIONS,
+  MAJOR_SCALE_SHAPE_ORDER,
   MINOR_PENTATONIC_QUIZ_QUESTIONS,
   MINOR_PENTATONIC_SHAPE_ORDER,
   shuffleQuestions,
@@ -155,17 +157,21 @@ export default function CAGEDPracticeClient({
   const effectivePracticeType = flowConfig?.practiceType ?? practiceType
 
   const shapeOrder =
-    effectivePracticeType === "pentatonic"
-      ? MINOR_PENTATONIC_SHAPE_ORDER
-      : effectivePracticeType === "chordTones"
-        ? CHORD_TONES_SHAPE_ORDER
-        : CAGED_SHAPE_ORDER
+    effectivePracticeType === "majorScale"
+      ? MAJOR_SCALE_SHAPE_ORDER
+      : effectivePracticeType === "pentatonic"
+        ? MINOR_PENTATONIC_SHAPE_ORDER
+        : effectivePracticeType === "chordTones"
+          ? CHORD_TONES_SHAPE_ORDER
+          : CAGED_SHAPE_ORDER
   const quizQuestionSet =
-    effectivePracticeType === "pentatonic"
-      ? MINOR_PENTATONIC_QUIZ_QUESTIONS
-      : effectivePracticeType === "chordTones"
-        ? CHORD_TONES_QUIZ_QUESTIONS
-        : CAGED_QUIZ_QUESTIONS
+    effectivePracticeType === "majorScale"
+      ? MAJOR_SCALE_QUIZ_QUESTIONS
+      : effectivePracticeType === "pentatonic"
+        ? MINOR_PENTATONIC_QUIZ_QUESTIONS
+        : effectivePracticeType === "chordTones"
+          ? CHORD_TONES_QUIZ_QUESTIONS
+          : CAGED_QUIZ_QUESTIONS
 
   // --- Step-based flow state ---
   const [currentStepIndex, setCurrentStepIndex] = useState(initialStepIndex)
@@ -217,11 +223,13 @@ export default function CAGEDPracticeClient({
   const formula = SCALE_FORMULAS.major
   const fullScale = generateFretboardNotes(currentKeyIndex, formula)
   const filteredNotes =
-    effectivePracticeType === "pentatonic"
-      ? getNotesByDegrees(fullScale, [1, 2, 3, 5, 6])
-      : effectivePracticeType === "chordTones"
-        ? getNotesByDegrees(fullScale, [1, 3, 5])
-        : getRootNotes(fullScale)
+    effectivePracticeType === "majorScale"
+      ? fullScale
+      : effectivePracticeType === "pentatonic"
+        ? getNotesByDegrees(fullScale, [1, 2, 3, 5, 6])
+        : effectivePracticeType === "chordTones"
+          ? getNotesByDegrees(fullScale, [1, 3, 5])
+          : getRootNotes(fullScale)
   const currentShapeName = activeShapeOrder[currentShapeIndex]?.shapeName || "C"
   const currentShapeNotes = getCAGEDShapeNotes(
     currentShapeName,
@@ -566,17 +574,21 @@ export default function CAGEDPracticeClient({
   }, [stopListening])
 
   const practiceTitle =
-    effectivePracticeType === "pentatonic"
-      ? "CAGED Pentatonic Practice"
-      : effectivePracticeType === "chordTones"
-        ? "CAGED Chord Tones Practice"
-        : "CAGED Roots Practice"
+    effectivePracticeType === "majorScale"
+      ? "CAGED Major Scale Practice"
+      : effectivePracticeType === "pentatonic"
+        ? "CAGED Pentatonic Practice"
+        : effectivePracticeType === "chordTones"
+          ? "CAGED Chord Tones Practice"
+          : "CAGED Roots Practice"
   const practiceDescription =
-    effectivePracticeType === "pentatonic"
-      ? "Practice identifying and playing the pentatonic notes (1, 2, 3, 5, 6) for each CAGED shape."
-      : effectivePracticeType === "chordTones"
-        ? "Practice identifying and playing the chord tones (1, 3, 5) for each CAGED shape."
-        : "Practice identifying and playing the root notes for each CAGED shape."
+    effectivePracticeType === "majorScale"
+      ? "Practice identifying and playing all 7 major scale notes (1, 2, 3, 4, 5, 6, 7) for each CAGED shape."
+      : effectivePracticeType === "pentatonic"
+        ? "Practice identifying and playing the pentatonic notes (1, 2, 3, 5, 6) for each CAGED shape."
+        : effectivePracticeType === "chordTones"
+          ? "Practice identifying and playing the chord tones (1, 3, 5) for each CAGED shape."
+          : "Practice identifying and playing the root notes for each CAGED shape."
 
   if (subPhase === "article" && currentStep?.type === "article") {
     const articleStep = currentStep as ArticleStep
@@ -887,11 +899,13 @@ export default function CAGEDPracticeClient({
           <h2 className="font-display text-3xl font-bold tracking-tight">Practice Complete!</h2>
           <p className="text-muted-foreground text-lg">
             Great work! You&apos;ve successfully practiced the CAGED{" "}
-            {effectivePracticeType === "pentatonic"
-              ? "pentatonic"
-              : effectivePracticeType === "chordTones"
-                ? "chord tones"
-                : "roots"}{" "}
+            {effectivePracticeType === "majorScale"
+              ? "major scale"
+              : effectivePracticeType === "pentatonic"
+                ? "pentatonic"
+                : effectivePracticeType === "chordTones"
+                  ? "chord tones"
+                  : "roots"}{" "}
             system across multiple keys.
           </p>
         </div>

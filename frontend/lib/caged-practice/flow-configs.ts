@@ -198,6 +198,85 @@ export const PENTATONIC_FLOW: PracticeFlowConfig = {
   ],
 }
 
+export const MAJOR_SCALE_FLOW: PracticeFlowConfig = {
+  practiceType: "majorScale",
+  steps: [
+    {
+      type: "practice",
+      id: "practice-c",
+      keys: [{ keyIndex: 2, rounds: 3 }],
+      mode: "guided",
+      shapes: ["C"],
+    },
+    {
+      type: "article",
+      id: "article-c-to-a",
+      component: "major-scale-c-to-a",
+      retryStepId: "practice-c",
+    },
+    {
+      type: "practice",
+      id: "practice-a",
+      keys: [{ keyIndex: 2, rounds: 3 }],
+      mode: "guided",
+      shapes: ["A"],
+    },
+    {
+      type: "article",
+      id: "article-a-to-g",
+      component: "major-scale-a-to-g",
+      retryStepId: "practice-a",
+    },
+    {
+      type: "practice",
+      id: "practice-g",
+      keys: [{ keyIndex: 2, rounds: 3 }],
+      mode: "guided",
+      shapes: ["G"],
+    },
+    {
+      type: "article",
+      id: "article-g-to-e",
+      component: "major-scale-g-to-e",
+      retryStepId: "practice-g",
+    },
+    {
+      type: "practice",
+      id: "practice-e",
+      keys: [{ keyIndex: 2, rounds: 3 }],
+      mode: "guided",
+      shapes: ["E"],
+    },
+    {
+      type: "article",
+      id: "article-e-to-d",
+      component: "major-scale-e-to-d",
+      retryStepId: "practice-e",
+    },
+    {
+      type: "practice",
+      id: "practice-d",
+      keys: [{ keyIndex: 2, rounds: 3 }],
+      mode: "guided",
+      shapes: ["D"],
+    },
+    {
+      type: "practice",
+      id: "test",
+      keys: [{ keyIndex: 2, rounds: 1 }],
+      mode: "test",
+      showRootsInTest: true,
+    },
+    { type: "quiz", id: "quiz" },
+    {
+      type: "article",
+      id: "article-major-scale-recap",
+      component: "major-scale-recap",
+    },
+    { type: "complete", id: "complete" },
+  ],
+}
+
 export function getFlowConfig(practiceType: string): PracticeFlowConfig {
   switch (practiceType) {
     case "roots":
@@ -206,6 +285,8 @@ export function getFlowConfig(practiceType: string): PracticeFlowConfig {
       return CHORD_TONES_FLOW
     case "pentatonic":
       return PENTATONIC_FLOW
+    case "majorScale":
+      return MAJOR_SCALE_FLOW
     default:
       return CAGED_ROOTS_FLOW
   }

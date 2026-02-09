@@ -4,11 +4,13 @@ import { trpc } from "@/lib/trpc/react"
 import { useCallback, useMemo } from "react"
 import { toast } from "sonner"
 
-export function useModuleProgress(
-  path: "caged",
-  lesson: "cagedRoots" | "chordTones" | "cagedPentatonic",
-) {
-  const progressQuery = trpc.learning.getLessonProgress.useQuery({ path, lesson })
+type LessonId = "cagedRoots" | "chordTones" | "cagedPentatonic" | "majorScale"
+
+export function useModuleProgress(path: "caged", lesson: LessonId) {
+  const progressQuery = trpc.learning.getLessonProgress.useQuery({
+    path,
+    lesson,
+  })
 
   const mutation = trpc.learning.completeModule.useMutation({
     onError: () => {

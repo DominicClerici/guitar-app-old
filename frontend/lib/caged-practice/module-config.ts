@@ -65,6 +65,26 @@ export const LESSON_CONFIGS: Record<string, LessonConfig> = {
       { id: "article-pentatonic-recap", label: "Pentatonic Recap", type: "article" },
     ],
   },
+  majorScale: {
+    lessonId: "majorScale",
+    path: "caged",
+    label: "Major Scale",
+    modules: [
+      { id: "intro-article", label: "Introduction", type: "article" },
+      { id: "practice-c", label: "Practice: C Shape", type: "practice" },
+      { id: "article-c-to-a", label: "C Shape Review", type: "article" },
+      { id: "practice-a", label: "Practice: A Shape", type: "practice" },
+      { id: "article-a-to-g", label: "A Shape Review", type: "article" },
+      { id: "practice-g", label: "Practice: G Shape", type: "practice" },
+      { id: "article-g-to-e", label: "G Shape Review", type: "article" },
+      { id: "practice-e", label: "Practice: E Shape", type: "practice" },
+      { id: "article-e-to-d", label: "E Shape Review", type: "article" },
+      { id: "practice-d", label: "Practice: D Shape", type: "practice" },
+      { id: "test", label: "Test", type: "test" },
+      { id: "quiz", label: "Quiz", type: "quiz" },
+      { id: "article-major-scale-recap", label: "Major Scale Recap", type: "article" },
+    ],
+  },
 }
 
 export function getLessonConfig(module: string): LessonConfig | null {

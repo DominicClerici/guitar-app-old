@@ -4,7 +4,12 @@ import { usersTable } from "./users-db"
 
 export const learningPathsEnum = pgEnum("learning_paths_enum", ["caged"])
 
-export const lessonsEnum = pgEnum("lessons_enum", ["cagedRoots", "chordTones", "cagedPentatonic"])
+export const lessonsEnum = pgEnum("lessons_enum", [
+  "cagedRoots",
+  "chordTones",
+  "cagedPentatonic",
+  "majorScale",
+])
 
 export const learningPathsTable = pgTable("learning_paths", {
   id: uuid("id").primaryKey().defaultRandom(),

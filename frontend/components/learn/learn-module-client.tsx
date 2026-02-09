@@ -21,6 +21,7 @@ import { BookOpen, Play } from "lucide-react"
 
 import CAGEDArticle from "./articles/caged-article"
 import ChordTonesArticle from "./articles/chord-tones-article"
+import MajorScaleArticle from "./articles/major-scale-article"
 import MinorPentatonicArticle from "./articles/minor-pentatonic-article"
 import CAGEDPracticeClient from "./caged-practice-client"
 import LearnHeader from "./learn-header"
@@ -58,6 +59,12 @@ const MODULE_CONFIG: Record<
     gradient: "from-rose-500 via-pink-600 to-fuchsia-700",
     ArticleComponent: MinorPentatonicArticle,
   },
+  majorScale: {
+    title: "Major Scale",
+    subtitle: "Complete scale mastery",
+    gradient: "from-amber-500 via-orange-600 to-red-700",
+    ArticleComponent: MajorScaleArticle,
+  },
 }
 
 interface LearnModuleClientProps {
@@ -77,7 +84,10 @@ export default function LearnModuleClient({ module }: LearnModuleClientProps) {
     completedModuleIds,
     isLoading: progressLoading,
     completeModule,
-  } = useModuleProgress("caged", module as "cagedRoots" | "chordTones" | "cagedPentatonic")
+  } = useModuleProgress(
+    "caged",
+    module as "cagedRoots" | "chordTones" | "cagedPentatonic" | "majorScale",
+  )
 
   const currentModuleId =
     lessonConfig?.modules.find((m) => !completedModuleIds.has(m.id))?.id ?? null
@@ -124,16 +134,20 @@ export default function LearnModuleClient({ module }: LearnModuleClientProps) {
       ? ("pentatonic" as const)
       : module === "chordTones"
         ? ("chordTones" as const)
-        : ("roots" as const)
+        : module === "majorScale"
+          ? ("majorScale" as const)
+          : ("roots" as const)
 
   const formula = SCALE_FORMULAS.major
   const fullScale = generateFretboardNotes(selectedKeyIndex, formula)
   const filteredNotes =
-    practiceType === "pentatonic"
-      ? getNotesByDegrees(fullScale, [1, 2, 3, 5, 6])
-      : practiceType === "chordTones"
-        ? getNotesByDegrees(fullScale, [1, 3, 5])
-        : getRootNotes(fullScale)
+    practiceType === "majorScale"
+      ? fullScale
+      : practiceType === "pentatonic"
+        ? getNotesByDegrees(fullScale, [1, 2, 3, 5, 6])
+        : practiceType === "chordTones"
+          ? getNotesByDegrees(fullScale, [1, 3, 5])
+          : getRootNotes(fullScale)
 
   const displayNotes =
     previewShape === "full"

@@ -2,7 +2,7 @@
 
 import { NOTE_NAMES } from "@/lib/theory"
 
-type PracticeType = "roots" | "chordTones" | "pentatonic"
+type PracticeType = "roots" | "chordTones" | "pentatonic" | "majorScale"
 
 const TOTAL_KEYS = 3
 const GUIDED_ROUNDS = 2
@@ -21,18 +21,22 @@ export default function PracticeInfo({
   handleBackToArticle,
 }: PracticeInfoProps) {
   const practiceTitle =
-    practiceType === "pentatonic"
-      ? "CAGED Pentatonic Practice"
-      : practiceType === "chordTones"
-        ? "CAGED Chord Tones Practice"
-        : "CAGED Roots Practice"
+    practiceType === "majorScale"
+      ? "CAGED Major Scale Practice"
+      : practiceType === "pentatonic"
+        ? "CAGED Pentatonic Practice"
+        : practiceType === "chordTones"
+          ? "CAGED Chord Tones Practice"
+          : "CAGED Roots Practice"
 
   const practiceDescription =
-    practiceType === "pentatonic"
-      ? "Practice identifying and playing the pentatonic notes (1, 2, 3, 5, 6) for each CAGED shape."
-      : practiceType === "chordTones"
-        ? "Practice identifying and playing the chord tones (1, 3, 5) for each CAGED shape."
-        : "Practice identifying and playing the root notes for each CAGED shape."
+    practiceType === "majorScale"
+      ? "Practice identifying and playing all 7 major scale notes (1, 2, 3, 4, 5, 6, 7) for each CAGED shape."
+      : practiceType === "pentatonic"
+        ? "Practice identifying and playing the pentatonic notes (1, 2, 3, 5, 6) for each CAGED shape."
+        : practiceType === "chordTones"
+          ? "Practice identifying and playing the chord tones (1, 3, 5) for each CAGED shape."
+          : "Practice identifying and playing the root notes for each CAGED shape."
 
   return (
     <div className="mx-auto flex max-w-2xl flex-row items-stretch justify-center gap-4">

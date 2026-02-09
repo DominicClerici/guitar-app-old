@@ -4,25 +4,35 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts"
 
 import { Fretboard, type Marker } from "@/components/fretboard/fretboard"
+import GuidedPracticePhase from "@/components/learn/practice-phases/guided-practice-phase"
+import TestPhase from "@/components/learn/practice-phases/test-phase"
 import SessionHeader, { type SessionConfig } from "@/components/practice/session-header"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import {
-  ChartConfig,
+  type ChartConfig,
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart"
 import { useSessionTracking } from "@/hooks/useSessionTracking"
 import { useSpectrogramClassifier } from "@/hooks/useSpectrogramClassifier"
-import { NOTE_NAMES } from "@/lib/audio/utils"
+import { NOTE_NAMES as AUDIO_NOTE_NAMES } from "@/lib/audio/utils"
 import {
-  ARPEGGIO_FORMULAS,
+  CAGED_SHAPE_ORDER,
+  CHORD_TONES_SHAPE_ORDER,
+  MAJOR_SCALE_SHAPE_ORDER,
+  MINOR_PENTATONIC_SHAPE_ORDER,
+} from "@/lib/caged-practice/practice-data"
+import type { NoteVisibility, PracticeType } from "@/lib/caged-practice/types"
+import {
   CAGED_SHAPE_NAMES,
   type FretboardNote,
   generateFretboardNotes,
   getCAGEDShapeNotes,
   getNoteName,
+  getNotesByDegrees,
+  getRootNotes,
   SCALE_FORMULAS,
 } from "@/lib/theory"
 import { trpc } from "@/lib/trpc/react"
@@ -39,26 +49,53 @@ import {
   TrendingUp,
   Zap,
 } from "lucide-react"
+import { ScaleCurrentPositionInfo, ScaleTimerInfo } from "../scales/scales-control-bar"
+import { formatTime } from "../scales/scales-practice-client"
 import SlidingToggle from "../ui/sliding-toggle"
-import { ScaleCurrentPositionInfo, ScaleTimerInfo } from "./scales-control-bar"
 
 type PracticeState = "idle" | "countdown" | "practicing" | "paused" | "between-shapes" | "complete"
+
+type CagedSessionConfig = SessionConfig & {
+  mode: "practice"
+  noteVisibility: NoteVisibility
+}
 
 function getKeyIndex(key: string): number {
   if (key === "random") {
     return Math.floor(Math.random() * 12)
   }
-  const index = NOTE_NAMES.indexOf(key)
+  const index = AUDIO_NOTE_NAMES.indexOf(key)
   return index >= 0 ? index : 0
 }
 
-export function formatTime(totalSeconds: number): string {
-  const mins = Math.floor(totalSeconds / 60)
-  const secs = totalSeconds % 60
-  return `${mins}:${secs.toString().padStart(2, "0")}`
+function getPracticeType(formulaId: string): PracticeType {
+  switch (formulaId) {
+    case "cagedRoots":
+      return "roots"
+    case "chordTones":
+      return "chordTones"
+    case "cagedPentatonic":
+      return "pentatonic"
+    case "majorScale":
+      return "majorScale"
+    default:
+      return "roots"
+  }
 }
 
-// Chart configurations
+function getShapeOrder(practiceType: PracticeType) {
+  switch (practiceType) {
+    case "roots":
+      return CAGED_SHAPE_ORDER
+    case "chordTones":
+      return CHORD_TONES_SHAPE_ORDER
+    case "pentatonic":
+      return MINOR_PENTATONIC_SHAPE_ORDER
+    case "majorScale":
+      return MAJOR_SCALE_SHAPE_ORDER
+  }
+}
+
 const speedChartConfig = {
   notes: {
     label: "Notes",
@@ -129,7 +166,6 @@ function SessionReviewScreen({
 
   return (
     <div className="flex flex-col gap-8 py-8">
-      {/* Header with success icon */}
       <div className="flex flex-col items-center gap-4">
         <div className="relative">
           <div className="bg-primary/20 absolute inset-0 animate-ping rounded-full opacity-75" />
@@ -143,9 +179,7 @@ function SessionReviewScreen({
         </div>
       </div>
 
-      {/* Primary Stats Row */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        {/* Duration */}
         <Card className="bg-card/50 flex flex-col gap-2 p-4">
           <div className="flex items-center gap-2">
             <div className="bg-primary/10 flex size-8 items-center justify-center rounded-lg">
@@ -160,7 +194,6 @@ function SessionReviewScreen({
           </span>
         </Card>
 
-        {/* Shapes Completed */}
         <Card className="bg-card/50 flex flex-col gap-2 p-4">
           <div className="flex items-center gap-2">
             <div className="bg-chart-2/10 flex size-8 items-center justify-center rounded-lg">
@@ -175,7 +208,6 @@ function SessionReviewScreen({
           </span>
         </Card>
 
-        {/* Avg Notes per 5s */}
         <Card className="bg-card/50 flex flex-col gap-2 p-4">
           <div className="flex items-center gap-2">
             <div className="bg-chart-3/10 flex size-8 items-center justify-center rounded-lg">
@@ -190,7 +222,6 @@ function SessionReviewScreen({
           </span>
         </Card>
 
-        {/* Peak Performance */}
         <Card className="bg-card/50 flex flex-col gap-2 p-4">
           <div className="flex items-center gap-2">
             <div className="bg-chart-4/10 flex size-8 items-center justify-center rounded-lg">
@@ -204,9 +235,7 @@ function SessionReviewScreen({
         </Card>
       </div>
 
-      {/* Secondary Stats Row */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
-        {/* Total Notes */}
         <Card className="bg-card/50 flex flex-col gap-2 p-4">
           <div className="flex items-center gap-2">
             <div className="bg-chart-5/10 flex size-8 items-center justify-center rounded-lg">
@@ -219,7 +248,6 @@ function SessionReviewScreen({
           <span className="font-display text-2xl font-bold tabular-nums">{totalNotesPlayed}</span>
         </Card>
 
-        {/* Avg Time per Shape */}
         <Card className="bg-card/50 flex flex-col gap-2 p-4">
           <div className="flex items-center gap-2">
             <div className="bg-chart-1/10 flex size-8 items-center justify-center rounded-lg">
@@ -234,7 +262,6 @@ function SessionReviewScreen({
           </span>
         </Card>
 
-        {/* Notes per Minute */}
         <Card className="bg-card/50 col-span-2 flex flex-col gap-2 p-4 md:col-span-1">
           <div className="flex items-center gap-2">
             <div className="bg-primary/10 flex size-8 items-center justify-center rounded-lg">
@@ -250,9 +277,7 @@ function SessionReviewScreen({
         </Card>
       </div>
 
-      {/* Charts Section */}
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* Speed Over Time Chart */}
         <Card className="flex flex-col gap-4 p-5">
           <div className="flex items-center justify-between">
             <div>
@@ -266,7 +291,7 @@ function SessionReviewScreen({
           <ChartContainer config={speedChartConfig} className="h-[200px] w-full">
             <AreaChart data={speedWindowsData} margin={{ left: 0, right: 0, top: 10 }}>
               <defs>
-                <linearGradient id="speedGradient" x1="0" y1="0" x2="0" y2="1">
+                <linearGradient id="cagedSpeedGradient" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="var(--chart-1)" stopOpacity={0.3} />
                   <stop offset="95%" stopColor="var(--chart-1)" stopOpacity={0} />
                 </linearGradient>
@@ -294,13 +319,12 @@ function SessionReviewScreen({
                 dataKey="notes"
                 stroke="var(--chart-1)"
                 strokeWidth={2}
-                fill="url(#speedGradient)"
+                fill="url(#cagedSpeedGradient)"
               />
             </AreaChart>
           </ChartContainer>
         </Card>
 
-        {/* Shape Completion Times Chart */}
         <Card className="flex flex-col gap-4 p-5">
           <div className="flex items-center justify-between">
             <div>
@@ -341,7 +365,6 @@ function SessionReviewScreen({
         </Card>
       </div>
 
-      {/* Done Button */}
       <div className="flex justify-center pt-4">
         <Button
           onClick={onDone}
@@ -355,8 +378,10 @@ function SessionReviewScreen({
   )
 }
 
-export default function ScalesPracticeClient() {
+export default function CagedPracticeSessionClient() {
   const [sessionConfig, setSessionConfig] = useState<SessionConfig | null>(null)
+  const [noteVisibility, setNoteVisibility] = useState<NoteVisibility>("all")
+  const [practiceType, setPracticeType] = useState<PracticeType>("roots")
   const [selectedKeyIndex, setSelectedKeyIndex] = useState(0)
   const [activeShapes, setActiveShapes] = useState<number[]>([1, 2, 3, 4, 5])
 
@@ -400,10 +425,12 @@ export default function ScalesPracticeClient() {
   useEffect(() => {
     const stored = sessionStorage.getItem("practiceConfig")
     if (stored) {
-      const config = JSON.parse(stored) as SessionConfig
+      const config = JSON.parse(stored) as CagedSessionConfig
       setSessionConfig(config)
       setSelectedKeyIndex(getKeyIndex(config.key))
       setActiveShapes(config.shapes)
+      setNoteVisibility(config.noteVisibility || "all")
+      setPracticeType(getPracticeType(config.formulaId))
       if (config.sessionType === "timed" && config.duration) {
         const totalSecs = config.duration.minutes * 60 + config.duration.seconds
         setRemainingSeconds(totalSecs)
@@ -416,16 +443,25 @@ export default function ScalesPracticeClient() {
     practiceStateRef.current = practiceState
   }, [practiceState])
 
-  const formula =
-    sessionConfig?.formulaType === "arpeggio"
-      ? ARPEGGIO_FORMULAS[sessionConfig.formulaId]
-      : SCALE_FORMULAS[sessionConfig?.formulaId ?? "major"]
-  const fullScale = formula ? generateFretboardNotes(selectedKeyIndex, formula) : []
+  const shapeOrder = getShapeOrder(practiceType)
+
+  const formula = SCALE_FORMULAS.major
+  const fullScale = generateFretboardNotes(selectedKeyIndex, formula)
+  const filteredNotes =
+    practiceType === "majorScale"
+      ? fullScale
+      : practiceType === "pentatonic"
+        ? getNotesByDegrees(fullScale, [1, 2, 3, 5, 6])
+        : practiceType === "chordTones"
+          ? getNotesByDegrees(fullScale, [1, 3, 5])
+          : getRootNotes(fullScale)
+
   const cagedShapeNames = activeShapes.map((i) => CAGED_SHAPE_NAMES[i - 1])
   const currentShapeName = cagedShapeNames[currentShapeIndex] || CAGED_SHAPE_NAMES[0]
+
   const currentShapeNotes = getCAGEDShapeNotes(
     currentShapeName,
-    fullScale,
+    filteredNotes,
     selectedKeyIndex,
     undefined,
     formula,
@@ -500,6 +536,9 @@ export default function ScalesPracticeClient() {
         clearTimerInterval()
         stopTrackingSession()
       } else if (nextIndex >= cagedShapeNames.length) {
+        if (sessionConfig?.key === "random") {
+          setSelectedKeyIndex(Math.floor(Math.random() * 12))
+        }
         setCurrentShapeIndex(0)
         setPlayedNoteKeys(new Set())
         setPracticeState("practicing")
@@ -523,6 +562,8 @@ export default function ScalesPracticeClient() {
     completeShapeTracking,
     startShapeTimer,
     stopTrackingSession,
+    currentShapeName,
+    playedNoteKeys.size,
   ])
 
   useEffect(() => {
@@ -590,7 +631,7 @@ export default function ScalesPracticeClient() {
       duration,
       type: "scales",
       timingMode: sessionConfig.sessionType,
-      keys: [NOTE_NAMES[selectedKeyIndex]],
+      keys: [AUDIO_NOTE_NAMES[selectedKeyIndex]],
       sessionData: {
         type: "scales",
         key: selectedKeyIndex,
@@ -692,10 +733,10 @@ export default function ScalesPracticeClient() {
 
   const previewNotes =
     previewShape === "full"
-      ? fullScale
+      ? filteredNotes
       : getCAGEDShapeNotes(
           previewShape as "C" | "A" | "G" | "E" | "D",
-          fullScale,
+          filteredNotes,
           selectedKeyIndex,
           undefined,
           formula,
@@ -739,13 +780,11 @@ export default function ScalesPracticeClient() {
     <div className="flex flex-col gap-6">
       <SessionHeader config={sessionConfig} hideShapes={isInSession} />
 
-      {/* Countdown State */}
       {practiceState === "countdown" && (
         <div
           onClick={cancelCountdown}
           className="bg-background/60 absolute inset-0 z-50 flex flex-col items-center justify-center gap-4"
         >
-          {/* Animated rings */}
           <div className="absolute inset-0 flex items-center justify-center">
             <div
               className="border-primary/20 absolute size-32 animate-ping rounded-full border-2"
@@ -780,15 +819,19 @@ export default function ScalesPracticeClient() {
       {practiceState !== "complete" && (
         <div className="relative z-10 mb-12">
           <div className="bg-card relative z-10 h-24 rounded-2xl border">
-            {/* Subtle pattern overlay */}
             <div className="absolute inset-0 opacity-[0.03]">
               <svg className="h-full w-full" preserveAspectRatio="none">
                 <defs>
-                  <pattern id="practice-dots" patternUnits="userSpaceOnUse" width="20" height="20">
+                  <pattern
+                    id="caged-practice-dots"
+                    patternUnits="userSpaceOnUse"
+                    width="20"
+                    height="20"
+                  >
                     <circle cx="2" cy="2" r="1" fill="currentColor" />
                   </pattern>
                 </defs>
-                <rect width="100%" height="100%" fill="url(#practice-dots)" />
+                <rect width="100%" height="100%" fill="url(#caged-practice-dots)" />
               </svg>
             </div>
 
@@ -798,7 +841,6 @@ export default function ScalesPracticeClient() {
               practiceState === "countdown" ||
               practiceState === "between-shapes") && (
               <div className="relative z-10 grid h-full grid-cols-3 items-center gap-4 p-5">
-                {/* Left section - Current shape and progress */}
                 <ScaleCurrentPositionInfo
                   shapeName={
                     practiceState === "countdown" || practiceState === "idle"
@@ -818,7 +860,6 @@ export default function ScalesPracticeClient() {
                   className="justify-self-start"
                 />
 
-                {/* Center section - Timer/Counter based on mode */}
                 <ScaleTimerInfo
                   timer={sessionConfig?.sessionType === "timed" ? remainingSeconds : elapsedSeconds}
                   sessionType={sessionConfig?.sessionType || "infinite"}
@@ -833,7 +874,6 @@ export default function ScalesPracticeClient() {
                   className="justify-self-center"
                 />
 
-                {/* Right section - Controls */}
                 {(practiceState === "practicing" || practiceState === "paused") && (
                   <div className="flex items-center gap-2 justify-self-end">
                     {practiceState === "practicing" ? (
@@ -867,7 +907,6 @@ export default function ScalesPracticeClient() {
               </div>
             )}
           </div>
-          {/* Overlay status messages */}
           <div
             className={`bg-accent left absolute bottom-0 w-full rounded-b-2xl border px-5 pt-8 pb-3 text-center transition-all duration-300 ${practiceState === "paused" ? "translate-y-12 opacity-100" : "translate-y-0 opacity-0"}`}
           >
@@ -878,8 +917,6 @@ export default function ScalesPracticeClient() {
           <div
             className={`bg-accent left absolute bottom-0 w-full rounded-b-2xl border px-5 pt-8 pb-3 text-center transition-all duration-300 ${practiceState === "between-shapes" ? "translate-y-14 opacity-100" : "translate-y-0 opacity-0"}`}
           >
-            {/* Between Shapes State */}
-
             <div className="flex items-center justify-center gap-2">
               <div className="from-primary/20 to-primary/5 flex size-8 items-center justify-center rounded-full bg-gradient-to-br">
                 <CheckIcon className="text-primary size-5" />
@@ -893,7 +930,6 @@ export default function ScalesPracticeClient() {
         </div>
       )}
 
-      {/* Complete State - Enhanced Review Screen */}
       {practiceState === "complete" && (
         <SessionReviewScreen
           sessionConfig={sessionConfig}
@@ -908,21 +944,55 @@ export default function ScalesPracticeClient() {
         />
       )}
 
-      {/* Fretboard */}
-      {practiceState !== "complete" && (
+      {practiceState !== "complete" && noteVisibility === "all" && isInSession && (
         <div
           className={cn(
             "transition-opacity duration-300",
             (practiceState === "paused" || practiceState === "countdown") && "opacity-50",
           )}
         >
-          <Fretboard
-            markers={practiceState === "countdown" ? [] : markers}
-            showDegree={showDegree}
-            className="w-full"
+          <GuidedPracticePhase
+            currentShapeName={currentShapeName}
+            currentShapeNotes={currentShapeNotes}
+            playedNotes={playedNoteKeys}
+            wrongNote={null}
+            currentRound={1}
+            totalRounds={1}
+            currentShapeIndex={currentShapeIndex}
+            totalShapes={cagedShapeNames.length}
+            practiceType={practiceType}
           />
         </div>
       )}
+
+      {practiceState !== "complete" &&
+        (noteVisibility === "roots" || noteVisibility === "hidden") &&
+        isInSession && (
+          <div
+            className={cn(
+              "transition-opacity duration-300",
+              (practiceState === "paused" || practiceState === "countdown") && "opacity-50",
+            )}
+          >
+            <TestPhase
+              currentShapeName={currentShapeName}
+              currentShapeNotes={currentShapeNotes}
+              playedNotes={playedNoteKeys}
+              wrongNote={null}
+              currentShapeIndex={currentShapeIndex}
+              totalShapes={cagedShapeNames.length}
+              practiceType={practiceType}
+              showRoots={noteVisibility === "roots"}
+            />
+          </div>
+        )}
+
+      {practiceState === "idle" && (
+        <div className="transition-opacity duration-300">
+          <Fretboard markers={markers} showDegree={showDegree} className="w-full" />
+        </div>
+      )}
+
       {practiceState === "idle" && (
         <div className="flex flex-col items-center gap-2">
           <p className="text-muted-foreground text-xs">Preview</p>

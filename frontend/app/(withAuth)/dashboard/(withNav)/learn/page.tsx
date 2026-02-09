@@ -45,6 +45,16 @@ const caged: PracticeItem[] = [
     formulaId: "cagedPentatonic",
     hideShapes: true,
   },
+  {
+    title: "Major Scale",
+    subtitle: "Complete scale mastery",
+    href: "/dashboard/practice/caged",
+    gradient: "from-amber-500 via-orange-600 to-red-700",
+    pattern: "major-scale",
+    formulaType: "caged",
+    formulaId: "majorScale",
+    hideShapes: true,
+  },
 ]
 
 function WavePattern({ className }: { className?: string }) {

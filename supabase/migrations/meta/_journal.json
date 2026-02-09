@@ -15,6 +15,13 @@
       "when": 1770657491127,
       "tag": "0001_spicy_longshot",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1770669242899,
+      "tag": "0002_wild_venus",
+      "breakpoints": true
     }
   ]
 }

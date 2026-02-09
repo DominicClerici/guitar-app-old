@@ -24,6 +24,14 @@ export const MINOR_PENTATONIC_SHAPE_ORDER: ShapeRootConfig[] = [
   { shapeName: "D", rootCount: 10 },
 ]
 
+export const MAJOR_SCALE_SHAPE_ORDER: ShapeRootConfig[] = [
+  { shapeName: "C", rootCount: 14 },
+  { shapeName: "A", rootCount: 14 },
+  { shapeName: "G", rootCount: 17 },
+  { shapeName: "E", rootCount: 13 },
+  { shapeName: "D", rootCount: 12 },
+]
+
 export const CAGED_QUIZ_QUESTIONS: QuizQuestion[] = [
   {
     id: "caged-order",
@@ -261,6 +269,86 @@ export const MINOR_PENTATONIC_QUIZ_QUESTIONS: QuizQuestion[] = [
       { id: "d", label: "6th and 7th" },
     ],
     correctAnswerId: "b",
+  },
+]
+
+export const MAJOR_SCALE_QUIZ_QUESTIONS: QuizQuestion[] = [
+  {
+    id: "major-scale-degrees",
+    questionText: "How many notes are in the major scale?",
+    options: [
+      { id: "a", label: "5 notes" },
+      { id: "b", label: "6 notes" },
+      { id: "c", label: "7 notes" },
+      { id: "d", label: "8 notes" },
+    ],
+    correctAnswerId: "c",
+  },
+  {
+    id: "major-scale-additions",
+    questionText: "Which scale degrees does the major scale add to the pentatonic?",
+    options: [
+      { id: "a", label: "2nd and 6th" },
+      { id: "b", label: "4th and 7th" },
+      { id: "c", label: "3rd and 5th" },
+      { id: "d", label: "2nd and 7th" },
+    ],
+    correctAnswerId: "b",
+  },
+  {
+    id: "major-scale-tension",
+    questionText: "Why are the 4th and 7th degrees considered tension notes?",
+    options: [
+      { id: "a", label: "They are the loudest notes" },
+      { id: "b", label: "They create half-step intervals that want to resolve" },
+      { id: "c", label: "They are played on the thickest strings" },
+      { id: "d", label: "They only work in minor keys" },
+    ],
+    correctAnswerId: "b",
+  },
+  {
+    id: "major-scale-formula",
+    questionText: "What is the interval pattern of the major scale?",
+    options: [
+      { id: "a", label: "W-W-H-W-W-W-H" },
+      { id: "b", label: "W-H-W-W-H-W-W" },
+      { id: "c", label: "W-W-W-H-W-W-H" },
+      { id: "d", label: "H-W-W-W-H-W-W" },
+    ],
+    correctAnswerId: "a",
+  },
+  {
+    id: "major-scale-pentatonic-relationship",
+    questionText: "What is the relationship between the pentatonic and major scale?",
+    options: [
+      { id: "a", label: "They share no common notes" },
+      { id: "b", label: "The pentatonic is the major scale with the 4th and 7th removed" },
+      { id: "c", label: "The pentatonic has more notes" },
+      { id: "d", label: "They are identical scales" },
+    ],
+    correctAnswerId: "b",
+  },
+  {
+    id: "fourth-degree-clash",
+    questionText: "The 4th degree creates a half-step clash with which chord tone?",
+    options: [
+      { id: "a", label: "The root" },
+      { id: "b", label: "The 5th" },
+      { id: "c", label: "The 3rd" },
+      { id: "d", label: "The 2nd" },
+    ],
+    correctAnswerId: "c",
+  },
+  {
+    id: "seventh-degree-resolution",
+    questionText: "The 7th degree has a strong tendency to resolve to which note?",
+    options: [
+      { id: "a", label: "The 5th" },
+      { id: "b", label: "The 3rd" },
+      { id: "c", label: "The root" },
+      { id: "d", label: "The 6th" },
+    ],
+    correctAnswerId: "c",
   },
 ]
 

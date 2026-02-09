@@ -15,7 +15,7 @@ interface TestPhaseProps {
   wrongNoteFading?: boolean
   currentShapeIndex: number
   totalShapes: number
-  practiceType?: "roots" | "chordTones" | "pentatonic"
+  practiceType?: "roots" | "chordTones" | "pentatonic" | "majorScale"
   showRoots?: boolean
 }
 
@@ -37,7 +37,12 @@ export default function TestPhase({
     const getMarkerType = () => {
       if (isPlayed) return "played"
       if (showRoots && note.degree === 1) return "root"
-      if ((practiceType === "chordTones" || practiceType === "pentatonic") && note.degree !== 1)
+      if (
+        (practiceType === "chordTones" ||
+          practiceType === "pentatonic" ||
+          practiceType === "majorScale") &&
+        note.degree !== 1
+      )
         return "chord-tone-hidden"
       return "root-hidden"
     }
@@ -148,11 +153,13 @@ export default function TestPhase({
 
       <p className="text-muted-foreground text-center text-sm">
         Play the{" "}
-        {practiceType === "pentatonic"
-          ? "pentatonic notes"
-          : practiceType === "chordTones"
-            ? "chord tones"
-            : "root notes"}{" "}
+        {practiceType === "majorScale"
+          ? "scale notes"
+          : practiceType === "pentatonic"
+            ? "pentatonic notes"
+            : practiceType === "chordTones"
+              ? "chord tones"
+              : "root notes"}{" "}
         from memory - they will appear when you find them
       </p>
     </div>

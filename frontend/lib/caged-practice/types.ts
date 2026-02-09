@@ -55,7 +55,7 @@ export type PracticeSession = {
   totalTime: number
 }
 
-export type PracticeType = "roots" | "chordTones" | "pentatonic"
+export type PracticeType = "roots" | "chordTones" | "pentatonic" | "majorScale"
 
 export type PracticeSessionKey = {
   keyIndex: number
@@ -103,3 +103,5 @@ export type SubPhase =
   | "article"
   | "quiz"
   | "complete"
+
+export type NoteVisibility = "all" | "roots" | "hidden"

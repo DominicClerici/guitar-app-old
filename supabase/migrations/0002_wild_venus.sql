@@ -1,0 +1,1 @@
+ALTER TYPE "public"."lessons_enum" ADD VALUE 'majorScale';

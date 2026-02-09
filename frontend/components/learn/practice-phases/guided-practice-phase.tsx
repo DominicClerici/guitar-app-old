@@ -17,7 +17,7 @@ interface GuidedPracticePhaseProps {
   totalRounds: number
   currentShapeIndex: number
   totalShapes: number
-  practiceType?: "roots" | "chordTones" | "pentatonic"
+  practiceType?: "roots" | "chordTones" | "pentatonic" | "majorScale"
 }
 
 export default function GuidedPracticePhase({
@@ -38,7 +38,12 @@ export default function GuidedPracticePhase({
 
     const getMarkerType = () => {
       if (isPlayed) return "played"
-      if ((practiceType === "chordTones" || practiceType === "pentatonic") && note.degree !== 1)
+      if (
+        (practiceType === "chordTones" ||
+          practiceType === "pentatonic" ||
+          practiceType === "majorScale") &&
+        note.degree !== 1
+      )
         return "chord-tone"
       return "root"
     }
@@ -146,11 +151,13 @@ export default function GuidedPracticePhase({
 
       <p className="text-muted-foreground text-center text-sm">
         Play each highlighted{" "}
-        {practiceType === "pentatonic"
-          ? "pentatonic note"
-          : practiceType === "chordTones"
-            ? "chord tone"
-            : "root note"}{" "}
+        {practiceType === "majorScale"
+          ? "scale note"
+          : practiceType === "pentatonic"
+            ? "pentatonic note"
+            : practiceType === "chordTones"
+              ? "chord tone"
+              : "root note"}{" "}
         on your guitar to progress
       </p>
     </div>
