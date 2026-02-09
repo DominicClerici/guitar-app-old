@@ -38,7 +38,7 @@ export default function SpecTestPage() {
     isModelLoaded,
     captureDebugData,
   } = useSpectrogramClassifier({
-    minConfidence: 0.01,
+    minConfidence: 0.95,
   })
 
   const handleCaptureData = () => {

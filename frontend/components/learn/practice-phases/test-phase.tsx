@@ -12,6 +12,7 @@ interface TestPhaseProps {
   currentShapeNotes: FretboardNote[]
   playedNotes: Set<string>
   wrongNote: { stringIndex: number; fretIndex: number } | null
+  wrongNoteFading?: boolean
   currentShapeIndex: number
   totalShapes: number
   practiceType?: "roots" | "chordTones" | "pentatonic"
@@ -22,6 +23,7 @@ export default function TestPhase({
   currentShapeNotes,
   playedNotes,
   wrongNote,
+  wrongNoteFading = false,
   currentShapeIndex,
   totalShapes,
   practiceType = "roots",
@@ -50,7 +52,7 @@ export default function TestPhase({
     markers.push({
       stringIndex: wrongNote.stringIndex,
       fretIndex: wrongNote.fretIndex,
-      type: "wrong",
+      type: wrongNoteFading ? "wrong-fading" : "wrong",
       label: "",
     })
   }

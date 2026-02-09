@@ -12,6 +12,7 @@ interface GuidedPracticePhaseProps {
   currentShapeNotes: FretboardNote[]
   playedNotes: Set<string>
   wrongNote: { stringIndex: number; fretIndex: number } | null
+  wrongNoteFading?: boolean
   currentRound: number
   totalRounds: number
   currentShapeIndex: number
@@ -24,6 +25,7 @@ export default function GuidedPracticePhase({
   currentShapeNotes,
   playedNotes,
   wrongNote,
+  wrongNoteFading = false,
   currentRound,
   totalRounds,
   currentShapeIndex,
@@ -54,7 +56,7 @@ export default function GuidedPracticePhase({
     markers.push({
       stringIndex: wrongNote.stringIndex,
       fretIndex: wrongNote.fretIndex,
-      type: "wrong",
+      type: wrongNoteFading ? "wrong-fading" : "wrong",
       label: "",
     })
   }

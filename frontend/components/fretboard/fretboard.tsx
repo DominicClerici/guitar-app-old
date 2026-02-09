@@ -25,6 +25,7 @@ type MarkerType =
   | "chord-tone-hidden"
   | "played"
   | "wrong"
+  | "wrong-fading"
 
 type Marker = {
   stringIndex: number
@@ -68,12 +69,12 @@ export function Fretboard({
     const isDisabled = type.includes("disabled")
     const isRoot = type.includes("root")
     const isChordTone = type.includes("chord-tone")
-    if (type === "wrong") {
+    if (type === "wrong" || type === "wrong-fading") {
       return {
         fill: "var(--destructive)",
         textColor: "var(--destructive-foreground)",
         borderColor: "var(--destructive)",
-        opacity: 1,
+        opacity: type === "wrong-fading" ? 0 : 1,
         isRoot: false,
       }
     }
@@ -235,12 +236,13 @@ export function Fretboard({
       const cy = getStringY(marker.stringIndex)
       const displayLabel =
         showDegree && marker.degree !== undefined ? String(marker.degree) : marker.label
-      const showLabel = marker.type !== "wrong"
+      const showLabel = marker.type !== "wrong" && marker.type !== "wrong-fading"
+      const isFadingOut = marker.type === "wrong-fading"
 
       return (
         <g
           key={`marker-${marker.stringIndex}-${marker.fretIndex}-${index}`}
-          className="animate-marker-in"
+          className={isFadingOut ? "animate-marker-out" : "animate-marker-in"}
           style={{ "--marker-opacity": style.opacity } as React.CSSProperties}
         >
           {style.isRoot ? (

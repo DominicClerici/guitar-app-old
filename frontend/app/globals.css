@@ -306,6 +306,19 @@
   animation: marker-fade-in 250ms ease-out forwards;
 }
 
+@keyframes marker-fade-out {
+  from {
+    opacity: var(--marker-opacity, 1);
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.animate-marker-out {
+  animation: marker-fade-out 300ms ease-out forwards;
+}
+
 .scrollbar-hide {
   -ms-overflow-style: none;
   scrollbar-width: none;

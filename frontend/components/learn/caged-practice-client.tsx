@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 
 import { Button } from "@/components/ui/button"
-import { useStringClassifier, type StablePrediction } from "@/hooks/useStringClassifier"
+import {
+  useSpectrogramClassifier,
+  type SpectrogramPredictionResult,
+} from "@/hooks/useSpectrogramClassifier"
 import {
   CAGED_QUIZ_QUESTIONS,
   CAGED_SHAPE_ORDER,
@@ -33,6 +36,10 @@ import TestPhase from "./practice-phases/test-phase"
 const TOTAL_KEYS = 3
 const GUIDED_ROUNDS = 2
 const QUIZ_QUESTION_COUNT = 5
+const WRONG_NOTE_CONSECUTIVE_THRESHOLD = 5
+const CORRECT_NOTE_CONSECUTIVE_THRESHOLD = 2
+const WRONG_NOTE_FADE_MS = 300
+const WRONG_NOTE_IDLE_TIMEOUT_MS = 1000
 
 type PracticeType = "roots" | "chordTones" | "pentatonic"
 
@@ -132,6 +139,7 @@ export default function CAGEDPracticeClient({
   const [wrongNote, setWrongNote] = useState<{ stringIndex: number; fretIndex: number } | null>(
     null,
   )
+  const [wrongNoteFading, setWrongNoteFading] = useState(false)
   const [countdownValue, setCountdownValue] = useState(5)
   const [completedShapeName, setCompletedShapeName] = useState<string | null>(null)
   const [quizQuestions, setQuizQuestions] = useState(() =>
@@ -142,6 +150,11 @@ export default function CAGEDPracticeClient({
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const transitionTimerRef = useRef<NodeJS.Timeout | null>(null)
   const wrongNoteTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const wrongNoteFadeTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const wrongNoteConsecutiveRef = useRef(0)
+  const lastWrongNoteRef = useRef<string | null>(null)
+  const correctNoteConsecutiveRef = useRef(0)
+  const lastCorrectNoteRef = useRef<string | null>(null)
   const phaseRef = useRef(phase)
 
   useEffect(() => {
@@ -170,49 +183,90 @@ export default function CAGEDPracticeClient({
     currentShapeNotesRef.current = currentShapeNotes
   }, [currentShapeNotes])
 
-  const handleStringDetected = useCallback((prediction: StablePrediction) => {
+  const handleStringDetected = useCallback((prediction: SpectrogramPredictionResult) => {
     if (phaseRef.current !== "guided" && phaseRef.current !== "test") return
 
     const { stringIndex, fret } = prediction
     const shapeNotes = currentShapeNotesRef.current
+    const noteKey = `${stringIndex}-${fret}`
+
+    const fadeOutWrongNote = () => {
+      setWrongNoteFading(true)
+      if (wrongNoteFadeTimerRef.current) clearTimeout(wrongNoteFadeTimerRef.current)
+      wrongNoteFadeTimerRef.current = setTimeout(() => {
+        setWrongNote(null)
+        setWrongNoteFading(false)
+        wrongNoteFadeTimerRef.current = null
+      }, WRONG_NOTE_FADE_MS)
+    }
 
     const matchingNote = shapeNotes.find(
       (note) => note.stringIndex === stringIndex && note.fretIndex === fret,
     )
 
     if (matchingNote) {
-      setPlayedNotes((prev) => {
-        const next = new Set(prev)
-        next.add(`${stringIndex}-${fret}`)
-        return next
-      })
-      setWrongNote(null)
+      if (lastCorrectNoteRef.current === noteKey) {
+        correctNoteConsecutiveRef.current++
+      } else {
+        correctNoteConsecutiveRef.current = 1
+        lastCorrectNoteRef.current = noteKey
+      }
+
+      if (correctNoteConsecutiveRef.current >= CORRECT_NOTE_CONSECUTIVE_THRESHOLD) {
+        setPlayedNotes((prev) => {
+          const next = new Set(prev)
+          next.add(noteKey)
+          return next
+        })
+      }
+
+      wrongNoteConsecutiveRef.current = 0
+      lastWrongNoteRef.current = null
       if (wrongNoteTimerRef.current) {
         clearTimeout(wrongNoteTimerRef.current)
         wrongNoteTimerRef.current = null
       }
+      fadeOutWrongNote()
     } else {
-      setWrongNote({ stringIndex, fretIndex: fret })
-      if (wrongNoteTimerRef.current) {
-        clearTimeout(wrongNoteTimerRef.current)
+      correctNoteConsecutiveRef.current = 0
+      lastCorrectNoteRef.current = null
+
+      if (lastWrongNoteRef.current === noteKey) {
+        wrongNoteConsecutiveRef.current++
+      } else {
+        wrongNoteConsecutiveRef.current = 1
+        lastWrongNoteRef.current = noteKey
+        fadeOutWrongNote()
       }
-      wrongNoteTimerRef.current = setTimeout(() => {
-        setWrongNote(null)
-        wrongNoteTimerRef.current = null
-      }, 1000)
+
+      if (wrongNoteConsecutiveRef.current > WRONG_NOTE_CONSECUTIVE_THRESHOLD) {
+        if (wrongNoteFadeTimerRef.current) {
+          clearTimeout(wrongNoteFadeTimerRef.current)
+          wrongNoteFadeTimerRef.current = null
+        }
+        setWrongNoteFading(false)
+        setWrongNote({ stringIndex, fretIndex: fret })
+
+        if (wrongNoteTimerRef.current) {
+          clearTimeout(wrongNoteTimerRef.current)
+        }
+        wrongNoteTimerRef.current = setTimeout(() => {
+          fadeOutWrongNote()
+          wrongNoteTimerRef.current = null
+        }, WRONG_NOTE_IDLE_TIMEOUT_MS)
+      }
     }
   }, [])
 
-  const { startListening, stopListening, stablePrediction } = useStringClassifier({
-    productionMode: true,
-    minConfidence: 0.5,
+  const { startListening, stopListening, prediction: spectrogramPrediction } = useSpectrogramClassifier({
+    minConfidence: 0.97,
   })
 
   useEffect(() => {
-    if (stablePrediction && stablePrediction.confidence > 0.5) {
-      handleStringDetected(stablePrediction)
+    if (spectrogramPrediction && spectrogramPrediction.confidence > 0.97) {
+      handleStringDetected(spectrogramPrediction)
     }
-  }, [stablePrediction, handleStringDetected])
+  }, [spectrogramPrediction, handleStringDetected])
 
   const getRandomKeyExcluding = useCallback((excludedKeys: number[]) => {
     const availableKeys = NOTE_NAMES.map((_, i) => i).filter((key) => !excludedKeys.includes(key))
@@ -353,6 +407,9 @@ export default function CAGEDPracticeClient({
       }
       if (wrongNoteTimerRef.current) {
         clearTimeout(wrongNoteTimerRef.current)
+      }
+      if (wrongNoteFadeTimerRef.current) {
+        clearTimeout(wrongNoteFadeTimerRef.current)
       }
       stopListening()
     }
@@ -509,6 +566,7 @@ export default function CAGEDPracticeClient({
           currentShapeNotes={currentShapeNotes}
           playedNotes={playedNotes}
           wrongNote={wrongNote}
+          wrongNoteFading={wrongNoteFading}
           currentRound={currentRound}
           totalRounds={GUIDED_ROUNDS}
           currentShapeIndex={currentShapeIndex}
@@ -581,6 +639,7 @@ export default function CAGEDPracticeClient({
           currentShapeNotes={currentShapeNotes}
           playedNotes={playedNotes}
           wrongNote={wrongNote}
+          wrongNoteFading={wrongNoteFading}
           currentShapeIndex={currentShapeIndex}
           totalShapes={shapeOrder.length}
           practiceType={practiceType}

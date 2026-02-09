@@ -390,11 +390,11 @@ def resolve_seed(seed: str) -> int:
 
 def train(
     epochs: int = 200,
-    batch_size: int = 32,
-    learning_rate: float = 0.001,
+    batch_size: int = 256,
+    learning_rate: float = 0.003,
     patience: int = 30,
     use_large_model: bool = False,
-    dropout: float = 0.3,
+    dropout: float = 0.2,
     seed: str = "42",
 ):
     print("\n====== Spectrogram CNN Training ======")
