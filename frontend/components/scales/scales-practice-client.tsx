@@ -14,7 +14,7 @@ import {
   ChartTooltipContent,
 } from "@/components/ui/chart"
 import { useSessionTracking } from "@/hooks/useSessionTracking"
-import { useStringClassifier } from "@/hooks/useStringClassifier"
+import { useSpectrogramClassifier } from "@/hooks/useSpectrogramClassifier"
 import { NOTE_NAMES } from "@/lib/audio/utils"
 import {
   ARPEGGIO_FORMULAS,
@@ -437,15 +437,14 @@ export default function ScalesPracticeClient() {
 
   const getNoteKey = (stringIndex: number, fretIndex: number) => `${stringIndex}-${fretIndex}`
 
-  const { startListening, stopListening, stablePrediction } = useStringClassifier({
-    productionMode: true,
+  const { startListening, stopListening, prediction: spectrogramPrediction } = useSpectrogramClassifier({
     minConfidence: 0.3,
   })
 
   useEffect(() => {
-    if (practiceStateRef.current !== "practicing" || !stablePrediction) return
+    if (practiceStateRef.current !== "practicing" || !spectrogramPrediction) return
 
-    const { stringIndex, fret } = stablePrediction
+    const { stringIndex, fret } = spectrogramPrediction
     const shapeNotes = currentShapeNotesRef.current
 
     const matchingNote = shapeNotes.find(
@@ -462,7 +461,7 @@ export default function ScalesPracticeClient() {
         return next
       })
     }
-  }, [stablePrediction, recordNotePlayed])
+  }, [spectrogramPrediction, recordNotePlayed])
 
   const clearTimerInterval = useCallback(() => {
     if (timerIntervalRef.current) {
