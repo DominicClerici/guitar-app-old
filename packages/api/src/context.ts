@@ -1,9 +1,11 @@
 import { db } from "@guitar/db"
-import type { SupabaseClient, User } from "@supabase/supabase-js"
+import type { JwtPayload, SupabaseClient } from "@supabase/supabase-js"
 import { createClient } from "@supabase/supabase-js"
 
+export type JWTPayloadWithId = JwtPayload & { id: string }
+
 export interface Context {
-  user: User | null
+  user: JWTPayloadWithId | null
   db: typeof db
   headers: Headers
   supabase: SupabaseClient
@@ -11,6 +13,8 @@ export interface Context {
 
 interface CreateContextOptions {
   headers: Headers
+  user?: JWTPayloadWithId | undefined
+  supabase?: SupabaseClient
 }
 
 // Get environment variables
@@ -34,18 +38,26 @@ function getSupabaseConfig() {
 }
 
 export async function createTRPCContext(opts: CreateContextOptions): Promise<Context> {
-  let supabase: SupabaseClient
   const { headers } = opts
 
-  // Extract the Authorization header (Bearer token)
-  const authHeader = headers.get("Authorization")
-  let user: User | null = null
+  // If a pre-authenticated supabase client is provided (from Next.js route handler), use it directly
+  if (opts.supabase) {
+    return {
+      user: opts.user ? ({ ...opts.user, id: opts.user.sub } as JWTPayloadWithId) : null,
+      db,
+      headers,
+      supabase: opts.supabase,
+    }
+  }
+
+  // Fallback: extract JWT from Authorization header (for mobile/non-Next.js callers)
+  const authHeader = headers.get("Authorization") ?? headers.get("authorization")
+  let user: JWTPayloadWithId | null = null
   const { url, anonKey } = getSupabaseConfig()
+  let supabase: SupabaseClient
 
   if (authHeader?.startsWith("Bearer ")) {
     const token = authHeader.slice(7)
-
-    // Create a Supabase client with the user's token
     supabase = createClient(url, anonKey, {
       global: {
         headers: {
@@ -53,13 +65,12 @@ export async function createTRPCContext(opts: CreateContextOptions): Promise<Con
         },
       },
     })
-
-    // Get the user from the token
-    const {
-      data: { user: supabaseUser },
-    } = await supabase.auth.getUser()
-
-    user = supabaseUser
+    const { data, error } = await supabase.auth.getClaims(token)
+    if (error || !data?.claims) {
+      console.error(`Error getting claims: ${error?.message ?? "No claims found"}`)
+    }
+    const claims = { ...data?.claims, id: data?.claims?.sub ?? "" } as JWTPayloadWithId
+    user = claims
   } else {
     supabase = createClient(url, anonKey, {})
   }
@@ -74,5 +85,5 @@ export async function createTRPCContext(opts: CreateContextOptions): Promise<Con
 
 // Type for the authenticated context (after isAuthed middleware)
 export interface AuthedContext extends Context {
-  user: User
+  user: JWTPayloadWithId
 }
