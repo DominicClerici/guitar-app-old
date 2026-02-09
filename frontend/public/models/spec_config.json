@@ -1,0 +1,31 @@
+{
+  "model_type": "large",
+  "input_shape": [
+    1,
+    80,
+    9
+  ],
+  "num_classes": 6,
+  "string_labels": [
+    "E2",
+    "A2",
+    "D3",
+    "G3",
+    "B3",
+    "E4"
+  ],
+  "normalization": {
+    "mean": -40.21456527709961,
+    "std": 15.692899703979492
+  },
+  "spectrogram_config": {
+    "sample_rate": 48000,
+    "window_size": 4096,
+    "n_fft": 4096,
+    "hop_length": 512,
+    "n_mels": 80,
+    "fmin": 60.0,
+    "fmax": 5000.0,
+    "target_rms": 0.035
+  }
+}
