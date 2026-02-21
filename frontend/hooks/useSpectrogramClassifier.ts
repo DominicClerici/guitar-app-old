@@ -95,6 +95,7 @@ interface UseSpectrogramClassifierOptions {
   modelPath?: string
   configPath?: string
   minConfidence?: number
+  minConsecutivePredictions?: number
   onPrediction?: (result: SpectrogramPredictionResult) => void
 }
 
@@ -111,7 +112,7 @@ interface UseSpectrogramClassifierResult {
 
 const DEFAULT_MODEL_PATH = "/models/spec_classifier.onnx"
 const DEFAULT_CONFIG_PATH = "/models/spec_config.json"
-const DEFAULT_MIN_CONFIDENCE = 0.3
+const DEFAULT_MIN_CONFIDENCE = 0.8
 
 function calculateRMS(samples: Float32Array): number {
   let sum = 0
@@ -281,6 +282,11 @@ export function useSpectrogramClassifier(
   // Store last detected fundamental for fret calculation
   const lastFundamentalRef = useRef<number>(0)
 
+  // Consecutive prediction tracking
+  const minConsecutiveRef = useRef(options.minConsecutivePredictions ?? 1)
+  const consecutiveStringRef = useRef<number>(-1)
+  const consecutiveCountRef = useRef(0)
+
   // Debug data capture refs
   const lastAudioSamplesRef = useRef<Float32Array | null>(null)
   const lastSpectrogramBeforeNormRef = useRef<Float32Array | null>(null)
@@ -292,8 +298,9 @@ export function useSpectrogramClassifier(
     modelPathRef.current = options.modelPath ?? DEFAULT_MODEL_PATH
     configPathRef.current = options.configPath ?? DEFAULT_CONFIG_PATH
     minConfidenceRef.current = options.minConfidence ?? DEFAULT_MIN_CONFIDENCE
+    minConsecutiveRef.current = options.minConsecutivePredictions ?? 1
     onPredictionRef.current = options.onPrediction
-  }, [options.modelPath, options.configPath, options.minConfidence, options.onPrediction])
+  }, [options.modelPath, options.configPath, options.minConfidence, options.minConsecutivePredictions, options.onPrediction])
 
   const loadModel = useCallback(async () => {
     try {
@@ -427,19 +434,31 @@ export function useSpectrogramClassifier(
       }
 
       if (maxProb >= minConfidenceRef.current) {
-        const fret = fundamental > 0 ? calculateFret(fundamental, maxIdx) : 0
-
-        const result: SpectrogramPredictionResult = {
-          stringIndex: maxIdx,
-          stringLabel: config.string_labels?.[maxIdx] ?? STRING_LABELS[maxIdx],
-          confidence: maxProb,
-          allProbabilities: probabilities,
-          fundamental,
-          fret,
+        if (maxIdx === consecutiveStringRef.current) {
+          consecutiveCountRef.current++
+        } else {
+          consecutiveStringRef.current = maxIdx
+          consecutiveCountRef.current = 1
         }
 
-        setPrediction(result)
-        onPredictionRef.current?.(result)
+        if (consecutiveCountRef.current >= minConsecutiveRef.current) {
+          const fret = fundamental > 0 ? calculateFret(fundamental, maxIdx) : 0
+
+          const result: SpectrogramPredictionResult = {
+            stringIndex: maxIdx,
+            stringLabel: config.string_labels?.[maxIdx] ?? STRING_LABELS[maxIdx],
+            confidence: maxProb,
+            allProbabilities: probabilities,
+            fundamental,
+            fret,
+          }
+
+          setPrediction(result)
+          onPredictionRef.current?.(result)
+        }
+      } else {
+        consecutiveStringRef.current = -1
+        consecutiveCountRef.current = 0
       }
     } catch (err) {
       if (!isReleasedRef.current) {

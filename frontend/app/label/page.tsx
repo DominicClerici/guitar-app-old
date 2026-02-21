@@ -280,6 +280,10 @@ export default function LabelPage() {
     )
   }, [])
 
+  const handleSetAllStrings = useCallback((stringIndex: number) => {
+    setIntervals((prev) => prev.map((i) => ({ ...i, string: stringIndex })))
+  }, [])
+
   const handleDeleteInterval = useCallback(
     (id: string) => {
       setIntervals((prev) => prev.filter((i) => i.id !== id))
@@ -593,6 +597,20 @@ export default function LabelPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground text-sm">Set all to:</span>
+                  {STRING_NAMES.map((name, stringIndex) => (
+                    <button
+                      key={stringIndex}
+                      className="flex size-7 items-center justify-center rounded text-xs font-medium transition-colors"
+                      style={{ backgroundColor: STRING_COLORS[stringIndex], color: "white" }}
+                      onClick={() => handleSetAllStrings(stringIndex)}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+
                 <div className="max-h-80 space-y-1 overflow-y-auto">
                   {intervals.map((interval, index) => (
                     <div

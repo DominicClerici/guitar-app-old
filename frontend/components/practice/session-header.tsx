@@ -9,6 +9,7 @@ export type SessionConfig = {
   duration: { minutes: number; seconds: number } | null
   targetShapes: number | null
   key: string
+  keys?: string[]
   shapes: number[]
   startedAt: number
   formulaType: "scale" | "arpeggio" | "caged"
@@ -16,6 +17,7 @@ export type SessionConfig = {
   scaleName?: string
   gradient?: string
   noteVisibility?: "all" | "roots" | "hidden"
+  selectedDegrees?: number[]
 }
 
 interface SessionHeaderProps {
@@ -120,14 +122,22 @@ export default function SessionHeader({ config, className, hideShapes }: Session
             <div className="flex size-10 items-center justify-center rounded-xl bg-white/15 backdrop-blur-sm">
               {config.key === "random" ? (
                 <Dices className="size-5 text-white" />
+              ) : config.keys && config.keys.length > 1 ? (
+                <span className="font-display text-sm font-bold text-white">{config.keys.length}</span>
               ) : (
                 <span className="font-display text-lg font-bold text-white">{config.key}</span>
               )}
             </div>
             <div>
-              <p className="text-[10px] font-medium tracking-wider text-white/50 uppercase">Key</p>
+              <p className="text-[10px] font-medium tracking-wider text-white/50 uppercase">
+                {config.keys && config.keys.length > 1 ? "Keys" : "Key"}
+              </p>
               <p className="text-sm font-semibold text-white">
-                {config.key === "random" ? "Random" : config.key}
+                {config.key === "random"
+                  ? "Random"
+                  : config.keys && config.keys.length > 1
+                    ? config.keys.join(", ")
+                    : config.key}
               </p>
             </div>
           </div>
@@ -151,6 +161,33 @@ export default function SessionHeader({ config, className, hideShapes }: Session
                         className="flex size-5 items-center justify-center rounded bg-white/20 text-[10px] font-bold text-white"
                       >
                         {shape}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {config.selectedDegrees && config.selectedDegrees.length < 7 && (
+            <>
+              <div className="h-8 w-px bg-white/20" />
+
+              <div className="flex items-center gap-3">
+                <div className="flex size-10 items-center justify-center rounded-xl bg-white/15 backdrop-blur-sm">
+                  <span className="font-display text-lg font-bold text-white">#</span>
+                </div>
+                <div>
+                  <p className="text-[10px] font-medium tracking-wider text-white/50 uppercase">
+                    Degrees
+                  </p>
+                  <div className="flex items-center gap-1.5">
+                    {config.selectedDegrees.map((degree) => (
+                      <span
+                        key={degree}
+                        className="flex size-5 items-center justify-center rounded bg-white/20 text-[10px] font-bold text-white"
+                      >
+                        {degree}
                       </span>
                     ))}
                   </div>

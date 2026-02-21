@@ -13,18 +13,18 @@ MAX_SAMPLE_LENGTH_SEQUENCE_MS = 650  # for each note interval in a sequence
 ENABLE_ZERO_PADDING = False  # If samples arent the full window size, pad with zeros
 MAX_ZERO_PAD = 25  # Max percentage of window that can be zero-padded
 
-AUGMENTATION_SCALER = 50  # decrease as we get more data in
+AUGMENTATION_SCALER = 60  # decrease as we get more data in
 
 # NUM_SLIGHT = 0.5 * AUGMENTATION_SCALER
 # NUM_MODERATE = 0.25 * AUGMENTATION_SCALER
 # NUM_AGGRESSIVE = 0.1 * AUGMENTATION_SCALER
 NUM_SLIGHT = 0.5 * AUGMENTATION_SCALER
-NUM_MODERATE = 0.3 * AUGMENTATION_SCALER
-NUM_AGGRESSIVE = 0.2 * AUGMENTATION_SCALER
+NUM_MODERATE = 0.35 * AUGMENTATION_SCALER
+NUM_AGGRESSIVE = 0.25 * AUGMENTATION_SCALER
 
 PROB_REVERB = 0.75
-PROB_CHORUS = 0.35
-PROB_PITCH_DRIFT = 0.5
+PROB_CHORUS = 0.4
+PROB_PITCH_DRIFT = 0.65
 
 import json
 import random

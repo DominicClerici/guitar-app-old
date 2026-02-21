@@ -18,6 +18,7 @@ interface GuidedPracticePhaseProps {
   currentShapeIndex: number
   totalShapes: number
   practiceType?: "roots" | "chordTones" | "pentatonic" | "majorScale"
+  showDegree?: boolean
 }
 
 export default function GuidedPracticePhase({
@@ -31,6 +32,7 @@ export default function GuidedPracticePhase({
   currentShapeIndex,
   totalShapes,
   practiceType = "roots",
+  showDegree = false,
 }: GuidedPracticePhaseProps) {
   const markers: Marker[] = currentShapeNotes.map((note) => {
     const noteKey = `${note.stringIndex}-${note.fretIndex}`
@@ -146,7 +148,7 @@ export default function GuidedPracticePhase({
       </div>
 
       <div className="transition-opacity duration-300">
-        <Fretboard markers={markers} className="w-full" />
+        <Fretboard markers={markers} showDegree={showDegree} className="w-full" />
       </div>
 
       <p className="text-muted-foreground text-center text-sm">

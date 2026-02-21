@@ -44,9 +44,14 @@ import { ScaleCurrentPositionInfo, ScaleTimerInfo } from "./scales-control-bar"
 
 type PracticeState = "idle" | "countdown" | "practicing" | "paused" | "between-shapes" | "complete"
 
-function getKeyIndex(key: string): number {
+function getKeyIndex(key: string, keys?: string[]): number {
   if (key === "random") {
     return Math.floor(Math.random() * 12)
+  }
+  if (keys && keys.length > 1) {
+    const chosen = keys[Math.floor(Math.random() * keys.length)]
+    const index = NOTE_NAMES.indexOf(chosen)
+    return index >= 0 ? index : 0
   }
   const index = NOTE_NAMES.indexOf(key)
   return index >= 0 ? index : 0
@@ -402,7 +407,7 @@ export default function ScalesPracticeClient() {
     if (stored) {
       const config = JSON.parse(stored) as SessionConfig
       setSessionConfig(config)
-      setSelectedKeyIndex(getKeyIndex(config.key))
+      setSelectedKeyIndex(getKeyIndex(config.key, config.keys))
       setActiveShapes(config.shapes)
       if (config.sessionType === "timed" && config.duration) {
         const totalSecs = config.duration.minutes * 60 + config.duration.seconds

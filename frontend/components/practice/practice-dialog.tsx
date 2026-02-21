@@ -11,8 +11,21 @@ import {
 } from "@/components/ui/dialog"
 import NumberTicker from "@/components/ui/number-ticker"
 import SlidingToggle from "@/components/ui/sliding-toggle"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
-import { BookOpen, Clock, Dices, Dumbbell, Eye, EyeOff, Hash, Infinity, Music } from "lucide-react"
+import {
+  BookOpen,
+  Clock,
+  Dices,
+  Dumbbell,
+  Eye,
+  EyeOff,
+  Globe,
+  Hash,
+  Infinity,
+  Layers,
+  Music,
+} from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useCallback, useState } from "react"
 import TimePicker from "../ui/time-picker"
@@ -95,11 +108,14 @@ export default function PracticeDialog({
   const [sessionType, setSessionType] = useState<SessionType>("infinite")
   const [duration, setDuration] = useState({ minutes: 5, seconds: 0 })
   const [targetShapes, setTargetShapes] = useState(10)
-  const [selectedKey, setSelectedKey] = useState<string | "random">("random")
+  const [isRandomKey, setIsRandomKey] = useState(true)
+  const [selectedKeys, setSelectedKeys] = useState<string[]>([])
   const [noteVisibility, setNoteVisibility] = useState<NoteVisibility>("all")
   const [selectedShapes, setSelectedShapes] = useState<number[]>(
     Array.from({ length: shapeCount }, (_, i) => i + 1),
   )
+  const [selectedDegrees, setSelectedDegrees] = useState<number[]>([1, 2, 3, 4, 5, 6, 7])
+  const [multiShapeMode, setMultiShapeMode] = useState<"single" | "adjacent" | "full">("single")
 
   const toggleShape = useCallback((shape: number) => {
     setSelectedShapes((prev) => {
@@ -115,13 +131,35 @@ export default function PracticeDialog({
     setSelectedShapes(Array.from({ length: shapeCount }, (_, i) => i + 1))
   }, [shapeCount])
 
+  const toggleKey = useCallback((key: string) => {
+    setIsRandomKey(false)
+    setSelectedKeys((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]))
+  }, [])
+
+  const toggleDegree = useCallback((degree: number) => {
+    setSelectedDegrees((prev) => {
+      if (prev.includes(degree)) {
+        if (prev.length === 1) return prev
+        return prev.filter((d) => d !== degree)
+      }
+      return [...prev, degree].sort((a, b) => a - b)
+    })
+  }, [])
+
+  const isMajorScale = formulaId === "majorScale" || formulaId === "major"
+
+  const noKeysSelected = !isRandomKey && selectedKeys.length === 0
+
   const handleStart = useCallback(() => {
+    if (noKeysSelected) return
+
     const config = {
       mode,
       sessionType,
       duration: sessionType === "timed" ? duration : null,
       targetShapes: sessionType === "shapes" ? targetShapes : null,
-      key: selectedKey,
+      key: isRandomKey ? "random" : selectedKeys[0],
+      keys: isRandomKey ? [] : selectedKeys,
       shapes: selectedShapes,
       startedAt: Date.now(),
       formulaType,
@@ -129,6 +167,8 @@ export default function PracticeDialog({
       scaleName: title,
       gradient,
       ...(formulaType === "caged" && { noteVisibility }),
+      ...(isMajorScale && selectedDegrees.length < 7 && { selectedDegrees }),
+      ...(isMajorScale && multiShapeMode !== "single" && { multiShapeMode }),
     }
 
     sessionStorage.setItem("practiceConfig", JSON.stringify(config))
@@ -143,7 +183,8 @@ export default function PracticeDialog({
     sessionType,
     duration,
     targetShapes,
-    selectedKey,
+    isRandomKey,
+    selectedKeys,
     selectedShapes,
     href,
     router,
@@ -153,11 +194,15 @@ export default function PracticeDialog({
     gradient,
     supportLearnMode,
     noteVisibility,
+    isMajorScale,
+    selectedDegrees,
+    multiShapeMode,
+    noKeysSelected,
   ])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg overflow-hidden p-0 sm:max-w-xl">
+      <DialogContent className="max-w-2xl overflow-hidden p-0 sm:max-w-3xl">
         <div className={`relative bg-gradient-to-br ${gradient} px-6 py-5`}>
           <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
           <DialogHeader className="relative z-10">
@@ -279,15 +324,110 @@ export default function PracticeDialog({
             </div>
           )}
 
+          {isMajorScale && (!supportLearnMode || mode === "practice") && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium">Scale Degrees</label>
+                <button
+                  type="button"
+                  onClick={() => setSelectedDegrees([1, 2, 3, 4, 5, 6, 7])}
+                  className="text-muted-foreground hover:text-foreground text-xs transition-colors"
+                >
+                  Select all
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {[1, 2, 3, 4, 5, 6, 7].map((degree) => {
+                  const isSelected = selectedDegrees.includes(degree)
+                  return (
+                    <button
+                      key={degree}
+                      type="button"
+                      onClick={() => toggleDegree(degree)}
+                      className={cn(
+                        "flex size-10 items-center justify-center rounded-lg border text-sm font-bold transition-all",
+                        isSelected
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border text-muted-foreground hover:border-primary/50 hover:bg-accent",
+                      )}
+                    >
+                      {degree}
+                    </button>
+                  )
+                })}
+              </div>
+              <p className="text-muted-foreground text-xs">
+                {selectedDegrees.length} of 7 degrees selected
+              </p>
+            </div>
+          )}
+
+          {isMajorScale &&
+            formulaType === "caged" &&
+            (!supportLearnMode || mode === "practice") && (
+              <div className="space-y-3">
+                <label className="text-sm font-medium">Display Mode</label>
+                <div className="grid gap-2">
+                  {[
+                    {
+                      id: "single" as const,
+                      label: "Single Shape",
+                      description: "Practice one shape at a time",
+                      icon: Music,
+                    },
+                    {
+                      id: "adjacent" as const,
+                      label: "2 Adjacent Shapes",
+                      description: "Practice two connected shapes at once",
+                      icon: Layers,
+                    },
+                    {
+                      id: "full" as const,
+                      label: "Entire Scale",
+                      description: "Play the full scale across all shapes",
+                      icon: Globe,
+                    },
+                  ].map((option) => {
+                    const Icon = option.icon
+                    const isSelected = multiShapeMode === option.id
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => setMultiShapeMode(option.id)}
+                        className={cn(
+                          "flex w-full items-center gap-3 rounded-lg border p-3 transition-all",
+                          isSelected
+                            ? "border-primary bg-primary/10"
+                            : "border-border hover:border-primary/50 hover:bg-accent",
+                        )}
+                      >
+                        <Icon
+                          className={cn(
+                            "size-5",
+                            isSelected ? "text-primary" : "text-muted-foreground",
+                          )}
+                        />
+                        <div className="text-left">
+                          <p className="text-sm font-medium">{option.label}</p>
+                          <p className="text-muted-foreground text-xs">{option.description}</p>
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
           <div className="space-y-3">
             <label className="text-sm font-medium">Key</label>
             <div className="flex flex-wrap gap-1.5">
               <button
                 type="button"
-                onClick={() => setSelectedKey("random")}
+                onClick={() => setIsRandomKey(true)}
                 className={cn(
                   "flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium transition-all",
-                  selectedKey === "random"
+                  isRandomKey
                     ? "border-primary bg-primary/10 text-primary"
                     : "border-border hover:border-primary/50 hover:bg-accent",
                 )}
@@ -295,21 +435,25 @@ export default function PracticeDialog({
                 <Dices className="size-3.5" />
                 Random
               </button>
-              {MUSICAL_KEYS.map((key) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setSelectedKey(key)}
-                  className={cn(
-                    "rounded-md border px-3 py-1.5 text-sm font-medium transition-all",
-                    selectedKey === key
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-border hover:border-primary/50 hover:bg-accent",
-                  )}
-                >
-                  {key}
-                </button>
-              ))}
+              {MUSICAL_KEYS.map((key) => {
+                const isSelected = selectedKeys.includes(key)
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => toggleKey(key)}
+                    className={cn(
+                      "rounded-md border px-3 py-1.5 text-sm font-medium transition-all",
+                      isSelected
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border hover:border-primary/50 hover:bg-accent",
+                      isRandomKey && "opacity-60",
+                    )}
+                  >
+                    {key}
+                  </button>
+                )
+              })}
             </div>
           </div>
 
@@ -373,9 +517,24 @@ export default function PracticeDialog({
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handleStart}>
-            {supportLearnMode && mode === "learn" ? "Start Learning" : "Start Practice"}
-          </Button>
+          {noKeysSelected ? (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span tabIndex={0}>
+                    <Button disabled>
+                      {supportLearnMode && mode === "learn" ? "Start Learning" : "Start Practice"}
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>At least 1 key must be selected</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          ) : (
+            <Button onClick={handleStart}>
+              {supportLearnMode && mode === "learn" ? "Start Learning" : "Start Practice"}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

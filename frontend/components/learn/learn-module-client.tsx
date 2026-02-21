@@ -97,7 +97,13 @@ export default function LearnModuleClient({ module }: LearnModuleClientProps) {
     if (stored) {
       try {
         const config = JSON.parse(stored)
-        if (config.key && config.key !== "random") {
+        if (config.keys && config.keys.length > 0) {
+          const chosen = config.keys[Math.floor(Math.random() * config.keys.length)]
+          const keyIndex = NOTE_NAMES.indexOf(chosen)
+          if (keyIndex >= 0) {
+            setSelectedKeyIndex(keyIndex)
+          }
+        } else if (config.key && config.key !== "random") {
           const keyIndex = NOTE_NAMES.indexOf(config.key)
           if (keyIndex >= 0) {
             setSelectedKeyIndex(keyIndex)

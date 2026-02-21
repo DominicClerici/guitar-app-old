@@ -17,6 +17,7 @@ interface TestPhaseProps {
   totalShapes: number
   practiceType?: "roots" | "chordTones" | "pentatonic" | "majorScale"
   showRoots?: boolean
+  showDegree?: boolean
 }
 
 export default function TestPhase({
@@ -29,6 +30,7 @@ export default function TestPhase({
   totalShapes,
   practiceType = "roots",
   showRoots = false,
+  showDegree = false,
 }: TestPhaseProps) {
   const markers: Marker[] = currentShapeNotes.map((note) => {
     const noteKey = `${note.stringIndex}-${note.fretIndex}`
@@ -148,7 +150,7 @@ export default function TestPhase({
       </div>
 
       <div className="transition-opacity duration-300">
-        <Fretboard markers={markers} className="w-full" />
+        <Fretboard markers={markers} showDegree={showDegree} className="w-full" />
       </div>
 
       <p className="text-muted-foreground text-center text-sm">

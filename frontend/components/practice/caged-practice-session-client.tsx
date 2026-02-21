@@ -58,11 +58,17 @@ type PracticeState = "idle" | "countdown" | "practicing" | "paused" | "between-s
 type CagedSessionConfig = SessionConfig & {
   mode: "practice"
   noteVisibility: NoteVisibility
+  multiShapeMode?: "single" | "adjacent" | "full"
 }
 
-function getKeyIndex(key: string): number {
+function getKeyIndex(key: string, keys?: string[]): number {
   if (key === "random") {
     return Math.floor(Math.random() * 12)
+  }
+  if (keys && keys.length > 1) {
+    const chosen = keys[Math.floor(Math.random() * keys.length)]
+    const index = AUDIO_NOTE_NAMES.indexOf(chosen)
+    return index >= 0 ? index : 0
   }
   const index = AUDIO_NOTE_NAMES.indexOf(key)
   return index >= 0 ? index : 0
@@ -381,9 +387,12 @@ function SessionReviewScreen({
 export default function CagedPracticeSessionClient() {
   const [sessionConfig, setSessionConfig] = useState<SessionConfig | null>(null)
   const [noteVisibility, setNoteVisibility] = useState<NoteVisibility>("all")
+  const [multiShapeMode, setMultiShapeMode] = useState<"single" | "adjacent" | "full">("single")
   const [practiceType, setPracticeType] = useState<PracticeType>("roots")
   const [selectedKeyIndex, setSelectedKeyIndex] = useState(0)
+  const [configKeys, setConfigKeys] = useState<string[]>([])
   const [activeShapes, setActiveShapes] = useState<number[]>([1, 2, 3, 4, 5])
+  const [selectedDegrees, setSelectedDegrees] = useState<number[]>([1, 2, 3, 4, 5, 6, 7])
 
   const [practiceState, setPracticeState] = useState<PracticeState>("idle")
   const [countdownValue, setCountdownValue] = useState(5)
@@ -427,10 +436,15 @@ export default function CagedPracticeSessionClient() {
     if (stored) {
       const config = JSON.parse(stored) as CagedSessionConfig
       setSessionConfig(config)
-      setSelectedKeyIndex(getKeyIndex(config.key))
+      setSelectedKeyIndex(getKeyIndex(config.key, config.keys))
       setActiveShapes(config.shapes)
+      if (config.keys) setConfigKeys(config.keys)
       setNoteVisibility(config.noteVisibility || "all")
       setPracticeType(getPracticeType(config.formulaId))
+      setMultiShapeMode(config.multiShapeMode || "single")
+      if (config.selectedDegrees) {
+        setSelectedDegrees(config.selectedDegrees)
+      }
       if (config.sessionType === "timed" && config.duration) {
         const totalSecs = config.duration.minutes * 60 + config.duration.seconds
         setRemainingSeconds(totalSecs)
@@ -446,10 +460,14 @@ export default function CagedPracticeSessionClient() {
   const shapeOrder = getShapeOrder(practiceType)
 
   const formula = SCALE_FORMULAS.major
+  const isFullScaleMode = multiShapeMode === "full"
   const fullScale = generateFretboardNotes(selectedKeyIndex, formula)
+  const fullScaleCapped = isFullScaleMode
+    ? generateFretboardNotes(selectedKeyIndex, formula, { maxFret: 14 })
+    : fullScale
   const filteredNotes =
     practiceType === "majorScale"
-      ? fullScale
+      ? getNotesByDegrees(isFullScaleMode ? fullScaleCapped : fullScale, selectedDegrees)
       : practiceType === "pentatonic"
         ? getNotesByDegrees(fullScale, [1, 2, 3, 5, 6])
         : practiceType === "chordTones"
@@ -457,15 +475,64 @@ export default function CagedPracticeSessionClient() {
           : getRootNotes(fullScale)
 
   const cagedShapeNames = activeShapes.map((i) => CAGED_SHAPE_NAMES[i - 1])
+
+  // Build adjacent pairs for adjacent multi-shape mode (no wrapping: D→C is excluded)
+  const adjacentPairs: [number, number][] = []
+  if (multiShapeMode === "adjacent") {
+    for (let i = 0; i < activeShapes.length - 1; i++) {
+      if (activeShapes[i + 1] - activeShapes[i] === 1) {
+        adjacentPairs.push([i, i + 1])
+      }
+    }
+  }
+  const useAdjacentMode = multiShapeMode === "adjacent" && adjacentPairs.length > 0
+  const useFullScale = multiShapeMode === "full"
+
   const currentShapeName = cagedShapeNames[currentShapeIndex] || CAGED_SHAPE_NAMES[0]
 
-  const currentShapeNotes = getCAGEDShapeNotes(
-    currentShapeName,
-    filteredNotes,
-    selectedKeyIndex,
-    undefined,
-    formula,
-  )
+  // In adjacent mode, currentShapeIndex indexes into adjacentPairs
+  const multiShapePair = useAdjacentMode
+    ? adjacentPairs[currentShapeIndex % adjacentPairs.length]
+    : null
+  const currentDisplayName = useFullScale
+    ? "Full Scale"
+    : useAdjacentMode && multiShapePair
+      ? `${cagedShapeNames[multiShapePair[0]]}+${cagedShapeNames[multiShapePair[1]]}`
+      : currentShapeName
+
+  const getAdjacentShapeNotes = () => {
+    if (!useAdjacentMode || !multiShapePair) return []
+    const notes1 = getCAGEDShapeNotes(
+      cagedShapeNames[multiShapePair[0]],
+      filteredNotes,
+      selectedKeyIndex,
+      undefined,
+      formula,
+    )
+    const notes2 = getCAGEDShapeNotes(
+      cagedShapeNames[multiShapePair[1]],
+      filteredNotes,
+      selectedKeyIndex,
+      undefined,
+      formula,
+    )
+    const seen = new Set<string>()
+    const combined: FretboardNote[] = []
+    for (const note of [...notes1, ...notes2]) {
+      const key = `${note.stringIndex}-${note.fretIndex}`
+      if (!seen.has(key)) {
+        seen.add(key)
+        combined.push(note)
+      }
+    }
+    return combined
+  }
+
+  const currentShapeNotes = useFullScale
+    ? filteredNotes
+    : useAdjacentMode
+      ? getAdjacentShapeNotes()
+      : getCAGEDShapeNotes(currentShapeName, filteredNotes, selectedKeyIndex, undefined, formula)
 
   useEffect(() => {
     currentShapeNotesRef.current = currentShapeNotes
@@ -478,7 +545,8 @@ export default function CagedPracticeSessionClient() {
     stopListening,
     prediction: spectrogramPrediction,
   } = useSpectrogramClassifier({
-    minConfidence: 0.3,
+    minConfidence: 0.95,
+    minConsecutivePredictions: 2,
   })
 
   useEffect(() => {
@@ -521,33 +589,50 @@ export default function CagedPracticeSessionClient() {
 
     completeShapeTracking()
     setPracticeState("between-shapes")
-    setCompletedShapeName(currentShapeName)
+    setCompletedShapeName(currentDisplayName)
     setCompletedShapesCount((prev) => prev + 1)
     totalNotesPlayedRef.current += playedNoteKeys.size
+
+    const totalSteps = useFullScale
+      ? 1
+      : useAdjacentMode
+        ? adjacentPairs.length
+        : cagedShapeNames.length
+
+    const getStepName = (index: number) => {
+      if (useFullScale) return "Full Scale"
+      if (useAdjacentMode)
+        return `${cagedShapeNames[adjacentPairs[index][0]]}+${cagedShapeNames[adjacentPairs[index][1]]}`
+      return cagedShapeNames[index]
+    }
 
     transitionTimerRef.current = setTimeout(() => {
       const nextIndex = currentShapeIndex + 1
       const isShapesMode = sessionConfig?.sessionType === "shapes"
-      const targetShapes = sessionConfig?.targetShapes || cagedShapeNames.length
+      const targetShapes = sessionConfig?.targetShapes || totalSteps
 
       if (isShapesMode && completedShapesCount + 1 >= targetShapes) {
         setPracticeState("complete")
         stopListening()
         clearTimerInterval()
         stopTrackingSession()
-      } else if (nextIndex >= cagedShapeNames.length) {
+      } else if (nextIndex >= totalSteps) {
         if (sessionConfig?.key === "random") {
           setSelectedKeyIndex(Math.floor(Math.random() * 12))
+        } else if (configKeys.length > 1) {
+          const chosen = configKeys[Math.floor(Math.random() * configKeys.length)]
+          const idx = AUDIO_NOTE_NAMES.indexOf(chosen)
+          setSelectedKeyIndex(idx >= 0 ? idx : 0)
         }
         setCurrentShapeIndex(0)
         setPlayedNoteKeys(new Set())
         setPracticeState("practicing")
-        startShapeTimer(0, cagedShapeNames[0])
+        startShapeTimer(0, getStepName(0))
       } else {
         setCurrentShapeIndex(nextIndex)
         setPlayedNoteKeys(new Set())
         setPracticeState("practicing")
-        startShapeTimer(nextIndex, cagedShapeNames[nextIndex])
+        startShapeTimer(nextIndex, getStepName(nextIndex))
       }
     }, 1500)
   }, [
@@ -562,8 +647,12 @@ export default function CagedPracticeSessionClient() {
     completeShapeTracking,
     startShapeTimer,
     stopTrackingSession,
-    currentShapeName,
+    currentDisplayName,
     playedNoteKeys.size,
+    useAdjacentMode,
+    useFullScale,
+    adjacentPairs,
+    configKeys,
   ])
 
   useEffect(() => {
@@ -683,7 +772,12 @@ export default function CagedPracticeSessionClient() {
         }
         setPracticeState("practicing")
         startTrackingSession()
-        startShapeTimer(0, cagedShapeNames[0])
+        const firstName = useFullScale
+          ? "Full Scale"
+          : useAdjacentMode
+            ? `${cagedShapeNames[adjacentPairs[0][0]]}+${cagedShapeNames[adjacentPairs[0][1]]}`
+            : cagedShapeNames[0]
+        startShapeTimer(0, firstName)
       } else {
         setCountdownValue(count)
       }
@@ -845,7 +939,7 @@ export default function CagedPracticeSessionClient() {
                   shapeName={
                     practiceState === "countdown" || practiceState === "idle"
                       ? "--"
-                      : currentShapeName
+                      : currentDisplayName
                   }
                   notesPlayed={
                     practiceState === "countdown" || practiceState === "idle"
@@ -952,15 +1046,18 @@ export default function CagedPracticeSessionClient() {
           )}
         >
           <GuidedPracticePhase
-            currentShapeName={currentShapeName}
+            currentShapeName={currentDisplayName}
             currentShapeNotes={currentShapeNotes}
             playedNotes={playedNoteKeys}
             wrongNote={null}
             currentRound={1}
             totalRounds={1}
             currentShapeIndex={currentShapeIndex}
-            totalShapes={cagedShapeNames.length}
+            totalShapes={
+              useFullScale ? 1 : useAdjacentMode ? adjacentPairs.length : cagedShapeNames.length
+            }
             practiceType={practiceType}
+            showDegree={showDegree}
           />
         </div>
       )}
@@ -975,14 +1072,17 @@ export default function CagedPracticeSessionClient() {
             )}
           >
             <TestPhase
-              currentShapeName={currentShapeName}
+              currentShapeName={currentDisplayName}
               currentShapeNotes={currentShapeNotes}
               playedNotes={playedNoteKeys}
               wrongNote={null}
               currentShapeIndex={currentShapeIndex}
-              totalShapes={cagedShapeNames.length}
+              totalShapes={
+                useFullScale ? 1 : useAdjacentMode ? adjacentPairs.length : cagedShapeNames.length
+              }
               practiceType={practiceType}
               showRoots={noteVisibility === "roots"}
+              showDegree={showDegree}
             />
           </div>
         )}
@@ -996,30 +1096,33 @@ export default function CagedPracticeSessionClient() {
       {practiceState === "idle" && (
         <div className="flex flex-col items-center gap-2">
           <p className="text-muted-foreground text-xs">Preview</p>
-          <div className="flex items-center justify-center gap-4">
-            <SlidingToggle
-              options={[
-                { label: "Full", value: "full" },
-                ...cagedShapeNames.map((shape) => ({ label: shape, value: shape })),
-              ]}
-              value={previewShape}
-              onChange={setPreviewShape}
-              className="h-12"
-            />
-            <SlidingToggle
-              options={[
-                {
-                  label: "Interval",
-                  value: "interval",
-                  icon: <span className="font-mono text-lg font-medium">1</span>,
-                },
-                { label: "Note", value: "note", icon: <MusicIcon /> },
-              ]}
-              value={showDegree ? "interval" : "note"}
-              onChange={(value) => setShowDegree(value === "interval")}
-              className="h-12"
-            />
-          </div>
+          <SlidingToggle
+            options={[
+              { label: "Full", value: "full" },
+              ...cagedShapeNames.map((shape) => ({ label: shape, value: shape })),
+            ]}
+            value={previewShape}
+            onChange={setPreviewShape}
+            className="h-12"
+          />
+        </div>
+      )}
+
+      {practiceState !== "complete" && (
+        <div className="flex justify-center">
+          <SlidingToggle
+            options={[
+              {
+                label: "Interval",
+                value: "interval",
+                icon: <span className="font-mono text-lg font-medium">1</span>,
+              },
+              { label: "Note", value: "note", icon: <MusicIcon /> },
+            ]}
+            value={showDegree ? "interval" : "note"}
+            onChange={(value) => setShowDegree(value === "interval")}
+            className="h-12"
+          />
         </div>
       )}
     </div>
