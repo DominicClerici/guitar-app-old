@@ -1,6 +1,8 @@
 "use client"
 
 import PracticeDialog from "@/components/practice/practice-dialog"
+import { BookOpen, Dumbbell } from "lucide-react"
+import { useRouter } from "next/navigation"
 import { useState } from "react"
 
 type PracticeItem = {
@@ -53,7 +55,7 @@ const caged: PracticeItem[] = [
     pattern: "major-scale",
     formulaType: "caged",
     formulaId: "majorScale",
-    hideShapes: true,
+    hideShapes: false,
   },
 ]
 
@@ -152,14 +154,16 @@ function PracticeTile({
   gradient,
   pattern,
   index,
-  onClick,
+  onLearn,
+  onPractice,
 }: {
   title: string
   subtitle: string
   gradient: string
   pattern: string
   index: number
-  onClick: () => void
+  onLearn: () => void
+  onPractice: () => void
 }) {
   const getPattern = () => {
     switch (pattern) {
@@ -185,10 +189,8 @@ function PracticeTile({
   }
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="group relative flex h-36 min-w-[220px] cursor-pointer flex-col justify-end overflow-hidden rounded-xl p-4 text-left transition-all duration-300 hover:shadow-2xl sm:h-40 sm:min-w-[260px] md:h-44 md:min-w-[300px]"
+    <div
+      className="group relative flex h-36 min-w-[220px] flex-col justify-end overflow-hidden rounded-xl p-4 text-left transition-all duration-300 hover:shadow-2xl sm:h-40 sm:min-w-[260px] md:h-44 md:min-w-[300px]"
       style={{
         animationDelay: `${index * 50}ms`,
       }}
@@ -205,15 +207,36 @@ function PracticeTile({
 
       <div className="absolute right-0 bottom-0 left-0 h-1 origin-left scale-x-0 bg-white/50 transition-transform duration-300 group-hover:scale-x-100" />
 
-      <div className="relative z-10">
-        <p className="mb-1 text-xs font-medium tracking-wider text-white/70 uppercase">
-          {subtitle}
-        </p>
-        <h3 className="font-display text-xl font-bold tracking-tight text-white sm:text-2xl">
-          {title}
-        </h3>
+      <div className="relative z-10 flex items-end justify-between">
+        <div>
+          <p className="mb-1 text-xs font-medium tracking-wider text-white/70 uppercase">
+            {subtitle}
+          </p>
+          <h3 className="font-display text-xl font-bold tracking-tight text-white sm:text-2xl">
+            {title}
+          </h3>
+        </div>
+
+        <div className="flex gap-2 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+          <button
+            type="button"
+            onClick={onPractice}
+            className="flex cursor-pointer items-center gap-1.5 rounded-lg bg-white/20 px-3 py-1.5 text-xs font-medium text-white backdrop-blur-sm transition-colors hover:bg-white/30"
+          >
+            <Dumbbell className="size-3.5" />
+            Practice
+          </button>
+          <button
+            type="button"
+            onClick={onLearn}
+            className="flex cursor-pointer items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-black transition-colors hover:bg-white/90"
+          >
+            <BookOpen className="size-3.5" />
+            Start Learning
+          </button>
+        </div>
       </div>
-    </button>
+    </div>
   )
 }
 
@@ -221,12 +244,14 @@ function PracticeRow({
   title,
   items,
   sectionIndex,
-  onSelectItem,
+  onLearn,
+  onPractice,
 }: {
   title: string
   items: PracticeItem[]
   sectionIndex: number
-  onSelectItem: (item: PracticeItem) => void
+  onLearn: (item: PracticeItem) => void
+  onPractice: (item: PracticeItem) => void
 }) {
   return (
     <div className="space-y-4">
@@ -245,7 +270,8 @@ function PracticeRow({
               gradient={item.gradient}
               pattern={item.pattern}
               index={sectionIndex * items.length + index}
-              onClick={() => onSelectItem(item)}
+              onLearn={() => onLearn(item)}
+              onPractice={() => onPractice(item)}
             />
           ))}
         </div>
@@ -257,7 +283,33 @@ function PracticeRow({
 }
 
 export default function PracticePage() {
+  const router = useRouter()
   const [selectedItem, setSelectedItem] = useState<PracticeItem | null>(null)
+  const [isDialogOpen, setIsDialogOpen] = useState(false)
+
+  const handleLearn = (item: PracticeItem) => {
+    const config = {
+      mode: "learn",
+      formulaType: item.formulaType,
+      formulaId: item.formulaId,
+      scaleName: item.title,
+      gradient: item.gradient,
+      startedAt: Date.now(),
+    }
+    sessionStorage.setItem("practiceConfig", JSON.stringify(config))
+    router.push(`/dashboard/learn/${item.formulaId}`)
+  }
+
+  const handlePractice = (item: PracticeItem) => {
+    setSelectedItem(item)
+    setIsDialogOpen(true)
+  }
+
+  const handleCloseDialog = async () => {
+    setIsDialogOpen(false)
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    setSelectedItem(null)
+  }
 
   return (
     <div className="space-y-10">
@@ -268,11 +320,17 @@ export default function PracticePage() {
         </p>
       </div>
 
-      <PracticeRow title="CAGED" items={caged} sectionIndex={0} onSelectItem={setSelectedItem} />
+      <PracticeRow
+        title="CAGED"
+        items={caged}
+        sectionIndex={0}
+        onLearn={handleLearn}
+        onPractice={handlePractice}
+      />
 
       <PracticeDialog
-        open={selectedItem !== null}
-        onOpenChange={(open) => !open && setSelectedItem(null)}
+        open={isDialogOpen}
+        onOpenChange={(open) => !open && handleCloseDialog()}
         title={selectedItem?.title ?? ""}
         subtitle={selectedItem?.subtitle ?? ""}
         href={selectedItem?.href ?? ""}
@@ -280,7 +338,6 @@ export default function PracticePage() {
         formulaType={selectedItem?.formulaType ?? "scale"}
         formulaId={selectedItem?.formulaId ?? "major"}
         hideShapes={selectedItem?.hideShapes}
-        supportLearnMode={true}
       />
     </div>
   )

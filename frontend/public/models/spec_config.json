@@ -1,5 +1,5 @@
 {
-  "model_type": "large",
+  "model_type": "small",
   "input_shape": [
     1,
     80,
@@ -15,8 +15,8 @@
     "E4"
   ],
   "normalization": {
-    "mean": -40.880252838134766,
-    "std": 15.719069480895996
+    "mean": -40.819602966308594,
+    "std": 15.672076225280762
   },
   "spectrogram_config": {
     "sample_rate": 48000,

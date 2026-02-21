@@ -47,7 +47,7 @@ export default function NumberTicker({
         type="button"
         onClick={handleDecrement}
         disabled={value <= min}
-        className="bg-input/50 hover:bg-input/80 text-muted-foreground hover:text-foreground flex h-9 w-9 items-center justify-center rounded-l-md border border-r-0 transition-colors duration-75"
+        className="bg-background not-disabled:hover:bg-accent text-muted-foreground hover:text-foreground flex h-9 w-9 items-center justify-center rounded-l-md border border-r-0 transition-colors duration-75 not-disabled:cursor-pointer disabled:opacity-50"
       >
         <Minus className="size-4" />
       </button>
@@ -58,13 +58,13 @@ export default function NumberTicker({
         min={min}
         max={max}
         step={step}
-        className="h-9 w-16 [appearance:textfield] rounded-none border text-center font-mono text-lg! font-medium focus-visible:ring-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+        className="bg-background/50! hover:bg-accent! border-border! h-9 w-16 [appearance:textfield] rounded-none border text-center font-mono text-lg! font-medium focus-visible:ring-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
       />
       <button
         type="button"
         onClick={handleIncrement}
         disabled={value >= max}
-        className="bg-input/50 hover:bg-input/80 text-muted-foreground hover:text-foreground flex h-9 w-9 items-center justify-center rounded-r-md border border-l-0 transition-colors duration-75"
+        className="bg-background not-disabled:hover:bg-accent text-muted-foreground hover:text-foreground flex h-9 w-9 items-center justify-center rounded-r-md border border-l-0 transition-colors duration-75 not-disabled:cursor-pointer disabled:opacity-50"
       >
         <Plus className="size-4" />
       </button>
